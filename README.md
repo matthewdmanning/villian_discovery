@@ -20,7 +20,7 @@ npm link        # optional: puts `libby-shelf` on PATH
 
 Option A — setup code (recommended):
 
-1. Libby app → Menu → *Copy To Another Device* → 8-digit code.
+1. Libby app → Menu → _Copy To Another Device_ → 8-digit code.
 2. `libby-shelf login --code 12345678`
 
 Token saved to `$XDG_CONFIG_HOME/libby-shelf/identity.json` (default `~/.config/...`), mode `600`. Override: `--token-file`, `auth.tokenFile`, or `LIBBY_TOKEN_FILE`.
@@ -48,11 +48,11 @@ Exit codes: `0` ok · `1` some books errored · `2` fatal (config, auth, input).
 
 Detected by extension; force with `--input-format`.
 
-| Format | Shape |
-|---|---|
-| text (`.txt`, other) | one per line; `#` comments |
-| CSV/TSV | header row; columns `title, author, isbn, titleId, format, action, libraries`; lists split on `;` or `\|` |
-| JSON | `[...]` or `{ "books": [...] }`; items are text lines or objects with the CSV fields |
+| Format               | Shape                                                                                                     |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| text (`.txt`, other) | one per line; `#` comments                                                                                |
+| CSV/TSV              | header row; columns `title, author, isbn, titleId, format, action, libraries`; lists split on `;` or `\|` |
+| JSON                 | `[...]` or `{ "books": [...] }`; items are text lines or objects with the CSV fields                      |
 
 Text line forms: `Title by Author` · `Title - Author` · `Title — Author` · `Title \| Author` · `Title<TAB>Author` · `Title` · `isbn:978…` · bare ISBN-10/13 · `id:<titleId>` · Libby/OverDrive title URL.
 
@@ -78,38 +78,38 @@ Per-book failures are reported and the run continues (`failFast` to stop). Auth 
 
 Layers, later wins: defaults < config file (`-c`, else `./libby.config.json`) < env < CLI flags. Unknown keys rejected. Full example: `examples/libby.config.json`.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `action` | `auto` | `auto` \| `borrow` \| `hold` |
-| `libraries` | all cards | library keys (`cards` shows them), priority order; also filters |
-| `cards` | all | card ids or names to use |
-| `mediaTypes` | `["ebook","audiobook"]` | accepted types, preference order; also `magazine` |
-| `borrow.lendingPeriod` | `preference` | `preference` (card setting) \| `max` \| days (snapped to offered option) |
-| `borrow.luckyDay` | `true` | allow Lucky Day copies |
-| `borrow.maxPerRun` | — | loan cap per run; then `auto` holds instead |
-| `hold.placement` | `best` | `best` \| `first` \| `all` |
-| `hold.maxEstimatedWaitDays` | — | skip longer waits |
-| `hold.maxHoldsCount` | — | skip longer queues |
-| `hold.suspendDays` | `0` | deliver later after placing: 0–30, 60, 90 |
-| `hold.emailAddress` | — | email stored on hold |
-| `hold.maxPerRun` | — | hold cap per run |
-| `matching.minTitleScore` | `0.85` | 0–1 |
-| `matching.minAuthorScore` | `0.6` | 0–1, when author given |
-| `matching.ignoreSubtitle` | `true` | compare main title only |
-| `matching.allowPreRelease` | `true` | allow pre-release titles |
-| `matching.perPage` | `24` | results examined per library |
-| `skipExisting` | `true` | skip titles already on shelf |
-| `respectCardLimits` | `true` | skip cards at limit |
-| `dryRun` | `false` | plan only |
-| `delayMs` | `750` | pause between books |
-| `failFast` | `false` | stop on first error |
-| `http.timeoutMs` / `retries` / `retryBaseMs` | `30000` / `2` / `500` | retries on network, 429, 5xx; honours `Retry-After` |
-| `http.userAgent` | Safari UA | request UA |
-| `http.sentryBaseUrl` / `thunderBaseUrl` | see below | endpoint overrides |
-| `output.format` | `table` | `table` \| `json` \| `ndjson` |
-| `output.reportFile` | — | also write JSON report |
-| `logLevel` | `info` | logs go to stderr |
-| `auth.identityToken` / `auth.tokenFile` | — / XDG path | see Authenticate |
+| Key                                          | Default                 | Meaning                                                                  |
+| -------------------------------------------- | ----------------------- | ------------------------------------------------------------------------ |
+| `action`                                     | `auto`                  | `auto` \| `borrow` \| `hold`                                             |
+| `libraries`                                  | all cards               | library keys (`cards` shows them), priority order; also filters          |
+| `cards`                                      | all                     | card ids or names to use                                                 |
+| `mediaTypes`                                 | `["ebook","audiobook"]` | accepted types, preference order; also `magazine`                        |
+| `borrow.lendingPeriod`                       | `preference`            | `preference` (card setting) \| `max` \| days (snapped to offered option) |
+| `borrow.luckyDay`                            | `true`                  | allow Lucky Day copies                                                   |
+| `borrow.maxPerRun`                           | —                       | loan cap per run; then `auto` holds instead                              |
+| `hold.placement`                             | `best`                  | `best` \| `first` \| `all`                                               |
+| `hold.maxEstimatedWaitDays`                  | —                       | skip longer waits                                                        |
+| `hold.maxHoldsCount`                         | —                       | skip longer queues                                                       |
+| `hold.suspendDays`                           | `0`                     | deliver later after placing: 0–30, 60, 90                                |
+| `hold.emailAddress`                          | —                       | email stored on hold                                                     |
+| `hold.maxPerRun`                             | —                       | hold cap per run                                                         |
+| `matching.minTitleScore`                     | `0.85`                  | 0–1                                                                      |
+| `matching.minAuthorScore`                    | `0.6`                   | 0–1, when author given                                                   |
+| `matching.ignoreSubtitle`                    | `true`                  | compare main title only                                                  |
+| `matching.allowPreRelease`                   | `true`                  | allow pre-release titles                                                 |
+| `matching.perPage`                           | `24`                    | results examined per library                                             |
+| `skipExisting`                               | `true`                  | skip titles already on shelf                                             |
+| `respectCardLimits`                          | `true`                  | skip cards at limit                                                      |
+| `dryRun`                                     | `false`                 | plan only                                                                |
+| `delayMs`                                    | `750`                   | pause between books                                                      |
+| `failFast`                                   | `false`                 | stop on first error                                                      |
+| `http.timeoutMs` / `retries` / `retryBaseMs` | `30000` / `2` / `500`   | retries on network, 429, 5xx; honours `Retry-After`                      |
+| `http.userAgent`                             | Safari UA               | request UA                                                               |
+| `http.sentryBaseUrl` / `thunderBaseUrl`      | see below               | endpoint overrides                                                       |
+| `output.format`                              | `table`                 | `table` \| `json` \| `ndjson`                                            |
+| `output.reportFile`                          | —                       | also write JSON report                                                   |
+| `logLevel`                                   | `info`                  | logs go to stderr                                                        |
+| `auth.identityToken` / `auth.tokenFile`      | — / XDG path            | see Authenticate                                                         |
 
 Env: `LIBBY_IDENTITY_TOKEN`, `LIBBY_TOKEN_FILE`, `LIBBY_DRY_RUN`.
 
@@ -126,25 +126,23 @@ Lower level: `LibbyClient`, `ThunderClient`, `Runner`, `planBook` (pure), `bestM
 
 ## Endpoints used
 
-| Purpose | Request |
-|---|---|
-| new identity | `POST sentry-read.svc.overdrive.com/chip?client=dewey` |
-| link setup code | `POST /chip/clone/code` (form `code`) |
-| account state | `GET /chip/sync` |
-| borrow | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}` |
-| hold | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}` |
-| suspend hold | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}` |
-| search | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query|identifier&mediaTypes&x-client-id=dewey` |
-| title lookup | `GET .../v2/libraries/{key}/media/{titleId}` |
+| Purpose         | Request                                                                                |
+| --------------- | -------------------------------------------------------------------------------------- |
+| new identity    | `POST sentry-read.svc.overdrive.com/chip?client=dewey`                                 |
+| link setup code | `POST /chip/clone/code` (form `code`)                                                  |
+| account state   | `GET /chip/sync`                                                                       |
+| borrow          | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}` |
+| hold            | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`              |
+| suspend hold    | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                |
+| search          | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                          | identifier&mediaTypes&x-client-id=dewey` |
+| title lookup    | `GET .../v2/libraries/{key}/media/{titleId}`                                           |
 
 Sources: [ping/libby-calibre-plugin](https://github.com/ping/libby-calibre-plugin) (based on [lullius/pylibby](https://github.com/lullius/pylibby)), [mknabe/book-club](https://github.com/mknabe/book-club).
 
 ## Development
 
-```sh
-npm test          # vitest; HTTP faked, no network
-npm run typecheck
-npm run build
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md). Quick: `npm ci && npm run ci`.
 
 Layout: `src/` `http` (fetch, retries) · `libby-client` · `thunder-client` · `config` (zod) · `input` · `matcher` · `planner` (pure decisions) · `runner` (orchestration) · `report` · `auth` · `cli`.
+
+Security: [SECURITY.md](SECURITY.md).

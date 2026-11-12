@@ -9,7 +9,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "node dist/cli.js",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check --write .",
+    "ci": "biome ci . && npm run typecheck && npm test && npm run build",
+    "lint:commits": "commitlint --from origin/main --to HEAD --verbose"
   },
   "repository": {
     "type": "git",
@@ -26,6 +32,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-conventional": "21.2.4",
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"

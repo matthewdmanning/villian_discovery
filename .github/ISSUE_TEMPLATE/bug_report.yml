@@ -1,0 +1,66 @@
+name: Bug report
+description: Something does not work as documented.
+title: "fix: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste identity tokens, setup codes, card numbers, or email addresses.** Redact log output.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Actual vs. expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Command run, and a minimal book list.
+      placeholder: |
+        libby-shelf run books.txt --dry-run --log-level debug
+        books.txt: Project Hail Mary by Andy Weir
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Config
+      description: Output of `libby-shelf config` (token is redacted).
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output (redacted)
+      render: text
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Login / auth, Search / matching, Borrow, Hold, Input parsing, Config, Output / report, Other]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: libby-shelf version / commit
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version and OS
+      placeholder: Node 22.12, macOS 15
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I removed all secrets and personal data.
+          required: true
