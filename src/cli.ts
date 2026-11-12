@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Command, InvalidArgumentError, Option } from "commander";
-import { loginWithSetupCode, writeTokenFile } from "./auth.js";
 import { z } from "zod";
+import { loginWithSetupCode, writeTokenFile } from "./auth.js";
 import {
   type Config,
   type ConfigInput,
@@ -20,7 +20,7 @@ import { type BookRequest, type InputFormat, parseBookLine, readBooksFile } from
 import { LibbyClient } from "./libby-client.js";
 import { createLogger } from "./logger.js";
 import { formatTable, summarize } from "./report.js";
-import { type BookResult, Runner, cardLabel, selectCards } from "./runner.js";
+import { type BookResult, cardLabel, Runner, selectCards } from "./runner.js";
 
 const DEFAULT_CONFIG = "libby.config.json";
 
@@ -29,7 +29,13 @@ const int = (v: string) => {
   if (!Number.isInteger(n) || n < 0) throw new InvalidArgumentError("must be a non-negative integer");
   return n;
 };
-const collect = (v: string, prev: string[] = []) => [...prev, ...v.split(",").map((s) => s.trim()).filter(Boolean)];
+const collect = (v: string, prev: string[] = []) => [
+  ...prev,
+  ...v
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+];
 
 interface CommonOpts {
   config?: string;
@@ -58,9 +64,15 @@ program
   .argument("[files...]", "book lists (.json, .csv, .tsv, or text; '-' for stdin)")
   .addOption(configOpt())
   .addOption(logOpt())
-  .option("-b, --book <line>", "add a book inline, e.g. 'Dune by Frank Herbert' (repeatable)", (v, p: string[] = []) => [...p, v])
+  .option(
+    "-b, --book <line>",
+    "add a book inline, e.g. 'Dune by Frank Herbert' (repeatable)",
+    (v, p: string[] = []) => [...p, v],
+  )
   .addOption(new Option("--input-format <fmt>", "force input format").choices(["json", "csv", "tsv", "text"] as const))
-  .addOption(new Option("-a, --action <action>", "default action per book").choices(["auto", "borrow", "hold"] as const))
+  .addOption(
+    new Option("-a, --action <action>", "default action per book").choices(["auto", "borrow", "hold"] as const),
+  )
   .option("-l, --library <keys>", "library keys in priority order (repeatable/comma list)", collect)
   .option("--card <ids>", "only use these card ids or names (repeatable/comma list)", collect)
   .option("-m, --media <types>", "media types in preference order: ebook,audiobook,magazine", collect)
@@ -117,10 +129,10 @@ program
     if (cfg.dryRun) deps.logger.info("Dry run: nothing will be borrowed or held.");
     const fmt = cfg.output.format;
     const results = await new Runner(cfg, deps).run(books, (r) => {
-      if (fmt === "ndjson") process.stdout.write(JSON.stringify(r) + "\n");
+      if (fmt === "ndjson") process.stdout.write(`${JSON.stringify(r)}\n`);
     });
-    if (fmt === "json") process.stdout.write(JSON.stringify(results, null, 2) + "\n");
-    if (fmt === "table") process.stdout.write(formatTable(results) + "\n");
+    if (fmt === "json") process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+    if (fmt === "table") process.stdout.write(`${formatTable(results)}\n`);
     deps.logger.info(summarize(results));
     if (cfg.output.reportFile) await writeReport(cfg.output.reportFile, results);
     if (results.some((r) => r.status === "error")) process.exitCode = 1;
@@ -157,7 +169,7 @@ program
     const { libby } = await createClients(cfg);
     const sync = await libby.sync();
     const cards = sync.cards ?? [];
-    if (o.json) return void process.stdout.write(JSON.stringify(cards, null, 2) + "\n");
+    if (o.json) return void process.stdout.write(`${JSON.stringify(cards, null, 2)}\n`);
     for (const c of cards) {
       const u = (k: "loan" | "hold") => `${c.counts?.[k] ?? "?"}/${c.limits?.[k] ?? "?"}`;
       process.stdout.write(`${c.cardId}\t${cardLabel(c)}\tloans ${u("loan")}\tholds ${u("hold")}\n`);
@@ -185,11 +197,11 @@ program
     for (const { card, match: m } of cands) {
       const md = m.media;
       process.stdout.write(
-        [
+        `${[
           `${cardLabel(card)}: ${md.title} — ${md.firstCreatorName ?? "?"} [${md.type?.id}] id=${md.id}`,
           `  score title=${m.titleScore.toFixed(2)} author=${m.authorScore?.toFixed(2) ?? "-"}${m.isbnMatch ? " isbn" : ""}`,
           `  available=${md.isAvailable ?? false} copies=${md.availableCopies ?? "?"}/${md.ownedCopies ?? "?"} holds=${md.holdsCount ?? "?"} wait≈${md.estimatedWaitDays ?? "?"}d`,
-        ].join("\n") + "\n",
+        ].join("\n")}\n`,
       );
     }
   });
@@ -202,7 +214,7 @@ program
   .action(async (o) => {
     const cfg = await buildConfig(o, {});
     const shown = { ...cfg, auth: { ...cfg.auth, ...(cfg.auth.identityToken && { identityToken: "***" }) } };
-    process.stdout.write(JSON.stringify(shown, null, 2) + "\n");
+    process.stdout.write(`${JSON.stringify(shown, null, 2)}\n`);
   });
 
 program
@@ -210,12 +222,12 @@ program
   .description("Print the config file JSON Schema (for editor autocompletion).")
   .action(() => {
     const schema = z.toJSONSchema(ConfigSchema, { io: "input", unrepresentable: "any" });
-    process.stdout.write(JSON.stringify(schema, null, 2) + "\n");
+    process.stdout.write(`${JSON.stringify(schema, null, 2)}\n`);
   });
 
 async function writeReport(path: string, results: BookResult[]) {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify({ generatedAt: new Date().toISOString(), results }, null, 2) + "\n");
+  await writeFile(path, `${JSON.stringify({ generatedAt: new Date().toISOString(), results }, null, 2)}\n`);
 }
 
 program.parseAsync(process.argv).catch((e: unknown) => {

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { bestMatch, normalizeName, normalizeTitle, toIsbn13 } from "../src/matcher.js";
 import { media } from "./fixtures.js";
 
-const opts = { minTitleScore: 0.85, minAuthorScore: 0.6, ignoreSubtitle: true, allowPreRelease: true, mediaTypes: ["ebook", "audiobook"] };
+const opts = {
+  minTitleScore: 0.85,
+  minAuthorScore: 0.6,
+  ignoreSubtitle: true,
+  allowPreRelease: true,
+  mediaTypes: ["ebook", "audiobook"],
+};
 
 describe("bestMatch", () => {
   it("matches title + author, ignoring case, articles and subtitles", () => {
@@ -19,10 +25,18 @@ describe("bestMatch", () => {
   });
 
   it("filters and ranks by media type preference", () => {
-    const items = [media({ id: "a", type: { id: "audiobook" } }), media({ id: "e" }), media({ id: "m", type: { id: "magazine" } })];
+    const items = [
+      media({ id: "a", type: { id: "audiobook" } }),
+      media({ id: "e" }),
+      media({ id: "m", type: { id: "magazine" } }),
+    ];
     expect(bestMatch({ raw: "", title: "Project Hail Mary" }, items, opts)?.media.id).toBe("e");
-    expect(bestMatch({ raw: "", title: "Project Hail Mary", mediaTypes: ["audiobook"] }, items, opts)?.media.id).toBe("a");
-    expect(bestMatch({ raw: "", title: "Project Hail Mary", mediaTypes: ["magazine"] }, items.slice(0, 2), opts)).toBeUndefined();
+    expect(bestMatch({ raw: "", title: "Project Hail Mary", mediaTypes: ["audiobook"] }, items, opts)?.media.id).toBe(
+      "a",
+    );
+    expect(
+      bestMatch({ raw: "", title: "Project Hail Mary", mediaTypes: ["magazine"] }, items.slice(0, 2), opts),
+    ).toBeUndefined();
   });
 
   it("ISBN match wins regardless of title score; ISBN-10 matches ISBN-13", () => {
@@ -37,7 +51,9 @@ describe("bestMatch", () => {
 
   it("can exclude pre-release titles", () => {
     const m = media({ isPreReleaseTitle: true });
-    expect(bestMatch({ raw: "", title: "Project Hail Mary" }, [m], { ...opts, allowPreRelease: false })).toBeUndefined();
+    expect(
+      bestMatch({ raw: "", title: "Project Hail Mary" }, [m], { ...opts, allowPreRelease: false }),
+    ).toBeUndefined();
   });
 });
 

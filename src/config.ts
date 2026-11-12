@@ -45,7 +45,9 @@ export const ConfigSchema = z
     borrow: z
       .object({
         /** "preference" = card's saved preference; "max" = longest offered; or a fixed day count. */
-        lendingPeriod: z.union([z.literal("preference"), z.literal("max"), z.number().int().positive()]).default("preference"),
+        lendingPeriod: z
+          .union([z.literal("preference"), z.literal("max"), z.number().int().positive()])
+          .default("preference"),
         /** Allow borrowing Lucky Day / Skip-the-line copies. */
         luckyDay: z.boolean().default(true),
         /** Stop borrowing after this many loans in one run. */
@@ -67,11 +69,7 @@ export const ConfigSchema = z
         /** Skip the hold if more than this many people are waiting. */
         maxHoldsCount: z.number().int().nonnegative().optional(),
         /** After placing, suspend ("deliver later") for N days (0-30, 60, 90). */
-        suspendDays: z
-          .number()
-          .int()
-          .refine(isValidSuspendDays, "must be 0-30, 60 or 90")
-          .default(0),
+        suspendDays: z.number().int().refine(isValidSuspendDays, "must be 0-30, 60 or 90").default(0),
         /** Notification email Libby stores on the hold. */
         emailAddress: z.string().optional(),
         /** Stop placing holds after this many in one run. */

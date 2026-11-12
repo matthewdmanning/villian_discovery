@@ -38,9 +38,7 @@ export function bestMatch(book: BookRequest, items: ThunderMedia[], o: MatchOpti
 
 export function scoreMatch(book: BookRequest, media: ThunderMedia, o: MatchOptions): Match | undefined {
   if (book.titleId) {
-    return media.id === book.titleId
-      ? { media, titleScore: 1, authorScore: undefined, isbnMatch: false }
-      : undefined;
+    return media.id === book.titleId ? { media, titleScore: 1, authorScore: undefined, isbnMatch: false } : undefined;
   }
   const isbnMatch = book.isbn ? mediaHasIsbn(media, book.isbn) : false;
   if (book.isbn && !book.title) {
@@ -62,9 +60,7 @@ export function titleSimilarity(wanted: string, media: ThunderMedia, ignoreSubti
 }
 
 export function authorSimilarity(wanted: string, media: ThunderMedia): number {
-  const names = [media.firstCreatorName, ...(media.creators ?? []).map((c) => c.name)].filter(
-    (n): n is string => !!n,
-  );
+  const names = [media.firstCreatorName, ...(media.creators ?? []).map((c) => c.name)].filter((n): n is string => !!n);
   if (!names.length) return 0;
   const w = normalizeName(wanted);
   return Math.max(...names.map((n) => dice(w, normalizeName(n))));
@@ -85,7 +81,7 @@ export function mediaHasIsbn(media: ThunderMedia, isbn: string): boolean {
 export function toIsbn13(isbn: string): string | undefined {
   if (/^\d{13}$/.test(isbn)) return isbn;
   if (!/^\d{9}[\dX]$/.test(isbn)) return undefined;
-  const core = "978" + isbn.slice(0, 9);
+  const core = `978${isbn.slice(0, 9)}`;
   const sum = [...core].reduce((s, d, i) => s + Number(d) * (i % 2 ? 3 : 1), 0);
   return core + ((10 - (sum % 10)) % 10);
 }
@@ -95,7 +91,10 @@ const ARTICLES = /^(the|a|an)\s+/;
 export function normalizeTitle(s: string, ignoreSubtitle: boolean): string {
   let t = fold(s);
   if (ignoreSubtitle) t = t.split(/[:(]/)[0] ?? t;
-  t = t.replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  t = t
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return t.replace(ARTICLES, "");
 }
 

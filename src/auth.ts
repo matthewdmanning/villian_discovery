@@ -9,7 +9,10 @@ interface TokenFile {
 }
 
 /** Token from config/env first, then the token file. */
-export async function resolveIdentityToken(auth: { identityToken?: string | undefined; tokenFile: string }): Promise<string> {
+export async function resolveIdentityToken(auth: {
+  identityToken?: string | undefined;
+  tokenFile: string;
+}): Promise<string> {
   if (auth.identityToken) return auth.identityToken;
   const saved = await readTokenFile(auth.tokenFile);
   if (saved) return saved;
@@ -37,7 +40,7 @@ export async function readTokenFile(path: string): Promise<string | undefined> {
 export async function writeTokenFile(path: string, identity: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const body: TokenFile = { identity, savedAt: new Date().toISOString() };
-  await writeFile(path, JSON.stringify(body, null, 2) + "\n", { mode: 0o600 });
+  await writeFile(path, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
   await chmod(path, 0o600);
 }
 

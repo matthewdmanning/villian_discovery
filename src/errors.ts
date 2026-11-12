@@ -40,8 +40,7 @@ export function describeErrorBody(body: unknown): { message?: string; errorCode?
   if (!body || typeof body !== "object") return {};
   const b = body as Record<string, unknown>;
   const upstream = (b.upstream ?? {}) as Record<string, unknown>;
-  const message =
-    str(upstream.userExplanation) ?? str(b.message) ?? str(b.error) ?? str(b.result);
+  const message = str(upstream.userExplanation) ?? str(b.message) ?? str(b.error) ?? str(b.result);
   const errorCode = str(upstream.errorCode) ?? str(b.errorCode);
   return { ...(message ? { message } : {}), ...(errorCode ? { errorCode } : {}) };
 }

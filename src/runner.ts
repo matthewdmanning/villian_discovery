@@ -5,7 +5,7 @@ import type { BookRequest } from "./input.js";
 import type { LibbyClient } from "./libby-client.js";
 import type { Logger } from "./logger.js";
 import { bestMatch } from "./matcher.js";
-import { type Candidate, type Plan, type RunState, planBook } from "./planner.js";
+import { type Candidate, type Plan, planBook, type RunState } from "./planner.js";
 import type { ThunderClient } from "./thunder-client.js";
 import type { LibbyCard, SyncResponse, ThunderMedia } from "./types.js";
 import { stripUndefined } from "./util.js";
@@ -130,7 +130,11 @@ export class Runner {
         let message: string | undefined;
         if (this.cfg.hold.suspendDays > 0) {
           try {
-            await this.deps.libby.suspendHold({ cardId: t.card.cardId, titleId: t.media.id, days: this.cfg.hold.suspendDays });
+            await this.deps.libby.suspendHold({
+              cardId: t.card.cardId,
+              titleId: t.media.id,
+              days: this.cfg.hold.suspendDays,
+            });
             message = `suspended ${this.cfg.hold.suspendDays} days`;
           } catch (e) {
             message = `hold placed; suspend failed: ${(e as Error).message}`;
@@ -183,9 +187,7 @@ export function selectCards(all: LibbyCard[], cfg: Pick<Config, "cards" | "libra
       .sort((a, b) => order.indexOf(a.advantageKey.toLowerCase()) - order.indexOf(b.advantageKey.toLowerCase()));
   }
   if (!cards.length) {
-    throw new ConfigError(
-      `No cards match the configured cards/libraries. Available: ${all.map(cardLabel).join(", ")}`,
-    );
+    throw new ConfigError(`No cards match the configured cards/libraries. Available: ${all.map(cardLabel).join(", ")}`);
   }
   return cards;
 }

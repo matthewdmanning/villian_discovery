@@ -31,7 +31,10 @@ describe("parseBooks", () => {
   it("json accepts strings, objects and {books}", () => {
     const books = parseBooks(
       JSON.stringify({
-        books: ["Dune", { title: "Emma", author: "Jane Austen", format: "audiobook", action: "hold", libraries: "lib2" }],
+        books: [
+          "Dune",
+          { title: "Emma", author: "Jane Austen", format: "audiobook", action: "hold", libraries: "lib2" },
+        ],
       }),
       "json",
     );

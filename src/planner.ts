@@ -86,7 +86,8 @@ export function planBook(book: BookRequest, candidates: Candidate[], state: RunS
   }
   const acceptable = withinLimits.filter(({ match: { media } }) => {
     const { maxEstimatedWaitDays: maxWait, maxHoldsCount: maxHolds } = cfg.hold;
-    if (maxWait !== undefined && media.estimatedWaitDays !== undefined && media.estimatedWaitDays > maxWait) return false;
+    if (maxWait !== undefined && media.estimatedWaitDays !== undefined && media.estimatedWaitDays > maxWait)
+      return false;
     if (maxHolds !== undefined && media.holdsCount !== undefined && media.holdsCount > maxHolds) return false;
     return true;
   });
@@ -107,9 +108,7 @@ export function planBook(book: BookRequest, candidates: Candidate[], state: RunS
       break;
     }
     case "best":
-      chosen = [
-        acceptable.reduce((a, b) => (waitOf(b.match.media) < waitOf(a.match.media) ? b : a)),
-      ];
+      chosen = [acceptable.reduce((a, b) => (waitOf(b.match.media) < waitOf(a.match.media) ? b : a))];
       break;
   }
   return { kind: "hold", targets: chosen.map((c) => ({ card: c.card, media: c.match.media })) };
@@ -132,7 +131,12 @@ function onePerLibrary(cands: Candidate[]): Candidate[] {
   return cands.filter((c) => !seen.has(c.card.advantageKey) && seen.add(c.card.advantageKey));
 }
 
-export function canUse(card: LibbyCard, kind: "loan" | "hold", state: RunState, cfg: Pick<Config, "respectCardLimits">): boolean {
+export function canUse(
+  card: LibbyCard,
+  kind: "loan" | "hold",
+  state: RunState,
+  cfg: Pick<Config, "respectCardLimits">,
+): boolean {
   if (!cfg.respectCardLimits) return true;
   const limit = card.limits?.[kind];
   if (limit === undefined) return true;
@@ -146,7 +150,10 @@ const FALLBACK_LENDING_DAYS = 21;
 export function lendingDays(card: LibbyCard, mediaType: string, pref: Config["borrow"]["lendingPeriod"]): number {
   const key = mediaType === "ebook" ? "book" : mediaType;
   const lp = card.lendingPeriods?.[key];
-  const options = (lp?.options ?? []).map((o) => o[0]).filter((n) => n > 0).sort((a, b) => a - b);
+  const options = (lp?.options ?? [])
+    .map((o) => o[0])
+    .filter((n) => n > 0)
+    .sort((a, b) => a - b);
   if (pref === "preference") return lp?.preference?.[0] || options.at(-1) || FALLBACK_LENDING_DAYS;
   if (pref === "max") return options.at(-1) ?? FALLBACK_LENDING_DAYS;
   if (!options.length) return pref;

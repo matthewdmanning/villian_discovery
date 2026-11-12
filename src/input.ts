@@ -23,8 +23,7 @@ export interface BookRequest {
 
 export type InputFormat = "json" | "csv" | "tsv" | "text";
 
-const listOf = <T extends z.ZodType>(item: T) =>
-  z.union([item.transform((v) => [v]), z.array(item)]);
+const listOf = <T extends z.ZodType>(item: T) => z.union([item.transform((v) => [v]), z.array(item)]);
 
 const BookObjectSchema = z
   .object({
@@ -119,8 +118,7 @@ function parseDelimited(text: string, delimiter: string): BookRequest[] {
   let rows: Record<string, string>[];
   try {
     rows = parseCsv(text, {
-      columns: (header: string[]) =>
-        header.map((h) => COLUMN_ALIASES[h.toLowerCase().replace(/[^a-z0-9]/g, "")] ?? h),
+      columns: (header: string[]) => header.map((h) => COLUMN_ALIASES[h.toLowerCase().replace(/[^a-z0-9]/g, "")] ?? h),
       delimiter,
       skip_empty_lines: true,
       trim: true,
@@ -133,7 +131,11 @@ function parseDelimited(text: string, delimiter: string): BookRequest[] {
     const obj: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(row)) {
       if (!v) continue;
-      if (k === "mediaTypes" || k === "libraries") obj[k] = v.split(/[;|]/).map((s) => s.trim()).filter(Boolean);
+      if (k === "mediaTypes" || k === "libraries")
+        obj[k] = v
+          .split(/[;|]/)
+          .map((s) => s.trim())
+          .filter(Boolean);
       else obj[k] = v;
     }
     const r = BookObjectSchema.safeParse(obj);
@@ -173,10 +175,7 @@ export function parseBookLine(line: string): BookRequest {
   if (bareIsbn) return { raw, isbn: bareIsbn };
 
   const parts =
-    splitOnce(raw, /\t/) ??
-    splitOnce(raw, /\s+[|—–]\s+/) ??
-    splitOnce(raw, /\s+-\s+/) ??
-    splitLast(raw, /\s+by\s+/i);
+    splitOnce(raw, /\t/) ?? splitOnce(raw, /\s+[|—–]\s+/) ?? splitOnce(raw, /\s+-\s+/) ?? splitLast(raw, /\s+by\s+/i);
   if (parts) return stripUndefined({ raw, title: parts[0], author: parts[1] });
   return { raw, title: raw };
 }
@@ -196,7 +195,7 @@ function splitOnce(s: string, re: RegExp): [string, string] | undefined {
 }
 
 function splitLast(s: string, re: RegExp): [string, string] | undefined {
-  const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+  const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
   let last: RegExpExecArray | undefined;
   for (const m of s.matchAll(g)) last = m as RegExpExecArray;
   if (!last) return undefined;

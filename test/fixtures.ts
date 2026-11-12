@@ -7,7 +7,16 @@ export function card(over: Partial<LibbyCard> = {}): LibbyCard {
     advantageKey: "lib1",
     limits: { loan: 10, hold: 10 },
     counts: { loan: 0, hold: 0 },
-    lendingPeriods: { book: { options: [[7, "days"], [14, "days"], [21, "days"]], preference: [14, "days"] } },
+    lendingPeriods: {
+      book: {
+        options: [
+          [7, "days"],
+          [14, "days"],
+          [21, "days"],
+        ],
+        preference: [14, "days"],
+      },
+    },
     ...over,
   };
 }

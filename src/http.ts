@@ -1,4 +1,4 @@
-import { HttpError, LibbyError, describeErrorBody } from "./errors.js";
+import { describeErrorBody, HttpError, LibbyError } from "./errors.js";
 import type { Logger } from "./logger.js";
 
 export interface HttpOptions {

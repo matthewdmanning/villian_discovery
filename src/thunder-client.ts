@@ -23,23 +23,20 @@ export class ThunderClient {
   }
 
   async searchLibrary(libraryKey: string, s: LibrarySearch): Promise<ThunderMedia[]> {
-    const res = await this.http.request<ThunderSearchResponse>(
-      `libraries/${encodeURIComponent(libraryKey)}/media`,
-      {
-        query: {
-          "x-client-id": "dewey",
-          page: 1,
-          perPage: s.perPage ?? 24,
-          sortBy: "relevance",
-          query: s.query,
-          title: s.title,
-          creator: s.creator,
-          identifier: s.identifier,
-          mediaTypes: s.mediaTypes?.length ? s.mediaTypes.join(",") : undefined,
-          showOnlyAvailable: s.showOnlyAvailable ? "true" : undefined,
-        },
+    const res = await this.http.request<ThunderSearchResponse>(`libraries/${encodeURIComponent(libraryKey)}/media`, {
+      query: {
+        "x-client-id": "dewey",
+        page: 1,
+        perPage: s.perPage ?? 24,
+        sortBy: "relevance",
+        query: s.query,
+        title: s.title,
+        creator: s.creator,
+        identifier: s.identifier,
+        mediaTypes: s.mediaTypes?.length ? s.mediaTypes.join(",") : undefined,
+        showOnlyAvailable: s.showOnlyAvailable ? "true" : undefined,
       },
-    );
+    });
     return res.items ?? [];
   }
 
