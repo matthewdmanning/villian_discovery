@@ -1,0 +1,8 @@
+{
+  "books": [
+    "Project Hail Mary by Andy Weir",
+    { "title": "Piranesi", "author": "Susanna Clarke", "format": ["audiobook", "ebook"] },
+    { "isbn": "978-0-441-01359-3", "action": "borrow", "libraries": ["lapl"] },
+    { "titleId": "5054011", "action": "hold" }
+  ]
+}

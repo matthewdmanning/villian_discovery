@@ -1,0 +1,8 @@
+# One book per line. Blank lines and # comments are ignored.
+Project Hail Mary by Andy Weir
+The Left Hand of Darkness - Ursula K. Le Guin
+Piranesi | Susanna Clarke
+isbn:9780593135204
+id:5054011
+https://share.libbyapp.com/title/5054011
+Dune
