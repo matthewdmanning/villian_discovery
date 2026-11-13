@@ -27,9 +27,10 @@ export interface FableList {
   name: string;
 }
 interface Page<T> {
-  count: number;
+  next: string | null;
   results: T[];
 }
+type Query = Record<string, string | number>;
 
 /** One fable book as a libby-shelf book entry; empty fields are omitted. */
 export function toBookEntry(book: FableBook) {
@@ -58,16 +59,19 @@ export function listFileNames(lists: FableList[]): Map<string, string> {
 }
 
 /**
- * All results of a DRF-paginated endpoint, paged by `offset`.
- * fable.co's `next` links point at api.fable.co, which needs a token, so they are not followed.
+ * All results of a DRF-paginated endpoint: follows `next` until null.
+ * fable.co's `next` links point at api.fable.co, which needs a token, so only their
+ * query (`limit`, `offset`, …) is taken and sent back to the same fable.co path.
  */
-export async function fetchAllPages<T>(get: (offset: number) => Promise<Page<T>>): Promise<T[]> {
+export async function fetchAllPages<T>(first: Query, get: (query: Query) => Promise<Page<T>>): Promise<T[]> {
   const all: T[] = [];
-  for (;;) {
-    const page = await get(all.length);
+  for (let query: Query | undefined = first; query; ) {
+    const page: Page<T> = await get(query);
     all.push(...page.results);
-    if (!page.results.length || all.length >= page.count) return all;
+    // An empty page ends the loop too, so a bad `next` cannot loop forever.
+    query = page.next && page.results.length ? Object.fromEntries(new URL(page.next).searchParams) : undefined;
   }
+  return all;
 }
 
 export interface ExportOptions {
@@ -84,15 +88,21 @@ export async function exportLists(opts: ExportOptions): Promise<number> {
     closed = true;
   });
   try {
-    const getJson = async <T>(path: string, query: Record<string, string | number>): Promise<T> => {
+    const getJson = async <T>(path: string, query: Query): Promise<T> => {
       const url = new URL(path, SITE);
       for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));
-      const res = await context.request.get(url.href);
+      // Playwright's error text includes the request's cookie header: drop it and keep no cause.
+      const res = await context.request.get(url.href).catch(() => {
+        throw new Error(
+          closed ? "The browser window was closed before the export finished." : `Request failed: ${url.pathname}`,
+        );
+      });
       if (!res.ok()) throw new HttpStatusError(res.status(), url.pathname);
       return (await res.json()) as T;
     };
-    const listsPage = (offset: number) =>
-      getJson<Page<FableList>>("/api/me/book-lists", { media_type: "", limit: PAGE_SIZE, offset });
+    const firstPage = { limit: PAGE_SIZE, offset: 0 };
+    const listsFirstPage = { ...firstPage, media_type: "" };
+    const listsPage = (query: Query) => getJson<Page<FableList>>("/api/me/book-lists", query);
 
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(LIBRARY_URL).catch(() => {});
@@ -101,7 +111,7 @@ export async function exportLists(opts: ExportOptions): Promise<number> {
     // The lists endpoint answers 401/403 until the user logs in.
     for (;;) {
       if (closed) throw new Error("The browser window was closed before the export finished.");
-      const status = await listsPage(0).then(
+      const status = await listsPage(listsFirstPage).then(
         () => 200,
         (e: unknown) => (e instanceof HttpStatusError && [401, 403].includes(e.status) ? e.status : Promise.reject(e)),
       );
@@ -114,14 +124,12 @@ export async function exportLists(opts: ExportOptions): Promise<number> {
       await sleep(3_000);
     }
 
-    const lists = await fetchAllPages(listsPage);
+    const lists = await fetchAllPages(listsFirstPage, listsPage);
     const names = listFileNames(lists);
     await mkdir(opts.outDir, { recursive: true });
     for (const list of lists) {
       const path = `/api/lists/${encodeURIComponent(list.id)}/books`;
-      const entries = await fetchAllPages((offset) =>
-        getJson<Page<{ book?: FableBook }>>(path, { limit: PAGE_SIZE, offset }),
-      );
+      const entries = await fetchAllPages(firstPage, (query) => getJson<Page<{ book?: FableBook }>>(path, query));
       const books = entries.flatMap((e) => (e.book ? [toBookEntry(e.book)] : [])).filter((b) => b.title || b.isbn);
       const file = join(opts.outDir, names.get(list.id)!);
       await writeFile(file, `${JSON.stringify({ books }, null, 2)}\n`);

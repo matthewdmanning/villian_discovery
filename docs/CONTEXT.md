@@ -15,6 +15,9 @@ Agent context: specs, configs, preferences and rules for this repo.
 ## fable.co API discovery
 
 - fable.co API calls require login. There is no workaround. This is not a blocker.
-- Discover the API only from a HAR file that the user records while logged in. Use `site-check discover` (`src/discovery/har.ts`).
+- Use only the user's own logged-in browser session. The user logs in. The tool never logs in for the user. Three commands are allowed:
+  - `site-check discover` (`src/discovery/har.ts`): infers the API from a HAR file that the user records.
+  - `site-check capture` (`src/discovery/capture.ts`): opens the saved browser profile, waits for a login, and follows links. It sends GET requests only. It never clicks buttons or sends forms.
+  - `site-check export-lists` (`src/discovery/export-lists.ts`): reads the user's lists through the cookie-authenticated `fable.co/api` endpoints that the Library page uses.
 - Do not build crawlers or probes that run without login. Do not look for login workarounds.
 - Usage and output format: [fable-discovery.md](fable-discovery.md).

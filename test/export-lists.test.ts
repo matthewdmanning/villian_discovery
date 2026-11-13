@@ -34,18 +34,30 @@ it("listFileNames sanitizes names and adds the id on collision", () => {
   ]);
 });
 
-it("fetchAllPages pages by offset until count is reached", async () => {
+it("fetchAllPages follows the query of each next link until next is null", async () => {
   const items = [1, 2, 3, 4, 5];
-  const offsets: number[] = [];
-  const all = await fetchAllPages(async (offset) => {
-    offsets.push(offset);
-    return { count: items.length, results: items.slice(offset, offset + 2) };
+  const queries: unknown[] = [];
+  const all = await fetchAllPages({ limit: 2, offset: 0 }, async (query) => {
+    queries.push(query);
+    const offset = Number(query.offset);
+    const end = offset + Number(query.limit);
+    const next = end < items.length ? `https://api.example/x/?limit=2&offset=${end}` : null;
+    return { next, results: items.slice(offset, end) };
   });
   expect(all).toEqual(items);
-  expect(offsets).toEqual([0, 2, 4]);
+  expect(queries).toEqual([
+    { limit: 2, offset: 0 },
+    { limit: "2", offset: "2" },
+    { limit: "2", offset: "4" },
+  ]);
 });
 
-it("fetchAllPages stops on an empty page even if count is too high", async () => {
-  const all = await fetchAllPages(async (offset) => ({ count: 99, results: offset ? [] : [1] }));
+it("fetchAllPages stops on an empty page even if next is set", async () => {
+  let calls = 0;
+  const all = await fetchAllPages({ offset: 0 }, async () => {
+    calls++;
+    return { next: "https://api.example/x/?offset=1", results: calls === 1 ? [1] : [] };
+  });
   expect(all).toEqual([1]);
+  expect(calls).toBe(2);
 });
