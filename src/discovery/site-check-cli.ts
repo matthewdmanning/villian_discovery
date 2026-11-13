@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import { z } from "zod";
+import { discoverApi, loadHar } from "./har.js";
 import { formatResults, loadSiteTestConfig, runSiteChecks, SiteTestConfigSchema } from "./site-check.js";
 
 const DEFAULT_CONFIG = "site-tests.json";
@@ -25,6 +27,20 @@ program
     const results = await runSiteChecks(config, { baseDir, ...(opts.only ? { only: opts.only } : {}) });
     process.stdout.write(`${opts.output === "json" ? JSON.stringify(results, null, 2) : formatResults(results)}\n`);
     if (results.some((r) => !r.ok)) process.exitCode = 1;
+  });
+
+program
+  .command("discover")
+  .description("infer an OpenAPI document from a browser HAR capture (the HAR holds secrets; never commit it)")
+  .argument("<har>", "HAR file (DevTools → Network → Save all as HAR)")
+  .option("--host <hosts...>", "keep only these hosts and their subdomains", ["fable.co"])
+  .option("--all-hosts", "keep every host")
+  .option("--out <file>", "write to this file instead of stdout")
+  .action(async (har: string, opts: { host: string[]; allHosts?: boolean; out?: string }) => {
+    const doc = discoverApi(await loadHar(har), { hosts: opts.allHosts ? [] : opts.host });
+    const text = `${JSON.stringify(doc, null, 2)}\n`;
+    if (opts.out) await writeFile(opts.out, text);
+    else process.stdout.write(text);
   });
 
 program

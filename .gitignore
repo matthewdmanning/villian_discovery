@@ -44,3 +44,6 @@ coverage/
 *.identity.json
 /libby.config.json
 /reports/
+
+# Browser captures hold cookies and tokens
+*.har
