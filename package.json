@@ -9,7 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "node dist/cli.js",
-    "prepare": "npm run build",
+    "prepare": "husky && npm run build",
     "lint": "biome lint .",
     "format": "biome format --write .",
     "format:check": "biome format .",
@@ -38,6 +38,7 @@
     "@commitlint/cli": "21.2.4",
     "@commitlint/config-conventional": "21.2.4",
     "@types/node": "^26.6.0",
+    "husky": "9.1.7",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   },

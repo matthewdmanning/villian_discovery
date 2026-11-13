@@ -4,9 +4,11 @@
 
 ```sh
 nvm use                                  # Node from .nvmrc
-npm ci
+npm ci                                   # also installs the husky git hooks
 git config commit.template .gitmessage   # commit message template
 ```
+
+Install [gitleaks](https://github.com/gitleaks/gitleaks#installing). The pre-commit hook runs it on staged changes.
 
 ## Workflow
 
