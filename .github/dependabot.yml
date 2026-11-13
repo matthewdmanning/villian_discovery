@@ -17,7 +17,7 @@ updates:
         dependency-type: production
         update-types: [minor, patch]
     cooldown:
-      default-days: 7
+      default-days: 14
 
   - package-ecosystem: github-actions
     directory: /
@@ -30,4 +30,4 @@ updates:
       actions:
         patterns: ["*"]
     cooldown:
-      default-days: 7
+      default-days: 14

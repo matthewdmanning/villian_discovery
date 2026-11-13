@@ -6,7 +6,7 @@ TypeScript CLI + library. Input: book list. Output: Libby loans or holds, per co
 
 ## Requirements
 
-Node ≥ 22.12.
+Node ^26.6 (see `.nvmrc`).
 
 ## Install
 

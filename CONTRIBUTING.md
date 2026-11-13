@@ -40,11 +40,11 @@ Biome, not ESLint: typescript-eslint supports TypeScript `<6.1`; this repo uses 
 
 | Workflow      | Runs                         | Jobs                                                                                         |
 | ------------- | ---------------------------- | -------------------------------------------------------------------------------------------- |
-| `ci.yml`      | PR, push `main`, merge queue | Biome + typecheck · tests Node 22/24 + build + CLI smoke · PR title lint · dependency review |
+| `ci.yml`      | PR, push `main`, merge queue | Biome + typecheck · tests Node 26 + build + CLI smoke · PR title lint · dependency review |
 | `codeql.yml`  | PR, push `main`, weekly      | CodeQL JS/TS + Actions                                                                       |
 | `secrets.yml` | PR, push `main`, weekly      | TruffleHog                                                                                   |
 
-Recommended branch protection for `main`: require PR, require status checks (`Format & lint`, `Test (Node 22)`, `Test (Node 24)`, `PR title (Conventional Commits)`, `Dependency review`, `Analyze (javascript-typescript)`, `Analyze (actions)`, `TruffleHog`), squash merge only.
+Recommended branch protection for `main`: require PR, require status checks (`Format & lint`, `Test (Node 26)`, `PR title (Conventional Commits)`, `Dependency review`, `Analyze (javascript-typescript)`, `Analyze (actions)`, `TruffleHog`), squash merge only.
 
 ## Secrets
 
