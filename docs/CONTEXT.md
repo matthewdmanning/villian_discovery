@@ -8,6 +8,10 @@ Agent context: specs, configs, preferences and rules for this repo.
 - Store agent information and directions in this file.
 - Keep `README.md` files for users only. Never store agent information or directions in them.
 
+## Git
+
+- Never create git worktrees. To work on another branch, stash or commit the current changes, then switch branches in the one checkout.
+
 ## fable.co API discovery
 
 - fable.co API calls require login. There is no workaround. This is not a blocker.
