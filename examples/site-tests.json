@@ -1,0 +1,25 @@
+{
+  "defaults": {
+    "timeoutMs": 10000,
+    "expectStatus": ["200-399"],
+    "headers": { "user-agent": "site-check/0.1" }
+  },
+  "concurrency": 4,
+  "sites": [
+    { "name": "fable-home", "url": "https://fable.co/", "expectContentType": "text/html", "tags": ["fable"] },
+    { "name": "example", "url": "https://example.com/", "expectBodyIncludes": ["Example Domain"], "tags": ["smoke"] },
+    {
+      "name": "json-endpoint",
+      "url": "https://httpbin.org/json",
+      "expectContentType": "application/json",
+      "expectSchema": {
+        "type": "object",
+        "properties": { "slideshow": { "type": "object" } },
+        "required": ["slideshow"]
+      },
+      "maxDurationMs": 5000,
+      "tags": ["smoke", "json"]
+    },
+    { "name": "disabled", "url": "https://www.mozilla.org/", "skip": true }
+  ]
+}
