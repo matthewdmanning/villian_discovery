@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp, open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -23,7 +23,7 @@ function setup(routes: Parameters<typeof fakeFetch>[0], cfgOver = {}) {
 
 const syncRoute = (over: object = {}) => ({
   method: "GET",
-  match: /sentry-read\.svc\.overdrive\.com\/chip\/sync/,
+  match: /^https:\/\/sentry-read\.svc\.overdrive\.com\/chip\/sync$/,
   respond: () => ({
     body: {
       result: "synchronized",
@@ -162,8 +162,13 @@ describe("auth", () => {
     const p = join(dir, "sub", "identity.json");
     await writeTokenFile(p, "abc");
     expect(await readTokenFile(p)).toBe("abc");
-    expect((await stat(p)).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(await readFile(p, "utf8")).identity).toBe("abc");
+    const fh = await open(p, "r");
+    try {
+      expect((await fh.stat()).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(await fh.readFile("utf8")).identity).toBe("abc");
+    } finally {
+      await fh.close();
+    }
   });
 });
 

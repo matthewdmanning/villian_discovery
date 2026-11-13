@@ -150,8 +150,6 @@ function parseDelimited(text: string, delimiter: string): BookRequest[] {
   });
 }
 
-const TITLE_ID_URL = /(?:libbyapp\.com\/.*?\/|share\.libbyapp\.com\/title\/|overdrive\.com\/media\/)(\d+)\b/i;
-
 /**
  * Parses one free-text line. Accepted forms:
  * `isbn:9780593135204`, `9780593135204`, `id:5054011`, a Libby/OverDrive URL,
@@ -159,49 +157,75 @@ const TITLE_ID_URL = /(?:libbyapp\.com\/.*?\/|share\.libbyapp\.com\/title\/|over
  */
 export function parseBookLine(line: string): BookRequest {
   const raw = line.trim();
-  const prefixed = /^(isbn|id|titleid|overdrive)\s*:\s*(.+)$/i.exec(raw);
+  const prefixed = PREFIX.exec(raw);
   if (prefixed) {
-    const [, kind = "", value = ""] = prefixed;
-    if (kind.toLowerCase() === "isbn") {
+    const kind = (prefixed[1] ?? "").toLowerCase();
+    const value = raw.slice(prefixed[0].length).trim();
+    if (!value) throw new InputError(`Missing value after "${kind}:"`);
+    if (kind === "isbn") {
       const isbn = normalizeIsbn(value);
       if (!isbn) throw new InputError(`Invalid ISBN: ${value}`);
       return { raw, isbn };
     }
-    return { raw, titleId: value.trim() };
+    return { raw, titleId: value };
   }
-  const url = TITLE_ID_URL.exec(raw);
-  if (url?.[1]) return { raw, titleId: url[1] };
+  const urlId = titleIdFromUrl(raw);
+  if (urlId) return { raw, titleId: urlId };
   const bareIsbn = normalizeIsbn(raw);
   if (bareIsbn) return { raw, isbn: bareIsbn };
 
-  const parts =
-    splitOnce(raw, /\t/) ?? splitOnce(raw, /\s+[|—–]\s+/) ?? splitOnce(raw, /\s+-\s+/) ?? splitLast(raw, /\s+by\s+/i);
-  if (parts) return stripUndefined({ raw, title: parts[0], author: parts[1] });
+  const parts = splitTitleAuthor(raw);
+  if (parts) return { raw, title: parts[0], author: parts[1] };
   return { raw, title: raw };
+}
+
+// Regex-free parsing below: lines are untrusted input, so avoid backtracking patterns.
+const PREFIX = /^(isbn|id|titleid|overdrive)\s*:/i;
+
+/** Title id from a Libby or OverDrive title URL, e.g. share.libbyapp.com/title/123. */
+export function titleIdFromUrl(s: string): string | undefined {
+  if (!/^https?:\/\//i.test(s)) return undefined;
+  let url: URL;
+  try {
+    url = new URL(s);
+  } catch {
+    return undefined;
+  }
+  const host = url.hostname.toLowerCase();
+  const known = ["libbyapp.com", "overdrive.com"].some((d) => host === d || host.endsWith(`.${d}`));
+  if (!known) return undefined;
+  return url.pathname
+    .split("/")
+    .reverse()
+    .find((seg) => /^\d+$/.test(seg));
+}
+
+/** Splits on TAB, then " | " / " — " / " – ", then " - ", then the last " by ". */
+function splitTitleAuthor(raw: string): [string, string] | undefined {
+  const tab = raw.indexOf("\t");
+  if (tab >= 0) return pair(raw.slice(0, tab), raw.slice(tab + 1));
+  const s = raw.replace(/\s+/g, " ");
+  for (const seps of [[" | ", " — ", " – "], [" - "]]) {
+    const hits = seps.map((sep) => [s.indexOf(sep), sep.length] as const).filter(([i]) => i >= 0);
+    if (!hits.length) continue;
+    const [i, len] = hits.reduce((a, b) => (b[0] < a[0] ? b : a));
+    const p = pair(s.slice(0, i), s.slice(i + len));
+    if (p) return p;
+  }
+  const by = s.toLowerCase().lastIndexOf(" by ");
+  return by >= 0 ? pair(s.slice(0, by), s.slice(by + 4)) : undefined;
+}
+
+function pair(a: string, b: string): [string, string] | undefined {
+  const x = a.trim();
+  const y = b.trim();
+  return x && y ? [x, y] : undefined;
 }
 
 /** Returns a digits-only ISBN-10/13 (X allowed last) or undefined. */
 export function normalizeIsbn(s: string): string | undefined {
   const v = s.replace(/[\s-]/g, "").toUpperCase();
   return /^(\d{13}|\d{9}[\dX])$/.test(v) ? v : undefined;
-}
-
-function splitOnce(s: string, re: RegExp): [string, string] | undefined {
-  const m = re.exec(s);
-  if (!m) return undefined;
-  const a = s.slice(0, m.index).trim();
-  const b = s.slice(m.index + m[0].length).trim();
-  return a && b ? [a, b] : undefined;
-}
-
-function splitLast(s: string, re: RegExp): [string, string] | undefined {
-  const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
-  let last: RegExpExecArray | undefined;
-  for (const m of s.matchAll(g)) last = m as RegExpExecArray;
-  if (!last) return undefined;
-  const a = s.slice(0, last.index).trim();
-  const b = s.slice(last.index + last[0].length).trim();
-  return a && b ? [a, b] : undefined;
 }
 
 async function readStdin(): Promise<string> {

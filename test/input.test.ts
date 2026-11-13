@@ -57,3 +57,30 @@ it("normalizeIsbn", () => {
   expect(normalizeIsbn("0-8044-2957-x")).toBe("080442957X");
   expect(normalizeIsbn("12345")).toBeUndefined();
 });
+
+describe("hardening", () => {
+  it("ignores URLs on unknown hosts", () => {
+    expect(parseBookLine("https://evil.example/libbyapp.com/title/123")).toEqual({
+      raw: "https://evil.example/libbyapp.com/title/123",
+      title: "https://evil.example/libbyapp.com/title/123",
+    });
+  });
+
+  it("rejects an empty prefixed value", () => {
+    expect(() => parseBookLine("id:   ")).toThrow(/Missing value/);
+  });
+
+  it("collapses whitespace around separators", () => {
+    expect(parseBookLine("Dune   -   Frank  Herbert")).toMatchObject({ title: "Dune", author: "Frank Herbert" });
+  });
+
+  it("parses pathological whitespace in linear time", () => {
+    const evil = `id:${" ".repeat(50_000)}x`;
+    const evil2 = `a${" ".repeat(50_000)}b`;
+    const t = performance.now();
+    parseBookLine(evil);
+    parseBookLine(evil2);
+    parseBookLine(`https://libbyapp.com/${"libbyapp.com/".repeat(5_000)}`);
+    expect(performance.now() - t).toBeLessThan(500);
+  });
+});

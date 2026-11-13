@@ -30,3 +30,11 @@ it("reads env", () => {
     dryRun: true,
   });
 });
+
+it("mergeConfig ignores prototype-polluting keys", () => {
+  const evil = JSON.parse('{"__proto__": {"polluted": true}, "hold": {"constructor": {"x": 1}}}');
+  const m = mergeConfig(evil) as Record<string, unknown>;
+  expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  expect(Object.getPrototypeOf(m)).toBe(Object.prototype);
+  expect(Object.hasOwn(m.hold as object, "constructor")).toBe(false);
+});
