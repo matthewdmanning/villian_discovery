@@ -15,7 +15,8 @@
     "format:check": "biome format .",
     "check": "biome check --write .",
     "ci": "biome ci . && npm run typecheck && npm test && npm run build",
-    "lint:commits": "commitlint --from origin/main --to HEAD --verbose"
+    "lint:commits": "commitlint --from origin/main --to HEAD --verbose",
+    "lint:branch": "node scripts/branch-name.ts"
   },
   "repository": {
     "type": "git",
