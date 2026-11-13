@@ -15,7 +15,8 @@
     "format:check": "biome format .",
     "check": "biome check --write .",
     "ci": "biome ci . && npm run typecheck && npm test && npm run build",
-    "lint:commits": "commitlint --from origin/main --to HEAD --verbose"
+    "lint:commits": "commitlint --from origin/main --to HEAD --verbose",
+    "lint:branch": "node scripts/branch-name.ts"
   },
   "repository": {
     "type": "git",
@@ -27,17 +28,17 @@
   },
   "homepage": "https://github.com/matthewdmanning/villian_discovery#readme",
   "dependencies": {
-    "commander": "^15.1.0",
+    "commander": "^15.0.0",
     "csv-parse": "^7.0.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.7",
+    "@biomejs/biome": "2.6.4",
     "@commitlint/cli": "21.2.4",
     "@commitlint/config-conventional": "21.2.4",
-    "@types/node": "^22.20.5",
+    "@types/node": "^26.6.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.0.5"
   },
   "type": "module",
   "bin": {
@@ -54,7 +55,7 @@
     "dist"
   ],
   "engines": {
-    "node": ">=22.12.0"
+    "node": "^26.6.0"
   },
   "keywords": [
     "libby",

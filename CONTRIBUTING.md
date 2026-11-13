@@ -10,10 +10,22 @@ git config commit.template .gitmessage   # commit message template
 
 ## Workflow
 
-1. Branch from `main`. Never push to `main` directly.
-2. Change code + tests. HTTP is faked in tests; no live Libby calls.
-3. `npm run ci` — Biome (format, lint, imports), typecheck, tests, build. Same as CI.
-4. Open a PR using the template. Squash-merge.
+1. Branch from `main` using a [descriptive name](#branch-names). Never push to `main` directly.
+2. Keep dependency version changes on their own branch (`build/…`), unless the new work requires them.
+3. Change code + tests. HTTP is faked in tests; no live Libby calls.
+4. `npm run ci` — Biome (format, lint, imports), typecheck, tests, build. Same as CI.
+5. Open a PR using the template. Squash-merge.
+
+## Branch names
+
+`<type>/[<issue>-]<description>` — e.g. `feat/hold-suspend-days`, `fix/42-csv-bom-header`.
+
+- `type`: a Conventional Commit type (`feat fix docs style refactor perf test build ci chore revert`), matching the planned PR title.
+- `issue` (optional): issue number.
+- `description`: lowercase kebab-case; ≥ 2 meaningful words (3+ letters, not filler like `wip`, `update`, `misc`). Says _what_ changes, not who or when.
+- ≤ 60 characters. No uppercase, `_`, `--`, extra `/`, or random IDs.
+- Exempt: `dependabot/*`, `gh-readonly-queue/*` (bot-generated).
+- Check: `npm run lint:branch` (current branch) or `node scripts/branch-name.ts <name>`. CI enforces on PRs. Rename: `git branch -m <new-name>`.
 
 ## Commit messages
 
@@ -38,13 +50,13 @@ Biome, not ESLint: typescript-eslint supports TypeScript `<6.1`; this repo uses 
 
 ## CI
 
-| Workflow      | Runs                         | Jobs                                                                                         |
-| ------------- | ---------------------------- | -------------------------------------------------------------------------------------------- |
-| `ci.yml`      | PR, push `main`, merge queue | Biome + typecheck · tests Node 22/24 + build + CLI smoke · PR title lint · dependency review |
-| `codeql.yml`  | PR, push `main`, weekly      | CodeQL JS/TS + Actions                                                                       |
-| `secrets.yml` | PR, push `main`, weekly      | TruffleHog                                                                                   |
+| Workflow      | Runs                         | Jobs                                                                                                    |
+| ------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ci.yml`      | PR, push `main`, merge queue | Biome + typecheck · tests Node 26 + build + CLI smoke · PR title lint · branch name · dependency review |
+| `codeql.yml`  | PR, push `main`, weekly      | CodeQL JS/TS + Actions                                                                                  |
+| `secrets.yml` | PR, push `main`, weekly      | TruffleHog                                                                                              |
 
-Recommended branch protection for `main`: require PR, require status checks (`Format & lint`, `Test (Node 22)`, `Test (Node 24)`, `PR title (Conventional Commits)`, `Dependency review`, `Analyze (javascript-typescript)`, `Analyze (actions)`, `TruffleHog`), squash merge only.
+Recommended branch protection for `main`: require PR, require status checks (`Format & lint`, `Test (Node 26)`, `PR title (Conventional Commits)`, `Branch name`, `Dependency review`, `Analyze (javascript-typescript)`, `Analyze (actions)`, `TruffleHog`), squash merge only.
 
 ## Secrets
 
