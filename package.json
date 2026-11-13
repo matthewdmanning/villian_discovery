@@ -1,0 +1,66 @@
+{
+  "name": "libby-shelf",
+  "version": "0.1.0",
+  "description": "Configurable CLI and library to borrow or place holds on Libby titles from a book list.",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "node dist/cli.js",
+    "prepare": "npm run build",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check --write .",
+    "ci": "biome ci . && npm run typecheck && npm test && npm run build",
+    "lint:commits": "commitlint --from origin/main --to HEAD --verbose"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matthewdmanning/villian_discovery.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/matthewdmanning/villian_discovery/issues"
+  },
+  "homepage": "https://github.com/matthewdmanning/villian_discovery#readme",
+  "dependencies": {
+    "commander": "^15.1.0",
+    "csv-parse": "^7.0.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-conventional": "21.2.4",
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "type": "module",
+  "bin": {
+    "libby-shelf": "./dist/cli.js"
+  },
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "keywords": [
+    "libby",
+    "overdrive",
+    "library",
+    "holds",
+    "cli"
+  ]
+}

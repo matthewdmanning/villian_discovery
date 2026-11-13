@@ -1,0 +1,19 @@
+{
+  "action": "auto",
+  "libraries": ["lapl", "nypl"],
+  "mediaTypes": ["ebook", "audiobook"],
+  "borrow": { "lendingPeriod": "preference", "luckyDay": true, "maxPerRun": 3 },
+  "hold": {
+    "placement": "best",
+    "maxEstimatedWaitDays": 120,
+    "suspendDays": 0,
+    "maxPerRun": 10
+  },
+  "matching": { "minTitleScore": 0.85, "minAuthorScore": 0.6, "ignoreSubtitle": true },
+  "skipExisting": true,
+  "respectCardLimits": true,
+  "dryRun": true,
+  "delayMs": 750,
+  "output": { "format": "table", "reportFile": "reports/last-run.json" },
+  "logLevel": "info"
+}

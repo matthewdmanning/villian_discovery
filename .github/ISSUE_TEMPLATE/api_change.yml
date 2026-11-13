@@ -1,0 +1,27 @@
+name: Libby API change
+description: An endpoint or response shape changed and the tool broke.
+title: "fix(api): "
+labels: [api-change, bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Libby's API is unofficial and may change without notice. **Redact tokens, card ids, and personal data.**
+  - type: input
+    id: endpoint
+    attributes:
+      label: Endpoint
+      placeholder: POST /card/{cardId}/hold/{titleId}
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed status and response body (redacted)
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: since
+    attributes:
+      label: First noticed (date)

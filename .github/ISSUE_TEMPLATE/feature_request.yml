@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a new capability or configuration option.
+title: "feat: "
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what blocks you today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Behavior, CLI flags, or config keys you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: dropdown
+    id: api
+    attributes:
+      label: Needs a Libby/OverDrive endpoint this tool does not use yet?
+      options: ["No", "Yes", "Unsure"]
+    validations:
+      required: true

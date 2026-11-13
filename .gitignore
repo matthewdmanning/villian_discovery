@@ -33,3 +33,14 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Node / TypeScript
+node_modules/
+dist/
+coverage/
+
+# Libby secrets and run output
+.libby/
+*.identity.json
+/libby.config.json
+/reports/
