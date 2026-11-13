@@ -11,9 +11,10 @@ git config commit.template .gitmessage   # commit message template
 ## Workflow
 
 1. Branch from `main` using a [descriptive name](#branch-names). Never push to `main` directly.
-2. Change code + tests. HTTP is faked in tests; no live Libby calls.
-3. `npm run ci` — Biome (format, lint, imports), typecheck, tests, build. Same as CI.
-4. Open a PR using the template. Squash-merge.
+2. Keep dependency version changes on their own branch (`build/…`), unless the new work requires them.
+3. Change code + tests. HTTP is faked in tests; no live Libby calls.
+4. `npm run ci` — Biome (format, lint, imports), typecheck, tests, build. Same as CI.
+5. Open a PR using the template. Squash-merge.
 
 ## Branch names
 
