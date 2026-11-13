@@ -145,7 +145,7 @@ const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 function deepMerge(target: Record<string, unknown>, src: Record<string, unknown>) {
   for (const [k, v] of Object.entries(src)) {
     if (v === undefined || UNSAFE_KEYS.has(k)) continue;
-    const cur = target[k];
+    const cur = Object.hasOwn(target, k) ? target[k] : undefined;
     if (isPlainObject(v) && isPlainObject(cur)) deepMerge(cur, v);
     else target[k] = isPlainObject(v) ? deepMerge({}, v) : v;
   }
