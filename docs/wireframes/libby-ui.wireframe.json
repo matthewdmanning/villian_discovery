@@ -1,0 +1,233 @@
+{
+  "$comment": "Low-fidelity wireframe spec for a future libby-shelf UI. Design only: no UI is implemented. Edit `options` and per-item `enabled` to reconfigure. See README.md.",
+  "version": 1,
+  "options": {
+    "layout": "desktop",
+    "density": "comfortable",
+    "navigation": "sidebar",
+    "defaultScreen": "books",
+    "showAdvanced": false
+  },
+  "screens": [
+    {
+      "id": "connect",
+      "title": "Connect Libby",
+      "cli": "login",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "status",
+          "components": [{ "type": "banner", "label": "Connection status", "binds": "auth.tokenFile" }]
+        },
+        {
+          "id": "form",
+          "components": [
+            {
+              "type": "field",
+              "input": "code",
+              "label": "8-digit setup code",
+              "hint": "Libby → Menu → Copy To Another Device"
+            },
+            { "type": "field", "input": "path", "label": "Token file", "binds": "auth.tokenFile", "advanced": true },
+            { "type": "button", "label": "Connect", "action": "login" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cards",
+      "title": "Library cards",
+      "cli": "cards",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "table",
+          "components": [
+            {
+              "type": "table",
+              "label": "Cards",
+              "columns": ["use", "cardName", "advantageKey", "loans", "holds"],
+              "binds": "cards"
+            },
+            { "type": "list", "label": "Library priority (drag to reorder)", "input": "ordered", "binds": "libraries" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "books",
+      "title": "Book list",
+      "cli": "run <input>",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "input",
+          "components": [
+            { "type": "textarea", "label": "One book per line: Title by Author · isbn:… · id:…" },
+            { "type": "dropzone", "label": "Or drop .txt / .csv / .tsv / .json" },
+            { "type": "select", "label": "Input format", "options": ["auto", "text", "csv", "tsv", "json"] }
+          ]
+        },
+        {
+          "id": "rows",
+          "components": [
+            {
+              "type": "table",
+              "label": "Parsed books",
+              "columns": ["title", "author", "isbn", "format", "action", "libraries"],
+              "editable": ["format", "action", "libraries"]
+            }
+          ]
+        },
+        {
+          "id": "actions",
+          "components": [
+            { "type": "toggle", "label": "Dry run", "binds": "dryRun" },
+            { "type": "button", "label": "Plan", "action": "run --dry-run", "primary": true }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "Rules",
+      "cli": "config",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "general",
+          "components": [
+            { "type": "segmented", "label": "Action", "binds": "action" },
+            { "type": "list", "label": "Media types (preference order)", "input": "ordered", "binds": "mediaTypes" },
+            { "type": "toggle", "label": "Skip titles already on shelf", "binds": "skipExisting" },
+            { "type": "toggle", "label": "Respect card limits", "binds": "respectCardLimits" }
+          ]
+        },
+        {
+          "id": "borrow",
+          "components": [
+            { "type": "select", "label": "Lending period", "binds": "borrow.lendingPeriod" },
+            { "type": "toggle", "label": "Allow Lucky Day copies", "binds": "borrow.luckyDay" },
+            { "type": "number", "label": "Max loans per run", "binds": "borrow.maxPerRun" }
+          ]
+        },
+        {
+          "id": "hold",
+          "components": [
+            { "type": "segmented", "label": "Placement", "binds": "hold.placement" },
+            { "type": "number", "label": "Max estimated wait (days)", "binds": "hold.maxEstimatedWaitDays" },
+            { "type": "number", "label": "Max people in queue", "binds": "hold.maxHoldsCount" },
+            { "type": "select", "label": "Deliver later (days)", "binds": "hold.suspendDays" },
+            { "type": "field", "input": "email", "label": "Hold email", "binds": "hold.emailAddress" },
+            { "type": "number", "label": "Max holds per run", "binds": "hold.maxPerRun" }
+          ]
+        },
+        {
+          "id": "matching",
+          "advanced": true,
+          "components": [
+            { "type": "slider", "label": "Title match threshold", "binds": "matching.minTitleScore" },
+            { "type": "slider", "label": "Author match threshold", "binds": "matching.minAuthorScore" },
+            { "type": "toggle", "label": "Ignore subtitles", "binds": "matching.ignoreSubtitle" },
+            { "type": "toggle", "label": "Allow pre-release titles", "binds": "matching.allowPreRelease" },
+            { "type": "number", "label": "Results examined per library", "binds": "matching.perPage" }
+          ]
+        },
+        {
+          "id": "network",
+          "advanced": true,
+          "components": [
+            { "type": "number", "label": "Delay between books (ms)", "binds": "delayMs" },
+            { "type": "toggle", "label": "Stop on first error", "binds": "failFast" },
+            { "type": "number", "label": "Request timeout (ms)", "binds": "http.timeoutMs" },
+            { "type": "number", "label": "Retries", "binds": "http.retries" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "search",
+      "title": "Search preview",
+      "cli": "search <query>",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "query",
+          "components": [
+            { "type": "field", "input": "search", "label": "Title by Author or ISBN" },
+            { "type": "button", "label": "Search", "action": "search" }
+          ]
+        },
+        {
+          "id": "matches",
+          "components": [
+            {
+              "type": "table",
+              "label": "Matches per library",
+              "columns": [
+                "card",
+                "title",
+                "firstCreatorName",
+                "type",
+                "titleScore",
+                "authorScore",
+                "isAvailable",
+                "availableCopies",
+                "ownedCopies",
+                "holdsCount",
+                "estimatedWaitDays"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "results",
+      "title": "Plan & results",
+      "cli": "run",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "summary",
+          "components": [
+            {
+              "type": "stats",
+              "label": "Counts by status",
+              "values": ["borrowed", "held", "would-borrow", "would-hold", "skipped", "error"]
+            },
+            { "type": "chips", "label": "Filter by status", "values": ["all", "borrowed", "held", "skipped", "error"] }
+          ]
+        },
+        {
+          "id": "table",
+          "components": [
+            {
+              "type": "table",
+              "label": "One row per book per library",
+              "columns": [
+                "status",
+                "title",
+                "author",
+                "mediaType",
+                "library",
+                "cardName",
+                "loanDays",
+                "estimatedWaitDays",
+                "holdsCount",
+                "message"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "actions",
+          "components": [
+            { "type": "button", "label": "Run for real", "action": "run", "primary": true, "confirm": true },
+            { "type": "button", "label": "Export report", "action": "export", "binds": "output.reportFile" }
+          ]
+        }
+      ]
+    }
+  ]
+}
