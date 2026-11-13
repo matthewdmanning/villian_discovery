@@ -146,3 +146,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Quick: `npm ci && npm run ci`.
 Layout: `src/` `http` (fetch, retries) · `libby-client` · `thunder-client` · `config` (zod) · `input` · `matcher` · `planner` (pure decisions) · `runner` (orchestration) · `report` · `auth` · `cli`.
 
 Security: [SECURITY.md](SECURITY.md).
+
+Export your fable.co book lists, or discover the fable.co API: [docs/fable-discovery.md](docs/fable-discovery.md).

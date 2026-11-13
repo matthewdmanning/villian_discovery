@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import { z } from "zod";
+import { captureSession } from "./capture.js";
+import { exportLists } from "./export-lists.js";
 import { discoverApi, loadHar } from "./har.js";
 import { formatResults, loadSiteTestConfig, runSiteChecks, SiteTestConfigSchema } from "./site-check.js";
 
@@ -41,6 +43,36 @@ program
     const text = `${JSON.stringify(doc, null, 2)}\n`;
     if (opts.out) await writeFile(opts.out, text);
     else process.stdout.write(text);
+  });
+
+program
+  .command("capture")
+  .description("open a browser, wait for you to log in, explore the site, and save an OpenAPI document")
+  .argument("[url]", "start page", "https://fable.co/")
+  .option("--host <hosts...>", "keep only these hosts and their subdomains", ["fable.co"])
+  .option("--out <file>", "output file", "fable-openapi.json")
+  .option("--max-pages <n>", "max pages to explore", (v) => Number.parseInt(v, 10), 30)
+  .option("--focus <regex>", "explore links whose path matches first", "^/(library|book-list|books?)(/|$)")
+  .action(async (url: string, opts: { host: string[]; out: string; maxPages: number; focus: string }) => {
+    const log = (m: string) => process.stdout.write(`${m}\n`);
+    log("A browser window will open. You only need to log in.");
+    const focus = new RegExp(opts.focus, "i");
+    const har = await captureSession(url, { hosts: opts.host, maxPages: opts.maxPages, focus, log });
+    const doc = discoverApi(har, { hosts: opts.host });
+    await writeFile(opts.out, `${JSON.stringify(doc, null, 2)}\n`);
+    const auth = Object.keys(doc.components?.securitySchemes ?? {}).join(", ") || "none";
+    log(`Done. Found ${Object.keys(doc.paths).length} API paths (auth: ${auth}). Saved to ${opts.out}`);
+  });
+
+program
+  .command("export-lists")
+  .description("open a browser, wait for you to log in, and save each fable.co book list as a book file")
+  .option("--out <dir>", "output folder", "fable-lists")
+  .action(async (opts: { out: string }) => {
+    const log = (m: string) => process.stdout.write(`${m}\n`);
+    log("A browser window will open. You only need to log in.");
+    const count = await exportLists({ outDir: opts.out, log });
+    log(`Done. Saved ${count} lists to ${opts.out}`);
   });
 
 program
