@@ -9,3 +9,9 @@ Dependencies: `LibbyClient`, `ThunderClient`, `Runner`, `demoFetch`, `silentLogg
 Use this function to provide deterministic in-memory Libby and Thunder responses when the browser demo runs.
 Inputs: `config` — the resolved UI configuration; `books` — requests used to identify search and title lookups.
 Dependencies: `CARDS`, `fakeMedia`.
+
+## `Cards.move`, `Cards.dragProps`, `Cards.priority` — ui/src/screens/Cards.tsx
+
+Use these functions to move enabled libraries and render the inline drag and arrow controls shared by desktop and mobile card rows.
+Inputs: `from` and `to` — library keys defining a move; `c` — the card whose controls are rendered.
+Dependencies: `enabled`, `order`, `using`, `move`, and the configuration setter from `useStore`.

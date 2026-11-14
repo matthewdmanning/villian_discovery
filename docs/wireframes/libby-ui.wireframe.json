@@ -46,10 +46,14 @@
             {
               "type": "table",
               "label": "Cards",
-              "columns": ["use", "cardName", "advantageKey", "loans", "holds"],
+              "columns": ["use", "cardName", "priority", "loans", "holds"],
               "binds": "cards"
             },
-            { "type": "list", "label": "Library priority (drag to reorder)", "input": "ordered", "binds": "libraries" }
+            {
+              "type": "reorder",
+              "label": "Library priority (highest first; unchecked cards last and fixed)",
+              "binds": "libraries"
+            }
           ]
         }
       ]

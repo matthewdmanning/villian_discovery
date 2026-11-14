@@ -136,6 +136,8 @@ Runs on built-in demo data (`demo` badge): nothing reaches Libby yet. Real calls
 
 Book drafts and per-row edits survive screen navigation for the current tab. Changing the input or its format clears row overrides. Invalid rules block runs until corrected. Demo plans use the library planner, including card limits, per-run limits, and lending periods.
 
+Library cards includes priority ordering in the card list, highest first. Unchecked cards stay at the bottom and cannot be reordered. At least one card must remain selected; cards from the same library share its priority.
+
 Build the UI with `npm run build --prefix ui`; CI checks both the library and UI. On Windows, tests skip the POSIX-only token permission assertion while still checking token file round-trips.
 
 With the UI dev server running and Chrome installed, `npm run test:ui` checks draft preservation, independent duplicate rows, invalid rules, and API error feedback. Set `UI_URL` for another server address or `BROWSER_CHANNEL=msedge` to use Edge.
