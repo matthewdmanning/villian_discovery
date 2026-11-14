@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:ui": "node scripts/ui-smoke.mjs",
     "start": "node dist/cli.js",
     "prepare": "husky && npm run build",
     "lint": "biome lint .",

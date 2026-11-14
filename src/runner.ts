@@ -148,11 +148,11 @@ export class Runner {
   }
 
   private async search(libraryKey: string, book: BookRequest): Promise<ThunderMedia[]> {
-    const key = `${libraryKey}\u0000${book.titleId ?? ""}\u0000${book.isbn ?? ""}\u0000${book.title ?? ""}\u0000${book.author ?? ""}`;
+    const mediaTypes = book.mediaTypes?.length ? book.mediaTypes : this.cfg.mediaTypes;
+    const key = `${libraryKey}\u0000${book.titleId ?? ""}\u0000${book.isbn ?? ""}\u0000${book.title ?? ""}\u0000${book.author ?? ""}\u0000${mediaTypes.join(",")}`;
     const hit = this.searchCache.get(key);
     if (hit) return hit;
     const { thunder } = this.deps;
-    const mediaTypes = book.mediaTypes?.length ? book.mediaTypes : this.cfg.mediaTypes;
     let items: ThunderMedia[] = [];
     if (book.titleId) {
       try {

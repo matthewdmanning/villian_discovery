@@ -1,5 +1,5 @@
 {
-  "$comment": "Low-fidelity wireframe spec for a future libby-shelf UI. Design only: no UI is implemented. Edit `options` and per-item `enabled` to reconfigure. See README.md.",
+  "$comment": "Low-fidelity wireframe spec for the libby-shelf UI (ui/). Edit `options` and per-item `enabled` to reconfigure. See README.md.",
   "version": 1,
   "options": {
     "layout": "desktop",

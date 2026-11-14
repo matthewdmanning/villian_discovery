@@ -124,6 +124,22 @@ const results = await processBooks(books, { action: "hold", hold: { placement: "
 
 Lower level: `LibbyClient`, `ThunderClient`, `Runner`, `planBook` (pure), `bestMatch`. `fetch` is injectable.
 
+## Web UI (preview)
+
+`ui/` = browser shell over the library, one screen per CLI command. Layout and screens follow [`docs/wireframes`](docs/wireframes/README.md).
+
+```sh
+cd ui && npm install && npm run dev
+```
+
+Runs on built-in demo data (`demo` badge): nothing reaches Libby yet. Real calls need a `LibbyApi` backend (`ui/src/lib/api.ts`).
+
+Book drafts and per-row edits survive screen navigation for the current tab. Changing the input or its format clears row overrides. Invalid rules block runs until corrected. Demo plans use the library planner, including card limits, per-run limits, and lending periods.
+
+Build the UI with `npm run build --prefix ui`; CI checks both the library and UI. On Windows, tests skip the POSIX-only token permission assertion while still checking token file round-trips.
+
+With the UI dev server running and Chrome installed, `npm run test:ui` checks draft preservation, independent duplicate rows, invalid rules, and API error feedback. Set `UI_URL` for another server address or `BROWSER_CHANNEL=msedge` to use Edge.
+
 ## Endpoints used
 
 | Purpose         | Request                                                                                |
