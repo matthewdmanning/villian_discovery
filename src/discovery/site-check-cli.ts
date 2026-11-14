@@ -9,6 +9,8 @@ import { discoverApi, loadHar } from "./har.js";
 import { formatResults, loadSiteTestConfig, runSiteChecks, SiteTestConfigSchema } from "./site-check.js";
 
 const DEFAULT_CONFIG = "site-tests.json";
+const log = (m: string) => process.stdout.write(`${m}\n`);
+const BROWSER_BANNER = "A browser window will open. You only need to log in.";
 
 const program = new Command()
   .name("site-check")
@@ -54,8 +56,7 @@ program
   .option("--max-pages <n>", "max pages to explore", (v) => Number.parseInt(v, 10), 30)
   .option("--focus <regex>", "explore links whose path matches first", "^/(library|book-list|books?)(/|$)")
   .action(async (url: string, opts: { host: string[]; out: string; maxPages: number; focus: string }) => {
-    const log = (m: string) => process.stdout.write(`${m}\n`);
-    log("A browser window will open. You only need to log in.");
+    log(BROWSER_BANNER);
     const focus = new RegExp(opts.focus, "i");
     const har = await captureSession(url, { hosts: opts.host, maxPages: opts.maxPages, focus, log });
     const doc = discoverApi(har, { hosts: opts.host });
@@ -69,8 +70,7 @@ program
   .description("open a browser, wait for you to log in, and save each fable.co book list as a book file")
   .option("--out <dir>", "output folder", "fable-lists")
   .action(async (opts: { out: string }) => {
-    const log = (m: string) => process.stdout.write(`${m}\n`);
-    log("A browser window will open. You only need to log in.");
+    log(BROWSER_BANNER);
     const count = await exportLists({ outDir: opts.out, log });
     log(`Done. Saved ${count} lists to ${opts.out}`);
   });

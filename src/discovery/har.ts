@@ -82,7 +82,7 @@ export function pathTemplate(pathname: string): { path: string; params: string[]
   return { path, params, values };
 }
 
-const isJson = (mime: string | undefined) => /\bjson\b/i.test(mime ?? "");
+export const isJson = (mime: string | undefined) => /\bjson\b/i.test(mime ?? "");
 const FORM = "application/x-www-form-urlencoded";
 
 function parseJson(text: string | undefined, encoding?: string): unknown {

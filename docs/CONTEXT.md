@@ -19,5 +19,6 @@ Agent context: specs, configs, preferences and rules for this repo.
   - `site-check discover` (`src/discovery/har.ts`): infers the API from a HAR file that the user records.
   - `site-check capture` (`src/discovery/capture.ts`): opens the saved browser profile, waits for a login, and follows links. It sends GET requests only. It never clicks buttons or sends forms.
   - `site-check export-lists` (`src/discovery/export-lists.ts`): reads the user's lists through the cookie-authenticated `fable.co/api` endpoints that the Library page uses.
+- `src/discovery/browser.ts` owns the saved profile, browser launch and window-close tracking. Both browser commands use it.
 - Do not build crawlers or probes that run without login. Do not look for login workarounds.
 - Usage and output format: [fable-discovery.md](fable-discovery.md).

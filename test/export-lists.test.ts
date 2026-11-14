@@ -1,5 +1,16 @@
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, it } from "vitest";
-import { fetchAllPages, listFileNames, toBookEntry } from "../src/discovery/export-lists.js";
+import {
+  type FableGet,
+  fetchAllPages,
+  listFileNames,
+  toBookEntry,
+  waitForLogin,
+  writeLists,
+} from "../src/discovery/export-lists.js";
+import { HttpError } from "../src/errors.js";
 import { parseBooks } from "../src/input.js";
 
 it("toBookEntry keeps title, first author and isbn, and omits empty fields", () => {
@@ -60,4 +71,41 @@ it("fetchAllPages stops on an empty page even if next is set", async () => {
   });
   expect(all).toEqual([1]);
   expect(calls).toBe(2);
+});
+
+const status = (code: number) => new HttpError(`HTTP ${code}`, code, "/api/me/book-lists", undefined);
+const page = <T>(results: T[]) => ({ next: null, results });
+
+it("waitForLogin polls until the lists endpoint stops answering 401/403", async () => {
+  const answers = [status(401), status(403)];
+  const logs: string[] = [];
+  const get = (async () => {
+    const a = answers.shift();
+    if (a) throw a;
+    return page([]);
+  }) as FableGet;
+  await waitForLogin(get, { pollMs: 0, log: (m) => logs.push(m) });
+  expect(answers).toEqual([]);
+  expect(logs).toHaveLength(1);
+});
+
+it("waitForLogin rethrows non-auth errors and stops on timeout or a closed window", async () => {
+  const fail = (e: Error) => (async () => Promise.reject(e)) as FableGet;
+  await expect(waitForLogin(fail(status(500)), { pollMs: 0 })).rejects.toThrow("HTTP 500");
+  await expect(waitForLogin(fail(status(401)), { pollMs: 0, timeoutMs: -1 })).rejects.toThrow("No login seen");
+  await expect(waitForLogin(fail(status(401)), { isClosed: () => true })).rejects.toThrow("window was closed");
+});
+
+it("writeLists writes one libby-shelf book file per list", async () => {
+  const get = (async (path: string) => {
+    if (path === "/api/me/book-lists") return page([{ id: "a1", name: "Want to Read" }]);
+    if (path === "/api/lists/a1/books")
+      return page([{ book: { title: "Dune", authors: [{ name: "Frank Herbert" }] } }, { book: { title: "" } }, {}]);
+    throw new Error(`unexpected ${path}`);
+  }) as FableGet;
+  const dir = await mkdtemp(join(tmpdir(), "fable-"));
+  expect(await writeLists(get, dir)).toBe(1);
+  expect(await readdir(dir)).toEqual(["want-to-read.json"]);
+  const file = JSON.parse(await readFile(join(dir, "want-to-read.json"), "utf8"));
+  expect(file).toEqual({ books: [{ title: "Dune", author: "Frank Herbert" }] });
 });

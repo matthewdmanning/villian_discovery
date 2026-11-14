@@ -9,8 +9,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { BrowserContext } from "playwright-core";
+import { HttpError } from "../errors.js";
 import { stripUndefined } from "../util.js";
-import { launchInstalledBrowser } from "./capture.js";
+import { LOGIN_PROMPT, LOGIN_TIMEOUT_MS, openBrowserSession } from "./browser.js";
 
 const SITE = "https://fable.co";
 export const LIBRARY_URL = `${SITE}/library`;
@@ -31,6 +33,12 @@ interface Page<T> {
   results: T[];
 }
 type Query = Record<string, string | number>;
+/** GET a fable.co JSON endpoint. Throws `HttpError` on a non-2xx status. */
+export type FableGet = <T>(path: string, query: Query) => Promise<T>;
+
+const FIRST_PAGE = { limit: PAGE_SIZE, offset: 0 };
+const LISTS_FIRST_PAGE = { ...FIRST_PAGE, media_type: "" };
+const WINDOW_CLOSED = "The browser window was closed before the export finished.";
 
 /** One fable book as a libby-shelf book entry; empty fields are omitted. */
 export function toBookEntry(book: FableBook) {
@@ -74,6 +82,69 @@ export async function fetchAllPages<T>(first: Query, get: (query: Query) => Prom
   return all;
 }
 
+const listsPage = (get: FableGet) => (query: Query) => get<Page<FableList>>("/api/me/book-lists", query);
+
+export interface LoginWait {
+  timeoutMs?: number;
+  pollMs?: number;
+  isClosed?: () => boolean;
+  log?: (message: string) => void;
+}
+
+/** Polls the lists endpoint until it stops answering 401/403. */
+export async function waitForLogin(get: FableGet, opts: LoginWait = {}): Promise<void> {
+  const deadline = Date.now() + (opts.timeoutMs ?? LOGIN_TIMEOUT_MS);
+  for (let asked = false; ; asked = true) {
+    if (opts.isClosed?.()) throw new Error(WINDOW_CLOSED);
+    try {
+      await listsPage(get)(LISTS_FIRST_PAGE);
+      return;
+    } catch (e) {
+      if (!(e instanceof HttpError && e.isAuthError)) throw e;
+    }
+    if (Date.now() > deadline)
+      throw new Error("No login seen. Log in to fable.co in the browser window, then try again.");
+    if (!asked) opts.log?.(`Log in to fable.co in the browser window. ${LOGIN_PROMPT}`);
+    await sleep(opts.pollMs ?? 3_000);
+  }
+}
+
+/** Fetches every list and its books, and writes one book file per list. Returns the list count. */
+export async function writeLists(get: FableGet, outDir: string, log?: (message: string) => void): Promise<number> {
+  const lists = await fetchAllPages(LISTS_FIRST_PAGE, listsPage(get));
+  const names = listFileNames(lists);
+  await mkdir(outDir, { recursive: true });
+  for (const list of lists) {
+    const path = `/api/lists/${encodeURIComponent(list.id)}/books`;
+    const entries = await fetchAllPages(FIRST_PAGE, (query) => get<Page<{ book?: FableBook }>>(path, query));
+    const books = entries.flatMap((e) => (e.book ? [toBookEntry(e.book)] : [])).filter((b) => b.title || b.isbn);
+    const file = join(outDir, names.get(list.id)!);
+    await writeFile(file, `${JSON.stringify({ books }, null, 2)}\n`);
+    log?.(`Saved "${list.name}" (${books.length} books) to ${file}`);
+  }
+  return lists.length;
+}
+
+/** `FableGet` over the browser's cookies. Errors never carry the cookie header. */
+function browserGet(context: BrowserContext, isClosed: () => boolean): FableGet {
+  return async <T>(path: string, query: Query) => {
+    const url = new URL(path, SITE);
+    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));
+    // Playwright's error text includes the request's cookie header: drop it and keep no cause.
+    const res = await context.request.get(url.href).catch(() => {
+      throw new Error(isClosed() ? WINDOW_CLOSED : `Request failed: ${url.pathname}`);
+    });
+    if (!res.ok())
+      throw new HttpError(
+        `fable.co returned ${res.status()} for ${url.pathname}`,
+        res.status(),
+        url.pathname,
+        undefined,
+      );
+    return (await res.json()) as T;
+  };
+}
+
 export interface ExportOptions {
   outDir: string;
   loginTimeoutMs?: number;
@@ -82,70 +153,17 @@ export interface ExportOptions {
 
 /** Wait for the login, fetch every list and its books, and write one file per list. */
 export async function exportLists(opts: ExportOptions): Promise<number> {
-  const context = await launchInstalledBrowser();
-  let closed = false;
-  context.on("close", () => {
-    closed = true;
-  });
+  const { context, page, isClosed } = await openBrowserSession();
   try {
-    const getJson = async <T>(path: string, query: Query): Promise<T> => {
-      const url = new URL(path, SITE);
-      for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));
-      // Playwright's error text includes the request's cookie header: drop it and keep no cause.
-      const res = await context.request.get(url.href).catch(() => {
-        throw new Error(
-          closed ? "The browser window was closed before the export finished." : `Request failed: ${url.pathname}`,
-        );
-      });
-      if (!res.ok()) throw new HttpStatusError(res.status(), url.pathname);
-      return (await res.json()) as T;
-    };
-    const firstPage = { limit: PAGE_SIZE, offset: 0 };
-    const listsFirstPage = { ...firstPage, media_type: "" };
-    const listsPage = (query: Query) => getJson<Page<FableList>>("/api/me/book-lists", query);
-
-    const page = context.pages()[0] ?? (await context.newPage());
+    const get = browserGet(context, isClosed);
     await page.goto(LIBRARY_URL).catch(() => {});
-    const deadline = Date.now() + (opts.loginTimeoutMs ?? 10 * 60_000);
-    let asked = false;
-    // The lists endpoint answers 401/403 until the user logs in.
-    for (;;) {
-      if (closed) throw new Error("The browser window was closed before the export finished.");
-      const status = await listsPage(listsFirstPage).then(
-        () => 200,
-        (e: unknown) => (e instanceof HttpStatusError && [401, 403].includes(e.status) ? e.status : Promise.reject(e)),
-      );
-      if (status === 200) break;
-      if (Date.now() > deadline)
-        throw new Error("No login seen. Log in to fable.co in the browser window, then try again.");
-      if (!asked)
-        opts.log?.("Log in to fable.co in the browser window. The tool continues on its own after you log in.");
-      asked = true;
-      await sleep(3_000);
-    }
-
-    const lists = await fetchAllPages(listsFirstPage, listsPage);
-    const names = listFileNames(lists);
-    await mkdir(opts.outDir, { recursive: true });
-    for (const list of lists) {
-      const path = `/api/lists/${encodeURIComponent(list.id)}/books`;
-      const entries = await fetchAllPages(firstPage, (query) => getJson<Page<{ book?: FableBook }>>(path, query));
-      const books = entries.flatMap((e) => (e.book ? [toBookEntry(e.book)] : [])).filter((b) => b.title || b.isbn);
-      const file = join(opts.outDir, names.get(list.id)!);
-      await writeFile(file, `${JSON.stringify({ books }, null, 2)}\n`);
-      opts.log?.(`Saved "${list.name}" (${books.length} books) to ${file}`);
-    }
-    return lists.length;
+    await waitForLogin(get, {
+      isClosed,
+      ...(opts.loginTimeoutMs !== undefined ? { timeoutMs: opts.loginTimeoutMs } : {}),
+      ...(opts.log ? { log: opts.log } : {}),
+    });
+    return await writeLists(get, opts.outDir, opts.log);
   } finally {
     await context.close().catch(() => {});
-  }
-}
-
-class HttpStatusError extends Error {
-  constructor(
-    readonly status: number,
-    path: string,
-  ) {
-    super(`fable.co returned ${status} for ${path}`);
   }
 }

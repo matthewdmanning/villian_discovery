@@ -7,21 +7,13 @@
  * Traffic stays in memory. Cookie values are dropped at capture time. Only the
  * value-free OpenAPI document from `discoverApi` is ever written to disk.
  */
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type BrowserContext, chromium, type Page, type Response } from "playwright-core";
-import { type Har, hostAllowed, pathTemplate, securityOf } from "./har.js";
+import type { Page, Response } from "playwright-core";
+import { LOGIN_PROMPT, LOGIN_TIMEOUT_MS, openBrowserSession } from "./browser.js";
+import { type Har, hostAllowed, isJson, pathTemplate, securityOf } from "./har.js";
 
 type Entry = Har["log"]["entries"][number];
 
-const CHANNELS = ["chrome", "msedge"] as const;
-/** Holds the saved login. Keep it out of the repo. */
-export const PROFILE_DIR = join(
-  process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
-  "libby-shelf",
-  "browser-profile",
-);
 /** Links the explorer never opens: they could change the account. */
 export const UNSAFE_LINK = /log-?out|sign-?out|delete|remove|unsubscribe|deactivate|cancel/i;
 
@@ -36,8 +28,6 @@ export interface CaptureOptions {
   loginTimeoutMs?: number;
   log?: (message: string) => void;
 }
-
-const isJson = (mime: string | undefined) => /\bjson\b/i.test(mime ?? "");
 
 /** One JSON request/response as a HAR entry; undefined for non-JSON traffic. */
 export async function toEntry(res: Response): Promise<Entry | undefined> {
@@ -75,22 +65,6 @@ export function exploreLinks(hrefs: string[], hosts: string[]): string[] {
   });
 }
 
-/** Opens Chrome or Edge on the saved profile. */
-export async function launchInstalledBrowser(): Promise<BrowserContext> {
-  const errors: unknown[] = [];
-  for (const channel of CHANNELS) {
-    try {
-      return await chromium.launchPersistentContext(PROFILE_DIR, { channel, headless: false, viewport: null });
-    } catch (e) {
-      errors.push(e); // try the next browser
-    }
-  }
-  throw new Error(
-    "Could not open a browser. Close any other window this tool opened (it locks the saved login), and install Google Chrome or Microsoft Edge if neither is installed. Then try again.",
-    { cause: new AggregateError(errors) },
-  );
-}
-
 // ponytail: one visit per path template; slug paths (/book/dune) each count, so maxPages bounds the crawl.
 async function explore(page: Page, startUrl: string, opts: CaptureOptions, isClosed: () => boolean) {
   const maxPages = opts.maxPages ?? 30;
@@ -124,11 +98,11 @@ async function explore(page: Page, startUrl: string, opts: CaptureOptions, isClo
 
 /** Wait for a login, explore the site, and return the JSON traffic. Closing the window ends it early. */
 export async function captureSession(startUrl: string, opts: CaptureOptions): Promise<Har> {
-  const context = await launchInstalledBrowser();
+  const { context, page, closed, isClosed } = await openBrowserSession();
   const pending: Promise<Entry | undefined>[] = [];
   let onLogin = () => {};
-  const loggedIn = new Promise<"login">((resolve) => {
-    onLogin = () => resolve("login");
+  const loggedIn = new Promise<void>((resolve) => {
+    onLogin = resolve;
   });
   context.on("response", (res) => {
     const entry = toEntry(res).catch(() => undefined);
@@ -138,26 +112,17 @@ export async function captureSession(startUrl: string, opts: CaptureOptions): Pr
     });
   });
 
-  let closed = false;
-  const windowClosed = new Promise<"closed">((resolve) =>
-    context.on("close", () => {
-      closed = true;
-      resolve("closed");
-    }),
-  );
-  const watch = (p: Page) => p.on("close", () => context.pages().length || context.close().catch(() => {}));
-  context.pages().forEach(watch);
-  context.on("page", watch);
-
-  const page = context.pages()[0] ?? (await context.newPage());
   await page.goto(startUrl).catch(() => {});
-  opts.log?.("Log in to the site in the browser window. The tool continues on its own after you log in.");
-  const timeout = sleep(opts.loginTimeoutMs ?? 10 * 60_000).then(() => "timeout" as const);
-  const outcome = await Promise.race([loggedIn, windowClosed, timeout]);
+  opts.log?.(`Log in to the site in the browser window. ${LOGIN_PROMPT}`);
+  const outcome = await Promise.race([
+    loggedIn.then(() => "login" as const),
+    closed.then(() => "closed" as const),
+    sleep(opts.loginTimeoutMs ?? LOGIN_TIMEOUT_MS).then(() => "timeout" as const),
+  ]);
 
   if (outcome !== "closed") {
     opts.log?.(outcome === "login" ? "Logged in. Exploring the site…" : "No login seen. Exploring the public site…");
-    await explore(page, startUrl, opts, () => closed);
+    await explore(page, startUrl, opts, isClosed);
   }
   // Long-lived responses (streams, long polls) never finish: give each a short grace period.
   const settled = pending.map((p) => Promise.race([p, sleep(5_000).then(() => undefined)]));
