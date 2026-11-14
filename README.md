@@ -124,6 +124,16 @@ const results = await processBooks(books, { action: "hold", hold: { placement: "
 
 Lower level: `LibbyClient`, `ThunderClient`, `Runner`, `planBook` (pure), `bestMatch`. `fetch` is injectable.
 
+## Web UI (preview)
+
+`ui/` = browser shell over the library, one screen per CLI command. Layout and screens follow [`docs/wireframes`](docs/wireframes/README.md).
+
+```sh
+cd ui && npm install && npm run dev
+```
+
+Runs on built-in demo data (`demo` badge): nothing reaches Libby yet. Real calls need a `LibbyApi` backend (`ui/src/lib/api.ts`).
+
 ## Endpoints used
 
 | Purpose         | Request                                                                                |

@@ -1,0 +1,150 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: false;
+}
+
+/*
+ * Design tokens. Components use only these semantic names:
+ * daisyUI colors (base-*, primary, secondary, accent, neutral, info, success, warning, error and their -content),
+ * plus `pop` (outline + offset shadow ink) and the font roles below. No raw palette classes in components.
+ */
+
+@plugin "daisyui/theme" {
+  name: "shelfie";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+  --color-base-100: oklch(98.5% 0.018 92);
+  --color-base-200: oklch(95.5% 0.032 90);
+  --color-base-300: oklch(90% 0.048 86);
+  --color-base-content: oklch(26% 0.045 300);
+  --color-primary: oklch(74% 0.16 2);
+  --color-primary-content: oklch(22% 0.05 300);
+  --color-secondary: oklch(88% 0.15 92);
+  --color-secondary-content: oklch(22% 0.05 300);
+  --color-accent: oklch(80% 0.11 182);
+  --color-accent-content: oklch(22% 0.05 300);
+  --color-neutral: oklch(30% 0.045 300);
+  --color-neutral-content: oklch(97% 0.02 92);
+  --color-info: oklch(78% 0.1 240);
+  --color-info-content: oklch(22% 0.05 300);
+  --color-success: oklch(80% 0.15 150);
+  --color-success-content: oklch(22% 0.05 300);
+  --color-warning: oklch(85% 0.15 72);
+  --color-warning-content: oklch(22% 0.05 300);
+  --color-error: oklch(70% 0.19 25);
+  --color-error-content: oklch(20% 0.05 300);
+  --radius-selector: 2rem;
+  --radius-field: 0.875rem;
+  --radius-box: 1.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 2px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "shelfie-night";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+  --color-base-100: oklch(25% 0.035 300);
+  --color-base-200: oklch(21% 0.032 300);
+  --color-base-300: oklch(17% 0.03 300);
+  --color-base-content: oklch(94% 0.025 92);
+  --color-primary: oklch(76% 0.15 2);
+  --color-primary-content: oklch(20% 0.05 300);
+  --color-secondary: oklch(86% 0.14 92);
+  --color-secondary-content: oklch(20% 0.05 300);
+  --color-accent: oklch(78% 0.11 182);
+  --color-accent-content: oklch(20% 0.05 300);
+  --color-neutral: oklch(36% 0.05 300);
+  --color-neutral-content: oklch(95% 0.02 92);
+  --color-info: oklch(76% 0.1 240);
+  --color-info-content: oklch(20% 0.05 300);
+  --color-success: oklch(78% 0.14 150);
+  --color-success-content: oklch(20% 0.05 300);
+  --color-warning: oklch(83% 0.14 72);
+  --color-warning-content: oklch(20% 0.05 300);
+  --color-error: oklch(70% 0.18 25);
+  --color-error-content: oklch(18% 0.05 300);
+  --radius-selector: 2rem;
+  --radius-field: 0.875rem;
+  --radius-box: 1.25rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 2px;
+  --depth: 0;
+  --noise: 0;
+}
+
+/* `pop`: the ink used for chunky outlines and offset shadows. */
+:root,
+[data-theme="shelfie"] {
+  --pop-ink: oklch(26% 0.045 300);
+}
+[data-theme="shelfie-night"] {
+  --pop-ink: oklch(10% 0.02 300);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --pop-ink: oklch(10% 0.02 300);
+  }
+}
+
+@theme inline {
+  --font-sans: "Nunito Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fredoka Variable", "Nunito Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --color-pop: var(--pop-ink);
+  --shadow-pop: 4px 4px 0 0 var(--pop-ink);
+  --shadow-pop-sm: 2px 2px 0 0 var(--pop-ink);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-base-200 text-base-content font-sans antialiased;
+    min-height: 100dvh;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  /* A chunky, slightly tilted-feeling surface: border + offset shadow in `pop` ink. */
+  .surface {
+    @apply bg-base-100 border-2 border-pop rounded-box shadow-pop;
+  }
+  .btn {
+    @apply font-display tracking-wide;
+  }
+  .btn-pop {
+    @apply border-2 border-pop shadow-pop-sm transition-transform;
+  }
+  .btn-pop:not(:disabled):active {
+    @apply translate-x-0.5 translate-y-0.5 shadow-none;
+  }
+}
+
+/* Safe-area padding helpers for notches and home indicators. */
+@utility pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+@utility pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+@utility px-safe {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+@utility pb-dock {
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+}

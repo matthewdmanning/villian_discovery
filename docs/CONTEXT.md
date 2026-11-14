@@ -22,3 +22,11 @@ Agent context: specs, configs, preferences and rules for this repo.
 - `src/discovery/browser.ts` owns the saved profile, browser launch and window-close tracking. Both browser commands use it.
 - Do not build crawlers or probes that run without login. Do not look for login workarounds.
 - Usage and output format: [fable-discovery.md](fable-discovery.md).
+
+## Web UI (`ui/`)
+
+- Stack: Vite + React + Tailwind 4 + daisyUI 5. Own `package.json`; imports library code from `../src`.
+- Theme `shelfie` / `shelfie-night`: tokens in `ui/src/index.css`. Components use only semantic tokens (daisyUI color names, `pop`, `font-display`/`font-sans`). No raw colors or palette classes; `test/ui-tokens.test.ts` enforces.
+- Screens, labels and nav come from `docs/wireframes/libby-ui.wireframe.json`. Field choices, defaults and ranges come from `ConfigSchema`.
+- Data goes through the `LibbyApi` interface (`ui/src/lib/api.ts`). Only `demoApi` exists; it never calls Libby.
+- Layout: safe-area padding (`pt-safe`, `px-safe`, `pb-safe`, `pb-dock`); tables collapse to cards below `md`.

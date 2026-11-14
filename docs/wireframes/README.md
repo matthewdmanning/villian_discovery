@@ -1,6 +1,6 @@
 # libby-shelf UI wireframe
 
-Design only. No UI implemented. Spec: [`libby-ui.wireframe.json`](libby-ui.wireframe.json). Sketches below = default options.
+Spec: [`libby-ui.wireframe.json`](libby-ui.wireframe.json). Sketches below = default options. Implemented in [`ui/`](../../ui) (reads `options` and `screens` at build time).
 
 ## Configure
 
