@@ -19,7 +19,7 @@ export function Screen({ id, actions, children }: { id: ScreenId; actions?: Reac
         <h1 id={`${id}-title`} className="text-2xl font-semibold sm:text-3xl">
           {s?.title}
         </h1>
-        {s && <kbd className="kbd kbd-sm font-mono opacity-70">libby-shelf {s.cli}</kbd>}
+        {s?.cli && <kbd className="kbd kbd-sm font-mono opacity-70">libby-shelf {s.cli}</kbd>}
       </header>
       {children}
       {actions && <div className="flex flex-wrap items-center justify-end gap-3">{actions}</div>}

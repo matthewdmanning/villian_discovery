@@ -28,5 +28,6 @@ Agent context: specs, configs, preferences and rules for this repo.
 - Stack: Vite + React + Tailwind 4 + daisyUI 5. Own `package.json`; imports library code from `../src`.
 - Theme `shelfie` / `shelfie-night`: tokens in `ui/src/index.css`. Components use only semantic tokens (daisyUI color names, `pop`, `font-display`/`font-sans`). No raw colors or palette classes; `test/ui-tokens.test.ts` enforces.
 - Screens, labels and nav come from `docs/wireframes/libby-ui.wireframe.json`. Field choices, defaults and ranges come from `ConfigSchema`.
-- Data goes through the `LibbyApi` interface (`ui/src/lib/api.ts`). Only `demoApi` exists; it never calls Libby.
+- Data goes through the `LibraryApi` interface (`ui/src/lib/api.ts`). Only `demoApi` exists; it never calls Libby or Fable.
 - Layout: safe-area padding (`pt-safe`, `px-safe`, `pb-safe`, `pb-dock`); tables collapse to cards below `md`.
+- The Sync screen is a demo reconciliation preview. `src/sync.ts` owns provider-independent precedence and validation. Live adapters must provide verified shared book IDs and real field edit timestamps; never substitute fetch time. See [sync.md](sync.md). There is no `sync` CLI command or provider write-back implementation.

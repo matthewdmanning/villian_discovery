@@ -3,6 +3,7 @@ import { LibbyClient } from "../../../src/libby-client.js";
 import { silentLogger } from "../../../src/logger.js";
 import type { BookResult, ResultStatus } from "../../../src/runner.js";
 import { Runner, selectCards } from "../../../src/runner.js";
+import { reconcileSnapshots, type SyncField } from "../../../src/sync.js";
 import { ThunderClient } from "../../../src/thunder-client.js";
 import type { LibbyCard, ThunderMedia } from "../../../src/types.js";
 import type { Config } from "./config.ts";
@@ -16,16 +17,17 @@ export interface Match {
 }
 
 /**
- * What the UI needs from libby-shelf. Each method mirrors one CLI command.
+ * What the UI needs from library operations and cross-service reconciliation.
  * A local server can implement this over the library; `demoApi` fakes it in the browser.
  */
-export interface LibbyApi {
+export interface LibraryApi {
   readonly demo: boolean;
   status(tokenFile: string): Promise<{ connected: boolean }>;
   login(code: string, tokenFile: string): Promise<void>;
   cards(): Promise<LibbyCard[]>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
+  sync(): Promise<SyncField[]>;
 }
 
 export type { BookRequest, BookResult, LibbyCard, ResultStatus };
@@ -109,8 +111,57 @@ function fakeMedia(book: BookRequest, card: LibbyCard, type: string): ThunderMed
   };
 }
 
-export const demoApi: LibbyApi = {
+export const demoApi: LibraryApi = {
   demo: true,
+  /** Use this method to preview reconciliation with deterministic example snapshots through reconcileSnapshots. */
+  async sync() {
+    await wait(400);
+    return reconcileSnapshots(
+      [
+        {
+          bookId: "isbn:9781635575637",
+          title: "Piranesi",
+          fields: {
+            readingProgress: { value: 45, updatedAt: "2026-11-10T10:00:00Z" },
+            checkedOut: { value: true },
+            finished: { value: false },
+            rating: { value: 4, updatedAt: "2026-11-10T10:00:00Z" },
+            notes: { value: "Read the ending again", updatedAt: "2026-11-13T10:00:00Z" },
+            shelves: { value: ["Favorites"], updatedAt: "2026-11-12T10:00:00Z" },
+          },
+        },
+        {
+          bookId: "isbn:9780441172719",
+          title: "Dune",
+          fields: { readingProgress: { value: 100 }, checkedOut: { value: false }, finished: { value: true } },
+        },
+      ],
+      [
+        {
+          bookId: "isbn:9781635575637",
+          title: "Piranesi",
+          fields: {
+            readingProgress: { value: 80, updatedAt: "2026-11-14T10:00:00Z" },
+            checkedOut: { value: false },
+            finished: { value: true },
+            rating: { value: 5, updatedAt: "2026-11-13T10:00:00Z" },
+            notes: { value: "Read with the book club", updatedAt: "2026-11-10T10:00:00Z" },
+            shelves: { value: ["Book club"], updatedAt: "2026-11-12T10:00:00Z" },
+          },
+        },
+        {
+          bookId: "isbn:9780441172719",
+          title: "Dune",
+          fields: {
+            readingProgress: { value: 20 },
+            checkedOut: { value: false },
+            finished: { value: false },
+            notes: { value: "Discuss at next meeting", updatedAt: "2026-11-13T10:00:00Z" },
+          },
+        },
+      ],
+    );
+  },
   async status() {
     await wait(150);
     return { connected: sessionStorageGet("demo-connected") === "1" };

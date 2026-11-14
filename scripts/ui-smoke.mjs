@@ -77,7 +77,11 @@ try {
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
 
   await page.evaluate(async () => {
-    const { demoApi } = await import("/src/lib/api.ts");
+    const loaded = performance
+      .getEntriesByType("resource")
+      .findLast((entry) => new URL(entry.name).pathname === "/src/lib/api.ts");
+    const { demoApi } = await import(loaded?.name ?? "/src/lib/api.ts");
+    window.testDemoApi = demoApi;
     window.originalRun = demoApi.run;
     demoApi.run = async () => {
       throw new Error("Injected run failure");
@@ -85,8 +89,8 @@ try {
   });
   await page.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByText("Run failed: Injected run failure", { exact: true }).waitFor();
-  await page.evaluate(async () => {
-    (await import("/src/lib/api.ts")).demoApi.run = window.originalRun;
+  await page.evaluate(() => {
+    window.testDemoApi.run = window.originalRun;
   });
   await page.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("heading", { name: "Plan & results", exact: true }).waitFor();
@@ -97,17 +101,16 @@ try {
   await nav.getByRole("button", { name: "Rules", exact: true }).click();
   await limit.fill("");
   await nav.getByRole("button", { name: "Plan & results", exact: true }).click();
-  await page.evaluate(async () => {
-    const { demoApi } = await import("/src/lib/api.ts");
-    demoApi.run = async () => {
+  await page.evaluate(() => {
+    window.testDemoApi.run = async () => {
       throw new Error("Injected real run failure");
     };
   });
   await page.getByRole("button", { name: "Run for real", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Run", exact: true }).click();
   await page.getByText("Run failed: Injected real run failure", { exact: true }).waitFor();
-  await page.evaluate(async () => {
-    (await import("/src/lib/api.ts")).demoApi.status = async () => {
+  await page.evaluate(() => {
+    window.testDemoApi.status = async () => {
       throw new Error("Injected status failure");
     };
   });
@@ -116,8 +119,39 @@ try {
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
   await input.fill("Another book");
   assert.equal(await actions.first().inputValue(), "", "new input must clear old row overrides");
+  await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
+  await page.getByRole("button", { name: "Sync demo data", exact: true }).click();
+  const syncRows = page.locator("table tbody tr");
+  await syncRows.nth(9).waitFor();
+  const progressRow = syncRows.filter({ hasText: "Piranesi" }).filter({ hasText: "Reading progress" });
+  assert.equal((await progressRow.locator("td").nth(4).textContent()).trim(), "45%");
+  assert.equal((await progressRow.locator("td").nth(5).textContent()).trim(), "Libby");
+  const ratingRow = syncRows.filter({ hasText: "Piranesi" }).filter({ hasText: "rating" });
+  assert.equal((await ratingRow.locator("td").nth(4).textContent()).trim(), "5");
+  assert.equal((await ratingRow.locator("td").nth(5).textContent()).trim(), "Fable");
+  const shelvesRow = syncRows.filter({ hasText: "shelves" });
+  assert.match(await shelvesRow.textContent(), /Needs review/);
+  const comparisonStatus = await page.getByRole("status").textContent();
+  await nav.getByRole("button", { name: "Book list", exact: true }).click();
+  await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
+  assert.equal(await page.getByRole("status").textContent(), comparisonStatus);
+  await page.evaluate(() => {
+    window.testDemoApi.sync = async () => {
+      throw new Error("Injected sync failure");
+    };
+  });
+  await page.getByRole("button", { name: "Sync demo data", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Injected sync failure" }).waitFor();
+  assert.equal(await page.getByRole("status").textContent(), comparisonStatus);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("nav.dock").getByRole("button", { name: "Books", exact: true }).click();
+  await page.locator("nav.dock").getByRole("button", { name: "Sync", exact: true }).click();
+  await page.getByRole("heading", { name: "Sync libraries", exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   assert.deepEqual(errors, [], "browser errors or duplicate React keys");
-  console.log("UI regression checks passed: card priority, draft, duplicate edits, invalid config, run/status errors.");
+  console.log(
+    "UI regression checks passed: card priority, drafts, run/status errors, sync precedence, conflicts, and mobile navigation.",
+  );
 } finally {
   await browser.close();
 }

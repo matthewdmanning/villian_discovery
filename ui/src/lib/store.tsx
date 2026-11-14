@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import type { InputFormat } from "../../../src/input.ts";
-import { type BookRequest, type BookResult, demoApi, type LibbyApi, type LibbyCard } from "./api.ts";
+import type { SyncField } from "../../../src/sync.ts";
+import { type BookRequest, type BookResult, demoApi, type LibbyCard, type LibraryApi } from "./api.ts";
 import { type Config, type ConfigInput, resolve, setPath } from "./config.ts";
 import { options, type ScreenId, screens } from "./spec.ts";
 
@@ -17,7 +18,7 @@ export type BookDraft = {
 };
 
 interface Store {
-  api: LibbyApi;
+  api: LibraryApi;
   screen: ScreenId;
   go(id: ScreenId): void;
   overrides: ConfigInput;
@@ -31,6 +32,8 @@ interface Store {
   setDraft(patch: Partial<BookDraft>): void;
   results: { rows: BookResult[]; dryRun: boolean } | undefined;
   setResults(r: { rows: BookResult[]; dryRun: boolean } | undefined): void;
+  syncResult: { rows: SyncField[]; comparedAt: string } | undefined;
+  setSyncResult(result: { rows: SyncField[]; comparedAt: string }): void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -45,7 +48,7 @@ function load(): ConfigInput {
   }
 }
 
-export function StoreProvider({ children, api = demoApi }: { children: ReactNode; api?: LibbyApi }) {
+export function StoreProvider({ children, api = demoApi }: { children: ReactNode; api?: LibraryApi }) {
   const first = screens.some((s) => s.id === options.defaultScreen)
     ? options.defaultScreen
     : (screens[0]?.id ?? "books");
@@ -58,6 +61,7 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
   const [books, setBooks] = useState<BookRequest[]>([]);
   const [draft, setDraftState] = useState<BookDraft>({ text: "", format: "auto", edits: {} });
   const [results, setResults] = useState<Store["results"]>();
+  const [syncResult, setSyncResult] = useState<Store["syncResult"]>();
 
   useEffect(() => {
     api.cards().then(setCards, () => setCards([]));
@@ -107,6 +111,8 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     setDraft,
     results,
     setResults,
+    syncResult,
+    setSyncResult,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

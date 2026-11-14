@@ -232,6 +232,43 @@
           ]
         }
       ]
+    },
+    {
+      "id": "sync",
+      "title": "Sync libraries",
+      "cli": "",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "rules",
+          "components": [
+            {
+              "type": "rule",
+              "label": "Libby determines reading progress, checked-out status, and finished books."
+            },
+            {
+              "type": "rule",
+              "label": "For other fields, the most recent edit wins. Missing or tied timestamps need review."
+            },
+            {
+              "type": "button",
+              "label": "Sync demo data",
+              "action": "sync",
+              "primary": true
+            }
+          ]
+        },
+        {
+          "id": "comparison",
+          "components": [
+            {
+              "type": "table",
+              "label": "Combined library",
+              "columns": ["book", "field", "libby", "fable", "value", "source"]
+            }
+          ]
+        }
+      ]
     }
   ]
 }

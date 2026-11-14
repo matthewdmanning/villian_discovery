@@ -6,6 +6,7 @@ import {
   ListChecks,
   Moon,
   Plug,
+  RefreshCw,
   Search,
   SlidersHorizontal,
   Sun,
@@ -21,6 +22,7 @@ import { Connect } from "./screens/Connect.tsx";
 import { Results } from "./screens/Results.tsx";
 import { SearchScreen } from "./screens/Search.tsx";
 import { Settings } from "./screens/Settings.tsx";
+import { SyncScreen } from "./screens/Sync.tsx";
 
 const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; short: string; view: () => ReactNode }> = {
   connect: { icon: Plug, short: "Connect", view: Connect },
@@ -29,6 +31,7 @@ const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; sho
   settings: { icon: SlidersHorizontal, short: "Rules", view: Settings },
   search: { icon: Search, short: "Search", view: SearchScreen },
   results: { icon: ListChecks, short: "Results", view: Results },
+  sync: { icon: RefreshCw, short: "Sync", view: SyncScreen },
 };
 
 const mobileOnly = options.layout === "mobile";
