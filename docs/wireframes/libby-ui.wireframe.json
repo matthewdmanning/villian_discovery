@@ -252,9 +252,18 @@
             },
             {
               "type": "button",
-              "label": "Sync demo data",
-              "action": "sync",
+              "label": "Preview changes",
+              "action": "sync-preview",
               "primary": true
+            },
+            { "type": "button", "label": "Apply selected changes", "action": "sync-apply", "confirm": true },
+            {
+              "type": "rule",
+              "label": "Finished wins. Otherwise Currently Reading requires a checked-out Libby book with progress above zero."
+            },
+            {
+              "type": "rule",
+              "label": "Removals default to off. Every removal and private-to-public copy needs explicit review."
             }
           ]
         },

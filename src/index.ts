@@ -9,6 +9,8 @@ export * from "./planner.js";
 export * from "./report.js";
 export * from "./runner.js";
 export * from "./sync.js";
+export * from "./sync-config.js";
+export * from "./sync-plan.js";
 export { DEFAULT_THUNDER_BASE_URL, type LibrarySearch, ThunderClient } from "./thunder-client.js";
 export type * from "./types.js";
 

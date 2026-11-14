@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "metadataScope": "all-shared",
+  "matching": "work",
+  "progress": "furthest",
+  "conflicts": "ask",
+  "removals": "none",
+  "publicCopy": "review"
+}

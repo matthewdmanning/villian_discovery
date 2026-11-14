@@ -142,7 +142,7 @@ Build the UI with `npm run build --prefix ui`; CI checks both the library and UI
 
 With the UI dev server running and Chrome installed, `npm run test:ui` checks draft preservation, independent duplicate rows, invalid rules, and API error feedback. Set `UI_URL` for another server address or `BROWSER_CHANNEL=msedge` to use Edge.
 
-The **Sync libraries** tab previews reconciliation with built-in demo snapshots. Libby wins for reading progress, checked-out status, and finished books; other fields use the most recent edit timestamp. Conflicting values with missing or tied timestamps need review. Results survive screen navigation in the current tab. This preview does not read or change either account; live provider adapters are not implemented. See [the sync data contract](docs/sync.md).
+The **Sync libraries** tab uses Preview → Review → Apply. Libby controls reading state; Finished wins, otherwise Currently Reading requires a checked-out book with positive progress. Other shared metadata uses actual edit recency, with conflicts shown for review. Per-user settings override a shipped fallback file; removals default to off and always require explicit review. The demo only changes simulated accounts. Live writes remain unavailable until provider contracts are verified. See [sync behavior and settings](docs/sync.md) and [contract verification](docs/sync-contracts.md).
 
 ## Endpoints used
 

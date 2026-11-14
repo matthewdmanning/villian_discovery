@@ -120,27 +120,62 @@ try {
   await input.fill("Another book");
   assert.equal(await actions.first().inputValue(), "", "new input must clear old row overrides");
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
-  await page.getByRole("button", { name: "Sync demo data", exact: true }).click();
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   const syncRows = page.locator("table tbody tr");
   await syncRows.nth(9).waitFor();
   const progressRow = syncRows.filter({ hasText: "Piranesi" }).filter({ hasText: "Reading progress" });
-  assert.equal((await progressRow.locator("td").nth(4).textContent()).trim(), "45%");
+  assert.equal((await progressRow.locator("td").nth(4).textContent()).trim(), "65%");
   assert.equal((await progressRow.locator("td").nth(5).textContent()).trim(), "Libby");
   const ratingRow = syncRows.filter({ hasText: "Piranesi" }).filter({ hasText: "rating" });
   assert.equal((await ratingRow.locator("td").nth(4).textContent()).trim(), "5");
   assert.equal((await ratingRow.locator("td").nth(5).textContent()).trim(), "Fable");
   const shelvesRow = syncRows.filter({ hasText: "shelves" });
   assert.match(await shelvesRow.textContent(), /Needs review/);
+  const duneStatus = syncRows.filter({ hasText: "Dune" }).filter({ hasText: "Reading status" });
+  assert.equal((await duneStatus.locator("td").nth(4).textContent()).trim(), "Finished");
+  await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
+  await page.getByRole("region", { name: "Apply results" }).waitFor();
+  assert.match(await page.getByRole("region", { name: "Apply results" }).textContent(), /success/);
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  assert.equal((await progressRow.locator("td").nth(3).textContent()).trim().startsWith("65%"), true);
+  assert.equal((await duneStatus.locator("td").nth(3).textContent()).trim().startsWith("Finished"), true);
+  await page.getByText("Sync settings", { exact: true }).click();
+  await page.getByLabel("Removals", { exact: true }).selectOption("fields-memberships");
+  assert.equal(await page.getByRole("button", { name: "Preview changes", exact: true }).isDisabled(), true);
+  await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await page.getByRole("button", { name: "Use Libby shelves for Piranesi", exact: true }).click();
+  const removal = page.getByRole("checkbox", { name: "Apply shelves to Fable for Piranesi", exact: true });
+  await removal.check();
+  assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), true);
+  await page.getByRole("checkbox", { name: "Confirm removal of shelves on Fable for Piranesi", exact: true }).check();
+  assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), true);
+  await page
+    .getByRole("checkbox", { name: "Confirm public copying of shelves to Fable for Piranesi", exact: true })
+    .check();
+  await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
+  await page.getByRole("region", { name: "Apply results" }).waitFor();
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  assert.equal((await shelvesRow.locator("td").nth(3).textContent()).trim().startsWith("Favorites"), true);
+  await page.getByLabel("Libby progress across editions", { exact: true }).selectOption("choose");
+  await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  const edition = page.getByLabel("Progress edition for Piranesi", { exact: true });
+  await edition.selectOption("libby:piranesi-ebook");
+  assert.equal((await progressRow.locator("td").nth(4).textContent()).trim(), "45%");
+  await page.getByRole("button", { name: "Use fallback settings", exact: true }).click();
+  assert.equal(await page.getByLabel("Removals", { exact: true }).inputValue(), "none");
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   const comparisonStatus = await page.getByRole("status").textContent();
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
   assert.equal(await page.getByRole("status").textContent(), comparisonStatus);
   await page.evaluate(() => {
-    window.testDemoApi.sync = async () => {
+    window.testDemoApi.previewSync = async () => {
       throw new Error("Injected sync failure");
     };
   });
-  await page.getByRole("button", { name: "Sync demo data", exact: true }).click();
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "Injected sync failure" }).waitFor();
   assert.equal(await page.getByRole("status").textContent(), comparisonStatus);
   await page.setViewportSize({ width: 390, height: 844 });

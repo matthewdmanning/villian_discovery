@@ -1,43 +1,44 @@
-# Library reconciliation
+# Library sync
 
-The Sync libraries tab compares deterministic demo snapshots and stores the result in the current tab's application state. It does not authenticate with, read, or write to Libby or Fable.
+Sync follows **Preview → Review conflicts → Apply**. The browser demo uses simulated accounts; it never reads or changes real Libby or Fable data. Live writes remain unavailable until the specific provider contracts and authenticated runtime connection have been verified. [Current contract evidence](sync-contracts.md).
 
-## Precedence
+## User settings and fallback file
 
-- `readingProgress` (percentage from 0 to 100), `checkedOut`, and `finished` always come from Libby, including zero and false. A missing Libby value is unknown, not a false value or permission to use Fable's value.
-- Other fields use the newer **field edit** timestamp when both sources have different values. Compare instants, including timezone offsets, rather than date strings.
-- Different values with missing timestamps or equal instants remain conflicts. Identical values need no timestamp to agree.
-- A value present in only one source is retained, except for Fable-only authoritative fields. Explicit `null` means clearing an ordinary field; absence means unknown.
+The application ships `src/sync.fallbacks.json` (copied into `dist/` when built). Each user's saved overrides are validated and merged over this file, one field at a time. There is no repository, current-directory, project-config, or hidden schema-default dependency.
 
-Conflicts remain unresolved and are excluded from chosen values. The UI displays both source values and edit times. A failed refresh keeps the previous successful comparison and reports the failure; it does not replace the result with a partial source response.
+| Setting                        | Shipped fallback                                                |
+| ------------------------------ | --------------------------------------------------------------- |
+| Shared metadata                | All compatible shared fields                                    |
+| Matching                       | Verified identifiers, then unambiguous normalized work matching |
+| Libby progress across editions | Furthest known progress                                         |
+| Undated conflicts              | Ask for each conflict                                           |
+| Removals                       | None                                                            |
+| Private data copied publicly   | Only after explicit review                                      |
 
-## Normalized provider input
+For example, a user may save `{ "version": 1, "removals": "fields-memberships" }`; remaining fields inherit the shipped file. Unknown settings, invalid values, null configuration objects, and incomplete fallback files produce errors rather than silently changing policy. Using the fallback settings is an explicit reset of the user's overrides.
 
-`reconcileSnapshots(libby, fable)` accepts an array from each source:
+The browser demo stores overrides under an account-specific local-storage key. Production storage and deployment remain undecided; this is not a choice of hosted or desktop architecture. Production must supply authenticated user-scoped settings, provider sessions, plans, and durable operation outcomes. Settings do not contain provider credentials.
 
-```json
-[
-  {
-    "bookId": "isbn:9781635575637",
-    "title": "Piranesi",
-    "fields": {
-      "readingProgress": { "value": 45 },
-      "checkedOut": { "value": true },
-      "finished": { "value": false },
-      "rating": { "value": 4, "updatedAt": "2026-11-13T10:00:00Z" }
-    }
-  }
-]
-```
+## Reading state and matching
 
-`bookId` must already identify the same book across both sources. Provider-local IDs and similar titles are not sufficient to merge records. Duplicate IDs within either source are rejected. `title` labels the book; title edits to be reconciled belong in `fields.title` with their edit time.
+Libby is authoritative for progress, checked-out status, and finished status. Under the shipped progress policy, a matched work uses the furthest known progress, any active loan, and any explicit finished state across its editions/formats.
 
-Ordinary field values may be strings, finite numbers, booleans, null, or string arrays. Timestamps, when provided, must be valid ISO date-times with a timezone. Invalid status values, malformed input, and invalid timestamps are rejected before reconciliation. Progress and status fields have their specific numeric/boolean validation.
+Fable receives **Finished** first when Libby explicitly marks the work finished. Otherwise, **Currently Reading** requires known not-finished state, an active Libby loan, and progress greater than zero. Zero progress and returned books do not imply Currently Reading. Unknown data cannot be converted into zero, false, or a permission to change Fable's status. Clearing a previous status must be previewed and checked against the removal policy; do not invent a Want to Read replacement.
 
-## Live integration gaps
+Verified shared IDs/ISBNs take precedence over exact normalized title-and-author work matching. Ambiguous identities are shown for review. Similar titles alone are insufficient. Passage annotations require a verified compatible edition and location anchor even when the overall work matches.
 
-The existing Libby client reads cards, loans, and holds from `chip/sync`. Loan membership can establish checked-out status, but the code does not yet map verified reading-progress, finished-history, or edit-timestamp fields. Libby's [Reading Journey](https://help.libbyapp.com/en-us/6228.htm) describes reading progress; a production adapter still needs a verified data mapping rather than guessed response fields.
+## Metadata and proposed changes
 
-The existing Fable integration reads list names and book identity metadata through the user's logged-in browser. Its normalized export drops other fields and has no verified field timestamps or write operations. Existing [Fable access rules](CONTEXT.md#fableco-api-discovery) continue to apply.
+For compatible metadata, newer actual field edit timestamps win. Missing or equal timestamps on conflicting values need a choice unless the user's settings explicitly select a provider preference. Fetch time and list-level edit times are not field edit times. One provider's missing field can be unknown rather than empty; adapters must report supported/known fields explicitly.
 
-Before live sync can run, adapters must supply complete source snapshots, stable book identity mappings, and actual edit times. Whether sync only updates this app or writes changes back to the services must be decided separately; this preview implements neither provider writes nor an automatic background scheduler.
+Explicit null represents a field clearing. Reduced string-array membership represents a removal. Removals are blocked under the shipped policy; enabling them still requires a clearly marked preview and explicit approval. Private-to-public copying requires separate approval. Unsupported data and unverified operations remain visible and blocked.
+
+Apply must re-read both sources and revalidate settings, connected accounts, capabilities, and affected data before writing. Changed inputs require a new preview. Per-operation results distinguish successful, failed, uncertain, and skipped writes; partial success is not reported as a complete sync. An ambiguous timeout is verified against the destination before a retry, and completed operations are not replayed.
+
+Sync never borrows, returns, renews, or places holds. Existing discovery/export commands remain read-only.
+
+## Normalized snapshots
+
+Provider snapshots use a stable `bookId`, descriptive `title`, optional `author`, ISBN/shared work identity, and per-field `{ value, updatedAt?, visibility? }` records. Reading progress is a percentage from 0 to 100; checked-out and finished values are booleans. Ordinary values may be strings, finite numbers, booleans, null, or string arrays. Timestamps must be ISO date-times with timezone information.
+
+Duplicate provider IDs, invalid reading values, and invalid timestamps are rejected. Title edits to be reconciled belong in a timestamped field; the snapshot title is also a display label. Adapter capabilities and known-field markers distinguish unsupported/unknown data from an explicitly observed empty destination.
