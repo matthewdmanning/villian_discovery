@@ -44,3 +44,12 @@ coverage/
 *.identity.json
 /libby.config.json
 /reports/
+
+# Browser captures hold cookies and tokens
+*.har
+
+# discover output
+/fable-openapi.json
+
+# export-lists output: the user's own book lists
+/fable-lists/

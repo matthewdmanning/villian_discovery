@@ -33,7 +33,7 @@ const FORMATS: [string, RegExp][] = [
   ["email", /^[^\s@]+@[^\s@]+\.[^\s@]+$/],
 ];
 
-const ID_KEY = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{24,})$/i;
+export const ID_KEY = /^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{24,})$/i;
 
 export function stringFormat(s: string): string | undefined {
   return FORMATS.find(([, re]) => re.test(s))?.[0];

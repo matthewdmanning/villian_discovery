@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { Command, Option } from "commander";
 import { z } from "zod";
+import { captureSession } from "./capture.js";
+import { exportLists } from "./export-lists.js";
+import { discoverApi, loadHar } from "./har.js";
 import { formatResults, loadSiteTestConfig, runSiteChecks, SiteTestConfigSchema } from "./site-check.js";
 
 const DEFAULT_CONFIG = "site-tests.json";
+const log = (m: string) => process.stdout.write(`${m}\n`);
+const BROWSER_BANNER = "A browser window will open. You only need to log in.";
 
 const program = new Command()
   .name("site-check")
@@ -25,6 +31,52 @@ program
     const results = await runSiteChecks(config, { baseDir, ...(opts.only ? { only: opts.only } : {}) });
     process.stdout.write(`${opts.output === "json" ? JSON.stringify(results, null, 2) : formatResults(results)}\n`);
     if (results.some((r) => !r.ok)) process.exitCode = 1;
+  });
+
+program
+  .command("discover")
+  .description("infer an OpenAPI document from a browser HAR capture (the HAR holds secrets; never commit it)")
+  .argument("<har>", "HAR file (DevTools → Network → Save all as HAR)")
+  .option("--host <hosts...>", "keep only these hosts and their subdomains", ["fable.co"])
+  .option("--all-hosts", "keep every host")
+  .option("--out <file>", "write to this file instead of stdout")
+  .action(async (har: string, opts: { host: string[]; allHosts?: boolean; out?: string }) => {
+    const doc = discoverApi(await loadHar(har), { hosts: opts.allHosts ? [] : opts.host });
+    const text = `${JSON.stringify(doc, null, 2)}\n`;
+    if (opts.out) await writeFile(opts.out, text);
+    else process.stdout.write(text);
+  });
+
+program
+  .command("capture")
+  .description("open a browser, wait for you to log in, explore the site, and save an OpenAPI document")
+  .argument("[url]", "start page", "https://fable.co/")
+  .option("--host <hosts...>", "keep only these hosts and their subdomains", ["fable.co"])
+  .option("--out <file>", "output file", "fable-openapi.json")
+  .option("--max-pages <n>", "max pages to explore", (v) => Number.parseInt(v, 10), 30)
+  .option("--focus <paths...>", "explore links under these path prefixes first", [
+    "/library",
+    "/book-list",
+    "/book",
+    "/books",
+  ])
+  .action(async (url: string, opts: { host: string[]; out: string; maxPages: number; focus: string[] }) => {
+    log(BROWSER_BANNER);
+    const har = await captureSession(url, { hosts: opts.host, maxPages: opts.maxPages, focus: opts.focus, log });
+    const doc = discoverApi(har, { hosts: opts.host });
+    await writeFile(opts.out, `${JSON.stringify(doc, null, 2)}\n`);
+    const auth = Object.keys(doc.components?.securitySchemes ?? {}).join(", ") || "none";
+    log(`Done. Found ${Object.keys(doc.paths).length} API paths (auth: ${auth}). Saved to ${opts.out}`);
+  });
+
+program
+  .command("export-lists")
+  .description("open a browser, wait for you to log in, and save each fable.co book list as a book file")
+  .option("--out <dir>", "output folder", "fable-lists")
+  .action(async (opts: { out: string }) => {
+    log(BROWSER_BANNER);
+    const count = await exportLists({ outDir: opts.out, log });
+    log(`Done. Saved ${count} lists to ${opts.out}`);
   });
 
 program

@@ -17,7 +17,9 @@
     "ci": "biome ci . && npm run typecheck && npm test && npm run build",
     "lint:commits": "commitlint --from origin/main --to HEAD --verbose",
     "lint:branch": "node scripts/branch-name.ts",
-    "test:sites": "node dist/discovery/site-check-cli.js examples/site-tests.json"
+    "test:sites": "node dist/discovery/site-check-cli.js examples/site-tests.json",
+    "discover:fable": "node dist/discovery/site-check-cli.js capture",
+    "export:fable": "node dist/discovery/site-check-cli.js export-lists"
   },
   "repository": {
     "type": "git",
@@ -31,6 +33,7 @@
   "dependencies": {
     "commander": "^15.0.0",
     "csv-parse": "^7.0.3",
+    "playwright-core": "1.64.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
