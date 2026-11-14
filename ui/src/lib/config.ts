@@ -31,6 +31,8 @@ export function rangeOf(path: string): { min?: number; max?: number } {
 }
 
 export const DEFAULTS: Config = parseConfig({});
+/** Safe initial fallback while an invalid saved override is being corrected. */
+export const SAFE_DEFAULTS: Config = { ...DEFAULTS, dryRun: true };
 
 export function getPath(obj: unknown, path: string): unknown {
   return path.split(".").reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], obj);
@@ -48,11 +50,11 @@ export function setPath(obj: ConfigInput, path: string, value: unknown): ConfigI
 }
 
 /** Effective config, or the schema error message when the overrides are invalid. */
-export function resolve(overrides: ConfigInput): { config: Config; error?: string } {
+export function resolve(overrides: ConfigInput, fallback: Config = SAFE_DEFAULTS): { config: Config; error?: string } {
   try {
     return { config: parseConfig(overrides) };
   } catch (e) {
-    return { config: DEFAULTS, error: (e as Error).message };
+    return { config: fallback, error: (e as Error).message };
   }
 }
 

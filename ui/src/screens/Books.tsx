@@ -6,7 +6,7 @@ import { stripUndefined } from "../../../src/util.ts";
 import { ConfirmRun, dash, Empty, Panel, Screen, sz } from "../components/ui.tsx";
 import type { BookRequest } from "../lib/api.ts";
 import { labelFor, screen } from "../lib/spec.ts";
-import { useStore } from "../lib/store.tsx";
+import { type BookDraftEdit, useStore } from "../lib/store.tsx";
 
 const parts = screen("books")?.regions.flatMap((r) => r.components) ?? [];
 const textareaLabel = parts.find((c) => c.type === "textarea")?.label ?? "One book per line";
@@ -17,10 +17,6 @@ const MEDIA = MediaTypeSchema.options;
 const ACTIONS = ActionSchema.options;
 
 const SAMPLE = "Piranesi by Susanna Clarke\nProject Hail Mary by Andy Weir\nisbn:9780593135204\nDune - Frank Herbert";
-
-/** Per-row overrides keyed by the input line; `undefined` = use the Rules default. */
-type Edit = { [K in "mediaTypes" | "action" | "libraries"]?: BookRequest[K] | undefined };
-type Edits = Record<string, Edit>;
 
 function parse(
   text: string,
@@ -44,22 +40,27 @@ function parse(
 }
 
 export function Books() {
-  const { config, set, cards, api, go, setBooks, setResults } = useStore();
-  const [text, setText] = useState("");
-  const [fileName, setFileName] = useState<string>();
-  const [format, setFormat] = useState<"auto" | InputFormat>("auto");
-  const [edits, setEdits] = useState<Edits>({});
+  const { config, configError, set, cards, api, go, setBooks, setResults, draft, setDraft } = useStore();
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [runError, setRunError] = useState<string>();
   const confirm = useRef<HTMLDialogElement>(null);
 
-  const parsed = useMemo(() => parse(text, format, fileName), [text, format, fileName]);
-  const books = parsed.books.map((b) => stripUndefined({ ...b, ...edits[b.raw] }) as BookRequest);
-  const edit = (raw: string, patch: Edit) => setEdits((e) => ({ ...e, [raw]: { ...e[raw], ...patch } }));
+  const parsed = useMemo(
+    () => parse(draft.text, draft.format, draft.fileName),
+    [draft.text, draft.format, draft.fileName],
+  );
+  const bookRows = parsed.books.map((b, index) => ({
+    book: stripUndefined({ ...b, ...draft.edits[index] }) as BookRequest,
+    index,
+    key: `${b.raw}-${index}`,
+  }));
+  const books = bookRows.map(({ book }) => book);
+  const edit = (index: number, patch: BookDraftEdit) =>
+    setDraft({ edits: { ...draft.edits, [index]: { ...draft.edits[index], ...patch } } });
 
   async function readFile(f: File) {
-    setFileName(f.name);
-    setText(await f.text());
+    setDraft({ fileName: f.name, text: await f.text() });
   }
   function onDrop(e: DragEvent) {
     e.preventDefault();
@@ -69,11 +70,17 @@ export function Books() {
   }
 
   async function go_() {
+    if (configError) return;
     setBusy(true);
+    setRunError(undefined);
+    setResults(undefined);
     try {
+      const rows = await api.run(books, config);
       setBooks(books);
-      setResults({ rows: await api.run(books, config), dryRun: config.dryRun });
+      setResults({ rows, dryRun: config.dryRun });
       go("results");
+    } catch (err) {
+      setRunError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -97,23 +104,23 @@ export function Books() {
       ))}
     </select>
   );
-  const rowControls = (b: BookRequest) => ({
+  const rowControls = (b: BookRequest, index: number) => ({
     format: cellSelect(
       b.mediaTypes?.[0],
       MEDIA,
-      (v) => edit(b.raw, { mediaTypes: v ? [MediaTypeSchema.parse(v)] : undefined }),
+      (v) => edit(index, { mediaTypes: v ? [MediaTypeSchema.parse(v)] : undefined }),
       "format",
     ),
     action: cellSelect(
       b.action,
       ACTIONS,
-      (v) => edit(b.raw, { action: v ? ActionSchema.parse(v) : undefined }),
+      (v) => edit(index, { action: v ? ActionSchema.parse(v) : undefined }),
       "action",
     ),
     libs: cellSelect(
       b.libraries?.[0],
       cards.map((c) => c.advantageKey),
-      (v) => edit(b.raw, { libraries: v ? [v] : undefined }),
+      (v) => edit(index, { libraries: v ? [v] : undefined }),
       "library",
     ),
   });
@@ -135,8 +142,8 @@ export function Books() {
           <button
             type="button"
             className="btn btn-primary btn-pop btn-lg"
-            disabled={!books.length || busy}
-            onClick={() => (config.dryRun ? go_() : confirm.current?.showModal())}
+            disabled={!books.length || busy || Boolean(configError)}
+            onClick={() => (config.dryRun ? void go_() : confirm.current?.showModal())}
           >
             {busy ? (
               <span className="loading loading-spinner" />
@@ -150,6 +157,16 @@ export function Books() {
         </>
       }
     >
+      {configError && (
+        <div role="alert" className="alert alert-error border-2 border-pop">
+          <p>{configError}</p>
+        </div>
+      )}
+      {runError && (
+        <div role="alert" className="alert alert-error border-2 border-pop">
+          <p>Run failed: {runError}</p>
+        </div>
+      )}
       <div className="grid gap-4 md:grid-cols-[1fr_14rem]">
         <Panel className="flex flex-col gap-2">
           <label htmlFor="books-text" className="text-sm font-semibold">
@@ -159,15 +176,18 @@ export function Books() {
             id="books-text"
             className={`textarea min-h-40 w-full font-mono text-sm leading-relaxed ${sz("textarea")} ${parsed.error ? "textarea-error" : ""}`}
             placeholder={SAMPLE}
-            value={text}
+            value={draft.text}
             onChange={(e) => {
-              setText(e.target.value);
-              setFileName(undefined);
+              setDraft({ text: e.target.value, fileName: undefined });
             }}
           />
           {parsed.error && <p className="text-sm text-error">{parsed.error}</p>}
-          {!text && (
-            <button type="button" className="btn btn-ghost btn-sm self-start" onClick={() => setText(SAMPLE)}>
+          {!draft.text && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm self-start"
+              onClick={() => setDraft({ text: SAMPLE })}
+            >
               Try a sample
             </button>
           )}
@@ -184,7 +204,7 @@ export function Books() {
             className={`flex flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-box border-2 border-dashed p-6 text-center transition-colors ${over ? "border-primary bg-primary/15" : "border-pop/40 bg-base-100 hover:bg-base-300/40"}`}
           >
             <FileUp className="size-8" />
-            <span className="text-sm font-semibold">{fileName ?? dropLabel}</span>
+            <span className="text-sm font-semibold">{draft.fileName ?? dropLabel}</span>
             <input
               type="file"
               className="sr-only"
@@ -196,8 +216,8 @@ export function Books() {
             <span className="text-sm font-semibold">{formatSpec?.label ?? "Format"}</span>
             <select
               className={`select w-32 ${sz("select")}`}
-              value={format}
-              onChange={(e) => setFormat(e.target.value as InputFormat)}
+              value={draft.format}
+              onChange={(e) => setDraft({ format: e.target.value as "auto" | InputFormat })}
             >
               {FORMATS.map((f) => (
                 <option key={f}>{f}</option>
@@ -232,10 +252,10 @@ export function Books() {
                   </tr>
                 </thead>
                 <tbody>
-                  {books.map((b) => {
-                    const c = rowControls(b);
+                  {bookRows.map(({ book: b, index, key }) => {
+                    const c = rowControls(b, index);
                     return (
-                      <tr key={b.raw}>
+                      <tr key={key}>
                         <td className="font-semibold">{dash(b.title ?? (b.titleId && `id:${b.titleId}`))}</td>
                         <td>{dash(b.author)}</td>
                         <td className="font-mono text-xs">{dash(b.isbn)}</td>
@@ -249,10 +269,10 @@ export function Books() {
               </table>
             </div>
             <ul className="space-y-3 md:hidden">
-              {books.map((b) => {
-                const c = rowControls(b);
+              {bookRows.map(({ book: b, index, key }) => {
+                const c = rowControls(b, index);
                 return (
-                  <li key={b.raw} className="rounded-field border-2 border-base-300 p-3">
+                  <li key={key} className="rounded-field border-2 border-base-300 p-3">
                     <p className="font-semibold">{dash(b.title ?? b.isbn ?? b.titleId)}</p>
                     <p className="text-sm opacity-70">{dash(b.author)}</p>
                     <div className="mt-2 grid grid-cols-3 gap-2">

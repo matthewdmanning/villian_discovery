@@ -1,6 +1,10 @@
-import type { BookRequest } from "../../../src/input.ts";
-import type { BookResult, ResultStatus } from "../../../src/runner.ts";
-import type { LibbyCard, ThunderMedia } from "../../../src/types.ts";
+import type { BookRequest } from "../../../src/input.js";
+import { LibbyClient } from "../../../src/libby-client.js";
+import { silentLogger } from "../../../src/logger.js";
+import type { BookResult, ResultStatus } from "../../../src/runner.js";
+import { Runner, selectCards } from "../../../src/runner.js";
+import { ThunderClient } from "../../../src/thunder-client.js";
+import type { LibbyCard, ThunderMedia } from "../../../src/types.js";
 import type { Config } from "./config.ts";
 
 /** One `search` row: what a card's library would match. */
@@ -35,6 +39,23 @@ const CARDS: LibbyCard[] = [
     advantageKey: "lib1",
     limits: { loan: 10, hold: 10 },
     counts: { loan: 3, hold: 7 },
+    lendingPeriods: {
+      book: {
+        options: [
+          [7, "days"],
+          [14, "days"],
+          [21, "days"],
+        ],
+        preference: [14, "days"],
+      },
+      audiobook: {
+        options: [
+          [7, "days"],
+          [14, "days"],
+        ],
+        preference: [7, "days"],
+      },
+    },
   },
   {
     cardId: "1002",
@@ -42,6 +63,22 @@ const CARDS: LibbyCard[] = [
     advantageKey: "lib2",
     limits: { loan: 5, hold: 5 },
     counts: { loan: 0, hold: 5 },
+    lendingPeriods: {
+      book: {
+        options: [
+          [7, "days"],
+          [14, "days"],
+        ],
+        preference: [7, "days"],
+      },
+      audiobook: {
+        options: [
+          [7, "days"],
+          [14, "days"],
+        ],
+        preference: [14, "days"],
+      },
+    },
   },
 ];
 
@@ -57,7 +94,7 @@ function fakeMedia(book: BookRequest, card: LibbyCard, type: string): ThunderMed
   const owned = 1 + Math.floor(r * 6);
   const available = r > 0.55 ? Math.ceil((r - 0.55) * 4) : 0;
   return {
-    id: String(5_000_000 + Math.floor(r * 999_999)),
+    id: book.titleId ?? String(5_000_000 + Math.floor(r * 999_999)),
     title: book.title ?? (book.isbn ? `ISBN ${book.isbn}` : `Title ${book.titleId}`),
     firstCreatorName: book.author ?? "Unknown",
     type: { id: type },
@@ -66,21 +103,10 @@ function fakeMedia(book: BookRequest, card: LibbyCard, type: string): ThunderMed
     availableCopies: Math.min(available, owned),
     holdsCount: available ? 0 : Math.floor(r * 40),
     estimatedWaitDays: available ? 0 : 7 + Math.floor(r * 60),
+    ...(book.isbn && {
+      formats: [{ id: `${type}-demo`, identifiers: [{ type: "ISBN", value: book.isbn }] }],
+    }),
   };
-}
-
-function cardsFor(config: Config, book?: BookRequest): LibbyCard[] {
-  const keys = book?.libraries?.length ? book.libraries : config.libraries;
-  const chosen = config.cards.length
-    ? CARDS.filter((c) => config.cards.includes(c.cardId) || config.cards.includes(c.cardName ?? ""))
-    : CARDS;
-  if (!keys.length) return chosen;
-  return keys.flatMap((k) => chosen.filter((c) => c.advantageKey === k));
-}
-
-function full(card: LibbyCard, kind: "loan" | "hold"): boolean {
-  const limit = card.limits?.[kind];
-  return limit !== undefined && (card.counts?.[kind] ?? 0) >= limit;
 }
 
 export const demoApi: LibbyApi = {
@@ -100,97 +126,66 @@ export const demoApi: LibbyApi = {
   },
   async search(book, config) {
     await wait(500);
-    return cardsFor(config, book).flatMap((card) =>
-      (book.mediaTypes ?? config.mediaTypes).slice(0, 1).map((type) => {
-        const media = fakeMedia(book, card, type);
-        const r = seeded(media.id);
-        return {
-          card,
-          media,
-          titleScore: book.titleId || book.isbn ? 1 : 0.86 + r * 0.14,
-          ...(book.author && { authorScore: 0.6 + r * 0.4 }),
-        };
-      }),
-    );
+    const runner = createDemoRunner(config, [book]);
+    return (await runner.findCandidates(book, selectCards(CARDS, config))).map(({ card, match }) => ({
+      card,
+      media: match.media,
+      titleScore: match.titleScore,
+      ...(match.authorScore !== undefined && { authorScore: match.authorScore }),
+    }));
   },
   async run(books, config) {
     await wait(700);
-    const out: BookResult[] = [];
-    for (const book of books) {
-      const action = book.action ?? config.action;
-      const type = (book.mediaTypes ?? config.mediaTypes)[0] ?? "ebook";
-      const cards = cardsFor(config, book);
-      const base = {
-        input: book.raw,
-        ...(book.title && { title: book.title }),
-        ...(book.author && { author: book.author }),
-      };
-      if (!cards.length) {
-        out.push({ ...base, status: "error", message: "No matching card" });
-        continue;
-      }
-      if (config.skipExisting && seeded(book.raw) < 0.12) {
-        out.push({ ...base, status: "skipped", message: "Already on shelf" });
-        continue;
-      }
-      const hits = cards.map((card) => ({ card, media: fakeMedia(book, card, type) }));
-      const now = hits.find((h) => h.media.isAvailable && !(config.respectCardLimits && full(h.card, "loan")));
-      const row = (h: (typeof hits)[number], status: ResultStatus, extra: Partial<BookResult> = {}): BookResult => ({
-        ...base,
-        status,
-        titleId: h.media.id,
-        title: h.media.title,
-        mediaType: type,
-        library: h.card.advantageKey,
-        cardId: h.card.cardId,
-        ...(h.card.cardName && { cardName: h.card.cardName }),
-        ...extra,
-      });
-      if (action !== "hold" && now) {
-        out.push(row(now, config.dryRun ? "would-borrow" : "borrowed", { loanDays: 14 }));
-        continue;
-      }
-      if (action === "borrow") {
-        out.push({ ...base, status: "skipped", message: "No copy available" });
-        continue;
-      }
-      const holdable = hits
-        .filter((h) => !(config.respectCardLimits && full(h.card, "hold")))
-        .filter(
-          (h) =>
-            config.hold.maxEstimatedWaitDays === undefined ||
-            (h.media.estimatedWaitDays ?? 0) <= config.hold.maxEstimatedWaitDays,
-        )
-        .filter(
-          (h) => config.hold.maxHoldsCount === undefined || (h.media.holdsCount ?? 0) <= config.hold.maxHoldsCount,
-        );
-      if (!holdable.length) {
-        out.push({ ...base, status: "skipped", message: "No card can hold it" });
-        continue;
-      }
-      const placement = config.hold.placement;
-      const targets =
-        placement === "all"
-          ? holdable
-          : placement === "first"
-            ? holdable.slice(0, 1)
-            : [
-                holdable.reduce((a, b) =>
-                  (b.media.estimatedWaitDays ?? 0) < (a.media.estimatedWaitDays ?? 0) ? b : a,
-                ),
-              ];
-      for (const h of targets) {
-        out.push(
-          row(h, config.dryRun ? "would-hold" : "held", {
-            ...(h.media.estimatedWaitDays !== undefined && { estimatedWaitDays: h.media.estimatedWaitDays }),
-            ...(h.media.holdsCount !== undefined && { holdsCount: h.media.holdsCount }),
-          }),
-        );
-      }
-    }
-    return out;
+    return createDemoRunner(config, books).run(books);
   },
 };
+
+/** Use this function to create the production runner with deterministic demo HTTP responses for a run. Inputs are the resolved UI config and all books used to seed the request transport; dependencies are `LibbyClient`, `ThunderClient`, and `Runner`. */
+function createDemoRunner(config: Config, books: BookRequest[]): Runner {
+  const fetch = demoFetch(config, books);
+  const http = { ...config.http, fetch, logger: silentLogger };
+  return new Runner(config, {
+    libby: new LibbyClient({ ...http, identityToken: "demo" }),
+    thunder: new ThunderClient(http),
+    logger: silentLogger,
+  });
+}
+
+/** Use this function to answer the runner's Libby and Thunder requests with deterministic in-memory demo data. Inputs are the resolved UI config and all books used to select fake media; dependencies are `CARDS` and `fakeMedia`. */
+function demoFetch(config: Config, books: BookRequest[]): typeof fetch {
+  return async (input, init = {}) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/chip/sync")) {
+      return Response.json({ result: "synchronized", cards: CARDS, loans: [], holds: [] });
+    }
+    if (url.pathname.includes("/libraries/") && url.pathname.endsWith("/media")) {
+      const library = url.pathname.split("/").at(-2);
+      const card = CARDS.find((candidate) => candidate.advantageKey === library);
+      const query = url.searchParams.get("query") ?? "";
+      const identifier = url.searchParams.get("identifier");
+      const book = books.find(
+        (candidate) =>
+          (identifier !== null && candidate.isbn === identifier) ||
+          (!!candidate.title && query === [candidate.title, candidate.author].filter(Boolean).join(" ")),
+      );
+      if (!card || !book) return Response.json({ items: [] });
+      const mediaTypes = (url.searchParams.get("mediaTypes")?.split(",").filter(Boolean) ?? config.mediaTypes).filter(
+        (type) => type === "ebook" || type === "audiobook" || type === "magazine",
+      );
+      return Response.json({ items: mediaTypes.map((type) => fakeMedia(book, card, type)) });
+    }
+    if (url.pathname.includes("/libraries/") && url.pathname.includes("/media/")) {
+      const library = url.pathname.split("/").at(-3);
+      const card = CARDS.find((candidate) => candidate.advantageKey === library);
+      const titleId = url.pathname.split("/").at(-1);
+      const book = books.find((candidate) => candidate.titleId === titleId);
+      if (!card || !book) return Response.json({}, { status: 404 });
+      return Response.json(fakeMedia(book, card, book.mediaTypes?.[0] ?? config.mediaTypes[0] ?? "ebook"));
+    }
+    if (init.method === "POST" || init.method === "PUT") return Response.json({});
+    throw new Error(`Unsupported demo request: ${init.method ?? "GET"} ${url.pathname}`);
+  };
+}
 
 function sessionStorageGet(k: string): string | null {
   try {

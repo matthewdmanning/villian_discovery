@@ -17,7 +17,21 @@ export function Connect() {
   const [error, setError] = useState<string>();
 
   useEffect(() => {
-    api.status(tokenFile).then((s) => setConnected(s.connected));
+    let cancelled = false;
+    setConnected(undefined);
+    api.status(tokenFile).then(
+      (s) => {
+        if (!cancelled) setConnected(s.connected);
+      },
+      (err) => {
+        if (cancelled) return;
+        setConnected(false);
+        setError((err as Error).message);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
   }, [api, tokenFile]);
 
   async function submit(e: FormEvent) {

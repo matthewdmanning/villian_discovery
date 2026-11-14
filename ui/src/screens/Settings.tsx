@@ -11,9 +11,10 @@ const LENDING = [...choicesOf("borrow.lendingPeriod"), "7", "14", "21"];
 
 /** Renders one wireframe component against the config path it binds. */
 function Bound({ c }: { c: SpecComponent }) {
-  const { config, set } = useStore();
+  const { config, overrides, set } = useStore();
   const path = c.binds as string;
-  const value = getPath(config, path);
+  const override = getPath(overrides, path);
+  const value = override === undefined ? getPath(config, path) : override;
   const onNum = (v: number | undefined) => set(path, v);
   const range = rangeOf(path);
 

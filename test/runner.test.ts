@@ -157,15 +157,26 @@ describe("auth", () => {
     await expect(loginWithSetupCode(client, "123")).rejects.toThrow(/8 digits/);
   });
 
-  it("token file round-trips with 0600 permissions", async () => {
+  it("token file round-trips", async () => {
     const dir = await mkdtemp(join(tmpdir(), "libby-"));
     const p = join(dir, "sub", "identity.json");
     await writeTokenFile(p, "abc");
     expect(await readTokenFile(p)).toBe("abc");
     const fh = await open(p, "r");
     try {
-      expect((await fh.stat()).mode & 0o777).toBe(0o600);
       expect(JSON.parse(await fh.readFile("utf8")).identity).toBe("abc");
+    } finally {
+      await fh.close();
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("token file has POSIX 0600 permissions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "libby-mode-"));
+    const p = join(dir, "identity.json");
+    await writeTokenFile(p, "abc");
+    const fh = await open(p, "r");
+    try {
+      expect((await fh.stat()).mode & 0o777).toBe(0o600);
     } finally {
       await fh.close();
     }

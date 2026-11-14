@@ -1,7 +1,20 @@
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import type { InputFormat } from "../../../src/input.ts";
 import { type BookRequest, type BookResult, demoApi, type LibbyApi, type LibbyCard } from "./api.ts";
 import { type Config, type ConfigInput, resolve, setPath } from "./config.ts";
 import { options, type ScreenId, screens } from "./spec.ts";
+
+export type BookDraftEdit = {
+  mediaTypes?: BookRequest["mediaTypes"] | undefined;
+  action?: BookRequest["action"] | undefined;
+  libraries?: BookRequest["libraries"] | undefined;
+};
+export type BookDraft = {
+  text: string;
+  fileName?: string | undefined;
+  format: "auto" | InputFormat;
+  edits: Record<number, BookDraftEdit>;
+};
 
 interface Store {
   api: LibbyApi;
@@ -14,6 +27,8 @@ interface Store {
   cards: LibbyCard[];
   books: BookRequest[];
   setBooks(b: BookRequest[]): void;
+  draft: BookDraft;
+  setDraft(patch: Partial<BookDraft>): void;
   results: { rows: BookResult[]; dryRun: boolean } | undefined;
   setResults(r: { rows: BookResult[]; dryRun: boolean } | undefined): void;
 }
@@ -35,9 +50,13 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     ? options.defaultScreen
     : (screens[0]?.id ?? "books");
   const [screen, go] = useState<ScreenId>(first);
-  const [overrides, setOverrides] = useState<ConfigInput>(load);
+  const [resolved, setResolved] = useState(() => {
+    const overrides = load();
+    return { overrides, ...resolve(overrides) };
+  });
   const [cards, setCards] = useState<LibbyCard[]>([]);
   const [books, setBooks] = useState<BookRequest[]>([]);
+  const [draft, setDraftState] = useState<BookDraft>({ text: "", format: "auto", edits: {} });
   const [results, setResults] = useState<Store["results"]>();
 
   useEffect(() => {
@@ -46,14 +65,32 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
 
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(overrides));
+      localStorage.setItem(KEY, JSON.stringify(resolved.overrides));
     } catch {
       /* storage blocked: settings last for this tab only */
     }
-  }, [overrides]);
+  }, [resolved.overrides]);
 
-  const set = useCallback((path: string, value: unknown) => setOverrides((o) => setPath(o, path, value)), []);
-  const { config, error } = useMemo(() => resolve(overrides), [overrides]);
+  const set = useCallback(
+    (path: string, value: unknown) =>
+      setResolved((state) => {
+        const overrides = setPath(state.overrides, path, value);
+        return { overrides, ...resolve(overrides, state.config) };
+      }),
+    [],
+  );
+  const setDraft = useCallback(
+    (patch: Partial<BookDraft>) =>
+      setDraftState((d) => ({
+        ...d,
+        ...patch,
+        ...(Object.hasOwn(patch, "text") || Object.hasOwn(patch, "fileName") || Object.hasOwn(patch, "format")
+          ? { edits: {} }
+          : {}),
+      })),
+    [],
+  );
+  const { overrides, config, error } = resolved;
 
   const value: Store = {
     api,
@@ -66,6 +103,8 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     cards,
     books,
     setBooks,
+    draft,
+    setDraft,
     results,
     setResults,
   };

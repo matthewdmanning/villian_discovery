@@ -23,29 +23,52 @@ function download(rows: BookResult[], file: string | undefined) {
 }
 
 export function Results() {
-  const { results, setResults, books, api, config, go } = useStore();
+  const { results, setResults, books, api, config, configError, go } = useStore();
   const [chip, setChip] = useState("all");
   const [busy, setBusy] = useState(false);
+  const [runError, setRunError] = useState<string>();
   const confirm = useRef<HTMLDialogElement>(null);
 
   if (!results)
     return (
       <Screen id="results">
-        <Empty icon={<ListChecks className="size-7" />} title="No plan yet">
-          <button type="button" className="btn btn-primary btn-pop" onClick={() => go("books")}>
-            Add books
-          </button>
-        </Empty>
+        {configError && (
+          <div role="alert" className="alert alert-error border-2 border-pop">
+            <p>{configError}</p>
+          </div>
+        )}
+        {runError && (
+          <div role="alert" className="alert alert-error border-2 border-pop">
+            <p>Run failed: {runError}</p>
+          </div>
+        )}
+        {busy ? (
+          <p role="status" className="text-center opacity-70">
+            Running…
+          </p>
+        ) : (
+          <Empty icon={<ListChecks className="size-7" />} title="No plan yet">
+            <button type="button" className="btn btn-primary btn-pop" onClick={() => go("books")}>
+              Add books
+            </button>
+          </Empty>
+        )}
       </Screen>
     );
 
   const count = (s: ResultStatus) => results.rows.filter((r) => r.status === s).length;
   const rows = results.rows.filter((r) => chip === "all" || r.status === chip || r.status === twin[chip]);
+  const keyedRows = rows.map((row, index) => ({ row, key: `${row.input}-${row.library ?? "none"}-${index}` }));
 
   async function runForReal() {
+    if (configError) return;
     setBusy(true);
+    setRunError(undefined);
+    setResults(undefined);
     try {
       setResults({ rows: await api.run(books, { ...config, dryRun: false }), dryRun: false });
+    } catch (err) {
+      setRunError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -67,7 +90,7 @@ export function Results() {
             <button
               type="button"
               className="btn btn-primary btn-pop btn-lg"
-              disabled={busy}
+              disabled={busy || Boolean(configError)}
               onClick={() => confirm.current?.showModal()}
             >
               {busy ? <span className="loading loading-spinner" /> : <Rocket className="size-5" />}
@@ -77,6 +100,16 @@ export function Results() {
         </>
       }
     >
+      {configError && (
+        <div role="alert" className="alert alert-error border-2 border-pop">
+          <p>{configError}</p>
+        </div>
+      )}
+      {runError && (
+        <div role="alert" className="alert alert-error border-2 border-pop">
+          <p>Run failed: {runError}</p>
+        </div>
+      )}
       <dl className="surface grid grid-cols-3 gap-px overflow-hidden bg-base-300 p-0 sm:grid-cols-6">
         {STATS.map((s) => (
           <div key={s} className="bg-base-100 px-4 py-3">
@@ -127,8 +160,8 @@ export function Results() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={`${r.input}-${r.library ?? i}`}>
+                  {keyedRows.map(({ row: r, key }) => (
+                    <tr key={key}>
                       <td>
                         <StatusBadge status={r.status} />
                       </td>
@@ -151,8 +184,8 @@ export function Results() {
               </table>
             </div>
             <ul className="space-y-3 md:hidden">
-              {rows.map((r, i) => (
-                <li key={`${r.input}-${r.library ?? i}`} className="rounded-field border-2 border-base-300 p-3">
+              {keyedRows.map(({ row: r, key }) => (
+                <li key={key} className="rounded-field border-2 border-base-300 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-semibold">{r.title ?? r.input}</p>
                     <StatusBadge status={r.status} />
