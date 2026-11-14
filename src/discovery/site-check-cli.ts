@@ -54,11 +54,15 @@ program
   .option("--host <hosts...>", "keep only these hosts and their subdomains", ["fable.co"])
   .option("--out <file>", "output file", "fable-openapi.json")
   .option("--max-pages <n>", "max pages to explore", (v) => Number.parseInt(v, 10), 30)
-  .option("--focus <regex>", "explore links whose path matches first", "^/(library|book-list|books?)(/|$)")
-  .action(async (url: string, opts: { host: string[]; out: string; maxPages: number; focus: string }) => {
+  .option("--focus <paths...>", "explore links under these path prefixes first", [
+    "/library",
+    "/book-list",
+    "/book",
+    "/books",
+  ])
+  .action(async (url: string, opts: { host: string[]; out: string; maxPages: number; focus: string[] }) => {
     log(BROWSER_BANNER);
-    const focus = new RegExp(opts.focus, "i");
-    const har = await captureSession(url, { hosts: opts.host, maxPages: opts.maxPages, focus, log });
+    const har = await captureSession(url, { hosts: opts.host, maxPages: opts.maxPages, focus: opts.focus, log });
     const doc = discoverApi(har, { hosts: opts.host });
     await writeFile(opts.out, `${JSON.stringify(doc, null, 2)}\n`);
     const auth = Object.keys(doc.components?.securitySchemes ?? {}).join(", ") || "none";

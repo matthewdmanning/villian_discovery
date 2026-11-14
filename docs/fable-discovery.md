@@ -35,12 +35,12 @@ npm run discover:fable
 
 A browser window opens. Log in. The tool then opens site pages on its own and saves `fable-openapi.json`. It only follows links. It never clicks buttons or sends forms, so it sees `GET` requests only. Close the window to stop early.
 
-| Option            | Effect                                                                 |
-| ----------------- | ---------------------------------------------------------------------- |
-| `--host <h...>`   | Keep these hosts and their subdomains. Default: `fable.co`.            |
-| `--out <file>`    | Output file. Default: `fable-openapi.json`.                            |
-| `--max-pages <n>` | Max pages to open. Default: `30`.                                      |
-| `--focus <regex>` | Open links whose path matches first. Default: library and books pages. |
+| Option            | Effect                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `--host <h...>`   | Keep these hosts and their subdomains. Default: `fable.co`.                                       |
+| `--out <file>`    | Output file. Default: `fable-openapi.json`.                                                       |
+| `--max-pages <n>` | Max pages to open. Default: `30`.                                                                 |
+| `--focus <p...>`  | Open links under these path prefixes first. Default: `/library`, `/book-list`, `/book`, `/books`. |
 
 ## Record a HAR file
 

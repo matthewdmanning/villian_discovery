@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { exploreLinks } from "../src/discovery/capture.js";
+import { exploreLinks, hasPathPrefix } from "../src/discovery/capture.js";
 
 it("exploreLinks keeps same-site pages and drops account-changing or external links", () => {
   expect(
@@ -17,4 +17,14 @@ it("exploreLinks keeps same-site pages and drops account-changing or external li
       ["fable.co"],
     ),
   ).toEqual(["https://fable.co/book/123", "https://app.fable.co/clubs"]);
+});
+
+it("hasPathPrefix matches whole path segments, ignoring case", () => {
+  const prefixes = ["/book", "/Library/"];
+  expect(hasPathPrefix("/book", prefixes)).toBe(true);
+  expect(hasPathPrefix("/book/123", prefixes)).toBe(true);
+  expect(hasPathPrefix("/library/lists", prefixes)).toBe(true);
+  expect(hasPathPrefix("/bookmarks", prefixes)).toBe(false);
+  expect(hasPathPrefix("/clubs", prefixes)).toBe(false);
+  expect(hasPathPrefix("/book", [])).toBe(false);
 });

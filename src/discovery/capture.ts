@@ -22,8 +22,8 @@ export interface CaptureOptions {
   hosts: string[];
   /** Max pages the explorer opens. */
   maxPages?: number;
-  /** Links whose path matches are explored first. */
-  focus?: RegExp;
+  /** Path prefixes (e.g. `/library`) whose links are explored first. */
+  focus?: string[];
   /** How long to wait for a login before exploring the public site. */
   loginTimeoutMs?: number;
   log?: (message: string) => void;
@@ -52,6 +52,15 @@ export async function toEntry(res: Response): Promise<Entry | undefined> {
     },
     response: { status: res.status(), content: { mimeType, text } },
   };
+}
+
+/** True when `pathname` is one of `prefixes` or below one, ignoring case: `/book` matches `/book/1`, not `/bookmarks`. */
+export function hasPathPrefix(pathname: string, prefixes: string[]): boolean {
+  const path = pathname.toLowerCase();
+  return prefixes.some((p) => {
+    const prefix = p.toLowerCase().replace(/\/+$/, "");
+    return path === prefix || path.startsWith(`${prefix}/`);
+  });
 }
 
 /** Same-site links worth opening: http(s), allowed host, not an account-changing action. */
@@ -90,7 +99,7 @@ async function explore(page: Page, startUrl: string, opts: CaptureOptions, isClo
       .evaluateAll((els) => els.map((e) => String((e as unknown as { href: string }).href)))
       .catch(() => [] as string[]);
     for (const link of exploreLinks(hrefs, opts.hosts)) {
-      if (opts.focus?.test(new URL(link).pathname)) queue.unshift(link);
+      if (hasPathPrefix(new URL(link).pathname, opts.focus ?? [])) queue.unshift(link);
       else queue.push(link);
     }
   }
