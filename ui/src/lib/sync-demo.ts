@@ -110,17 +110,31 @@ export const demoSyncApi = {
   /** Use this method to retain a trusted preview server-side in the simulated account boundary; the UI receives a separate copy. */
   async previewSync(options: SyncPreviewOptions = {}): Promise<SyncPlan> {
     const key = `libby-shelf.sync.matches.${encodeURIComponent(context.userId)}.${encodeURIComponent(context.connectionId)}`;
-    const matches = {
-      ...z.record(z.string(), z.string().min(1)).parse(JSON.parse(localStorage.getItem(key) ?? "{}")),
-      ...options.matches,
-    };
+    let stored: Record<string, string> = {};
+    try {
+      stored = z.record(z.string(), z.string().min(1)).parse(JSON.parse(localStorage.getItem(key) ?? "{}"));
+    } catch {
+      stored = {};
+    }
+    // Explicit matches replace the stored set so "Leave unmatched" can remove one; vanished books are pruned.
+    const matches = Object.fromEntries(
+      Object.entries(options.matches ?? stored).filter(
+        ([libbyId, fableId]) =>
+          snapshots.libby.some((book) => book.bookId === libbyId) &&
+          snapshots.fable.some((book) => book.bookId === fableId),
+      ),
+    );
     const plan = await previewSync({
       context,
       settings: loadUserSyncSettings(context.userId),
       adapters,
       options: { ...options, matches },
     });
-    localStorage.setItem(key, JSON.stringify(matches));
+    try {
+      localStorage.setItem(key, JSON.stringify(matches));
+    } catch {
+      // Storage is a convenience; the preview stays valid without it.
+    }
     plans.set(plan.id, plan);
     return structuredClone(plan);
   },

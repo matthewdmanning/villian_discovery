@@ -37,7 +37,7 @@ export function SyncScreen() {
     syncError: error,
     setSyncError: setError,
   } = useStore();
-  const [review, setReview] = useState<SyncApprovals>({ selected: [], removals: [], publicCopies: [] });
+  const review: SyncApprovals = syncResult?.review ?? { selected: [], removals: [], publicCopies: [] };
   const [settings, setSettings] = useState<SyncSettings>();
   const [draft, setDraft] = useState<SyncSettings>({ ...SYNC_FALLBACKS });
   const saved = settings !== undefined && JSON.stringify(settings) === JSON.stringify(draft);
@@ -74,7 +74,6 @@ export function SyncScreen() {
       setSettings(value);
       setDraft(value);
       setSyncResult(undefined);
-      setReview({ selected: [], removals: [], publicCopies: [] });
     } catch (failure) {
       setError(`Settings were not saved: ${String(failure)}`);
     } finally {
@@ -89,13 +88,17 @@ export function SyncScreen() {
     setError(undefined);
     try {
       const plan = await api.previewSync(options);
-      setSyncResult({ rows: plan.rows, plan, comparedAt: new Date().toISOString() });
-      setReview({
-        selected: plan.operations
-          .filter((operation) => !operation.blocked && !operation.removal && !operation.publicExposure)
-          .map((operation) => operation.id),
-        removals: [],
-        publicCopies: [],
+      setSyncResult({
+        rows: plan.rows,
+        plan,
+        comparedAt: new Date().toISOString(),
+        review: {
+          selected: plan.operations
+            .filter((operation) => !operation.blocked && !operation.removal && !operation.publicExposure)
+            .map((operation) => operation.id),
+          removals: [],
+          publicCopies: [],
+        },
       });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
@@ -106,10 +109,15 @@ export function SyncScreen() {
 
   /** Use this function to record explicit selections and independent risk approvals for this exact preview. */
   function toggleReview(kind: keyof SyncApprovals, id: string, checked: boolean) {
-    setReview((previous) => ({
-      ...previous,
-      [kind]: checked ? [...new Set([...previous[kind], id])] : previous[kind].filter((value) => value !== id),
-    }));
+    if (!syncResult) return;
+    const previous = syncResult.review;
+    setSyncResult({
+      ...syncResult,
+      review: {
+        ...previous,
+        [kind]: checked ? [...new Set([...previous[kind], id])] : previous[kind].filter((value) => value !== id),
+      },
+    });
   }
 
   /** Use this function to apply only the trusted plan ID and selected approvals; operation outcomes remain visible across navigation. */
@@ -243,18 +251,27 @@ export function SyncScreen() {
             </span>
           </p>
           {syncResult.plan.conflicts.map((conflict) => (
-            <div key={conflict.message} role="alert" className="alert alert-warning">
+            <div
+              key={JSON.stringify([conflict.libbyBookIds, conflict.fableBookIds, conflict.message])}
+              role="alert"
+              className="alert alert-warning"
+            >
               <span>Book matching needs review: {conflict.message}. No ambiguous book changes will be applied.</span>
             </div>
           ))}
-          {syncResult.plan.conflicts.length > 0 && (
+          {(syncResult.plan.conflicts.length > 0 || Object.keys(syncResult.plan.options.matches ?? {}).length > 0) && (
             <Panel title="Review book matches">
               <p className="mb-3 text-sm opacity-70">
                 Only confirm editions that represent the same work. Passage annotations still need compatible edition
                 and location evidence.
               </p>
               <div className="space-y-3">
-                {[...new Set(syncResult.plan.conflicts.flatMap((conflict) => conflict.libbyBookIds))].map((bookId) => {
+                {[
+                  ...new Set([
+                    ...syncResult.plan.conflicts.flatMap((conflict) => conflict.libbyBookIds),
+                    ...Object.keys(syncResult.plan.options.matches ?? {}),
+                  ]),
+                ].map((bookId) => {
                   const book = syncResult.plan.snapshots.libby.find((candidate) => candidate.bookId === bookId);
                   if (!book) return null;
                   return (
@@ -268,11 +285,11 @@ export function SyncScreen() {
                         value={syncResult.plan.options.matches?.[bookId] ?? ""}
                         disabled={busy || !saved}
                         onChange={(event) => {
-                          if (event.target.value)
-                            void sync({
-                              ...syncResult.plan.options,
-                              matches: { ...syncResult.plan.options.matches, [bookId]: event.target.value },
-                            });
+                          const { [bookId]: _previous, ...others } = syncResult.plan.options.matches ?? {};
+                          void sync({
+                            ...syncResult.plan.options,
+                            matches: event.target.value ? { ...others, [bookId]: event.target.value } : others,
+                          });
                         }}
                       >
                         <option value="">Leave unmatched</option>

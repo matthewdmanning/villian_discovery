@@ -2,12 +2,12 @@ import { z } from "zod";
 import {
   type BookSnapshot,
   isMetadataFieldInScope,
+  matchSnapshotGroups,
   reconcileSnapshotsDetailed,
   type SnapshotField,
   type SnapshotValue,
   type SyncField,
   type SyncProvider,
-  workKey,
 } from "./sync.js";
 import { resolveSyncSettings, type SyncSettings } from "./sync-config.js";
 
@@ -139,40 +139,26 @@ function buildPlan(
   id: string = crypto.randomUUID(),
 ): SyncPlan {
   const selected = structuredClone(snapshots);
-  const targets = new Map<string, BookSnapshot[]>();
-  for (const [libbyId, fableId] of Object.entries(options.matches ?? {})) {
-    const book = selected.libby.find((candidate) => candidate.bookId === libbyId);
-    if (book) targets.set(fableId, [...(targets.get(fableId) ?? []), book]);
-  }
-  for (const [fableId, books] of targets) {
-    if (books.length < 2) continue;
-    const fable = selected.fable.find((book) => book.bookId === fableId);
-    const key = fable && workKey(fable);
-    if (!key || books.some((book) => workKey(book) !== key))
-      throw new Error("Confirmed matches cannot collapse unrelated books into one destination");
-  }
-  for (const [libbyId, fableId] of Object.entries(options.matches ?? {})) {
-    const libby = selected.libby.find((book) => book.bookId === libbyId);
-    const fable = selected.fable.find((book) => book.bookId === fableId);
-    if (!libby || !fable) throw new Error("A confirmed book match no longer exists; review matching again");
-    libby.workId = fable.workId = `confirmed:${fableId}`;
-  }
-  for (const provider of ["libby", "fable"] as const) {
-    for (const [groupId, editionId] of Object.entries(options.editions ?? {})) {
-      const groups = reconcileSnapshotsDetailed(selected.libby, selected.fable, settings).groups;
-      const group = groups.find((candidate) => candidate.groupId === groupId);
-      if (!group?.[provider].some((book) => book.bookId === editionId)) continue;
-      const edition = group[provider].find((book) => book.bookId === editionId)!;
-      for (const book of selected[provider])
-        if (group[provider].some((member) => member.bookId === book.bookId)) {
-          for (const field of ["readingProgress"] as const) {
-            if (edition.fields[field]) book.fields[field] = structuredClone(edition.fields[field]!);
-            else delete book.fields[field];
-          }
+  const matches = options.matches ?? {};
+  const editions = Object.entries(options.editions ?? {});
+  if (editions.length) {
+    const groups = matchSnapshotGroups(selected.libby, selected.fable, settings.matching, matches).groups;
+    for (const provider of ["libby", "fable"] as const) {
+      for (const [groupId, editionId] of editions) {
+        const group = groups.find((candidate) => candidate.groupId === groupId);
+        const edition = group?.[provider].find((book) => book.bookId === editionId);
+        if (!group || !edition) continue;
+        const members = new Set(group[provider].map((member) => member.bookId));
+        for (const book of selected[provider]) {
+          if (!members.has(book.bookId)) continue;
+          if (edition.fields.readingProgress)
+            book.fields.readingProgress = structuredClone(edition.fields.readingProgress);
+          else delete book.fields.readingProgress;
         }
+      }
     }
   }
-  const result = reconcileSnapshotsDetailed(selected.libby, selected.fable, settings);
+  const result = reconcileSnapshotsDetailed(selected.libby, selected.fable, settings, matches);
   const rows = structuredClone(result.rows);
   const operations: SyncOperation[] = [];
   for (const row of rows) {
@@ -198,6 +184,7 @@ function buildPlan(
     for (const book of group[target]) {
       const before = book.fields[row.field];
       if (before && sameValue(before.value, row.value)) continue;
+      if (!before && (row.value === null || row.value === "")) continue;
       const sourceField = row[row.source];
       const destinationVisibility = before?.visibility ?? adapters[target].visibility?.[row.field];
       const publicExposure = sourceField?.visibility === "private" && destinationVisibility === "public";
@@ -231,7 +218,7 @@ function buildPlan(
     }
   }
   const unmatched = result.groups
-    .filter((group) => !group.libby.length || !group.fable.length)
+    .filter((group) => group.libby.length && !group.fable.length)
     .map((group) => ({
       message: `No matched destination for ${group.title}; creating provider book records is not verified`,
       libbyBookIds: group.libby.map((book) => book.bookId),
@@ -321,13 +308,16 @@ export async function applySync(input: {
       outcomes.set(outcome.operationId, outcome);
       await input.journal.write(context, input.plan.id, [...outcomes.values()]);
     };
-    const validate = async () => {
+    const validateConfig = async () => {
       const currentSettings = resolveSyncSettings(input.readSettings ? await input.readSettings() : input.settings);
       if (
         stable(currentSettings) !== stable(input.plan.settings) ||
         capabilities(input.adapters) !== input.plan.capabilities
       )
         throw new Error("Settings or capabilities changed; create a new preview");
+    };
+    const validate = async () => {
+      await validateConfig();
       const fresh = await readBoth(input.adapters, context);
       const parsed = reconcileSnapshotsDetailed(fresh.libby, fresh.fable, settings);
       fresh.libby = parsed.libby;
@@ -341,6 +331,7 @@ export async function applySync(input: {
             operation.field
           ];
           if (book && actual) book.fields[operation.field] = structuredClone(actual);
+          if (outcomes.get(operation.id)?.status === "success") continue;
           await persist({
             operationId: operation.id,
             status: "success",
@@ -379,7 +370,8 @@ export async function applySync(input: {
         message: "Write prepared; outcome requires verification",
       });
       try {
-        await validate();
+        // Provider state is re-read inside assertCurrent, which verified adapters must call before writing.
+        await validateConfig();
       } catch (error) {
         await persist({ operationId: operation.id, status: "skipped", message: String(error) });
         break;
