@@ -22,14 +22,8 @@
         {
           "id": "form",
           "components": [
-            {
-              "type": "field",
-              "input": "code",
-              "label": "8-digit setup code",
-              "hint": "Libby → Menu → Copy To Another Device"
-            },
             { "type": "field", "input": "path", "label": "Token file", "binds": "auth.tokenFile", "advanced": true },
-            { "type": "button", "label": "Connect", "action": "login" }
+            { "type": "button", "label": "Sign in to Libby", "action": "login" }
           ]
         }
       ]

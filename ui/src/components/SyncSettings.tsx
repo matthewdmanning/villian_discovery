@@ -23,20 +23,16 @@ const CHOICES: Record<string, string> = {
   yes: "Yes",
 };
 
-/** Use this component to edit one user's validated sync settings; choices come from SyncSettingsSchema and saving is delegated to the owning screen. */
+/** Use this component to edit one user's validated sync settings; choices come from SyncSettingsSchema, and the owning screen saves each change as it happens. */
 export function SyncSettingsPanel({
   value,
-  saved,
   busy,
   onChange,
-  onSave,
   onReset,
 }: {
   value: SyncSettings;
-  saved: boolean;
   busy: boolean;
   onChange(value: SyncSettings): void;
-  onSave(): void;
   onReset(): void;
 }) {
   const select = (key: SelectKey) => (
@@ -59,10 +55,7 @@ export function SyncSettingsPanel({
   );
   return (
     <Panel title="Your sync settings">
-      <p className="mb-4 text-sm opacity-70">
-        Your saved settings override the application’s fallback file. Removals always need an explicit preview and
-        confirmation.
-      </p>
+      <p className="mb-4 text-sm opacity-70">Changes save automatically. Removals always need your confirmation.</p>
       <div className="grid gap-4 sm:grid-cols-2">
         {select("conflicts")}
         {select("removals")}
@@ -81,12 +74,8 @@ export function SyncSettingsPanel({
         </div>
       </details>
       <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
-        <span className="text-sm opacity-70">{saved ? "Settings saved" : "Save settings before previewing"}</span>
         <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onReset}>
           Reset to defaults
-        </button>
-        <button type="button" className="btn btn-primary btn-sm" disabled={busy || saved} onClick={onSave}>
-          Save sync settings
         </button>
       </div>
     </Panel>

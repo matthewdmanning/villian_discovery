@@ -132,7 +132,9 @@ Lower level: `LibbyClient`, `ThunderClient`, `Runner`, `planBook` (pure), `bestM
 cd ui && npm install && npm run dev
 ```
 
-Runs on built-in demo data (`demo` badge): nothing reaches Libby yet. Real calls need a `LibraryApi` backend (`ui/src/lib/api.ts`).
+Runs on built-in demo data (`demo` badge): nothing reaches Libby.
+
+To use your real accounts on Windows, double-click `Start libby-shelf.cmd`. It installs what is missing, starts a local server on <http://127.0.0.1:8787>, and opens it. On other systems, run `npm ci && npm ci --prefix ui && npm run live`. Connect Libby opens libbyapp.com for your sign-in on its own. Sync compares on its own when it opens; the first comparison opens a browser window for your Fable login. Settings save as you change them. Live sync only reads: every write stays blocked until its contract is verified ([docs/sync-contracts.md](docs/sync-contracts.md)). Search and Run are not live yet.
 
 Book drafts and per-row edits survive screen navigation for the current tab. Changing the input or its format clears row overrides. Invalid rules block runs until corrected. Demo plans use the library planner, including card limits, per-run limits, and lending periods.
 

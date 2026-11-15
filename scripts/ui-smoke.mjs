@@ -120,7 +120,8 @@ try {
   await input.fill("Another book");
   assert.equal(await actions.first().inputValue(), "", "new input must clear old row overrides");
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  // The comparison runs on its own when Sync opens.
+  await page.getByRole("status").filter({ hasText: "Last compared" }).waitFor();
   const openTab = (name) => page.getByRole("tab", { name, exact: true }).click();
   const bookItem = (book) => page.locator("main li").filter({ has: page.locator("span.truncate", { hasText: book }) });
   const squash = (text) => text.replace(/\s+/g, " ").trim();
@@ -157,14 +158,12 @@ try {
   await page.getByText("Advanced", { exact: true }).click();
   assert.equal(await page.getByLabel("Allow decrease in progress", { exact: true }).isChecked(), false);
   await showAll.selectOption("yes");
-  await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await openTab("Changes");
   await bookItem("Dune").locator("summary").click();
   await duneNotes.waitFor();
   await openTab("Settings");
   await showAll.selectOption("no");
-  await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await openTab("Changes");
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
@@ -176,8 +175,6 @@ try {
   assert.match(await bookLine("Piranesi"), /^Piranesi ?65%/);
   await openTab("Settings");
   await page.getByLabel("Removals", { exact: true }).selectOption("fields-memberships");
-  assert.equal(await page.getByRole("button", { name: "Preview changes", exact: true }).isDisabled(), true);
-  await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await openTab("Library");
   await page.getByRole("button", { name: "Use Libby shelves for Piranesi", exact: true }).click();

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { BookSnapshot, SyncProvider } from "../../../src/sync.ts";
 import {
   applySync,
+  createMemoryJournal,
   previewSync,
   type SyncAdapter,
   type SyncAdapters,
@@ -9,7 +10,6 @@ import {
   type SyncApprovals,
   type SyncContext,
   type SyncJournal,
-  type SyncOutcome,
   type SyncPlan,
   type SyncPreviewOptions,
 } from "../../../src/sync-plan.ts";
@@ -19,35 +19,12 @@ import { loadUserSyncSettings, saveUserSyncSettings } from "./sync-settings.ts";
 const context: SyncContext = { userId: "demo-user", connectionId: "demo-libby-and-fable" };
 const snapshots: Record<SyncProvider, BookSnapshot[]> = structuredClone(DEMO_SYNC_SNAPSHOTS);
 const plans = new Map<string, SyncPlan>();
-// ponytail: demo-only memory journal; production requires a durable user-scoped journal and cross-process locking.
-const entries = new Map<string, SyncOutcome[]>();
-const locks = new Set<string>();
+const journal: SyncJournal = createMemoryJournal();
 
-/** Use this function to address only the current demo account's plan outcomes. */
+/** Use this function to compare demo accounts by owner and connection. */
 function journalKey(owner: SyncContext, planId: string): string {
   return JSON.stringify([owner.userId, owner.connectionId, planId]);
 }
-
-const journal: SyncJournal = {
-  /** Use this method to exclude concurrent demo writes and settings changes for the same user. */
-  async withLock<T>(owner: SyncContext, action: () => Promise<T>): Promise<T> {
-    if (locks.has(owner.userId)) throw new Error("A sync is already applying for this user");
-    locks.add(owner.userId);
-    try {
-      return await action();
-    } finally {
-      locks.delete(owner.userId);
-    }
-  },
-  /** Use this method to read only this user's retained outcomes for a particular plan. */
-  async read(owner, planId) {
-    return structuredClone(entries.get(journalKey(owner, planId)) ?? []);
-  },
-  /** Use this method to record demo outcomes before a write and after verification. */
-  async write(owner, planId, outcomes) {
-    entries.set(journalKey(owner, planId), structuredClone(outcomes));
-  },
-};
 
 /** Use this function to build a simulated provider; its writes replace guarded in-memory fields and never call a network service. */
 function demoAdapter(provider: "libby" | "fable"): SyncAdapter {

@@ -25,7 +25,8 @@ export interface Match {
 export interface LibraryApi {
   readonly demo: boolean;
   status(tokenFile: string): Promise<{ connected: boolean }>;
-  login(code: string, tokenFile: string): Promise<void>;
+  /** Sign in to Libby; the live server opens libbyapp.com for the user. */
+  login(tokenFile: string): Promise<void>;
   cards(): Promise<LibbyCard[]>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
@@ -123,9 +124,8 @@ export const demoApi: LibraryApi = {
     await wait(150);
     return { connected: sessionStorageGet("demo-connected") === "1" };
   },
-  async login(code) {
+  async login() {
     await wait(600);
-    if (!/^\d{8}$/.test(code)) throw new Error("Setup code must be 8 digits");
     sessionStorageSet("demo-connected", "1");
   },
   async cards() {

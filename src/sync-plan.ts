@@ -414,3 +414,28 @@ export async function applySync(input: {
     return { planId: input.plan.id, outcomes: [...outcomes.values()] };
   });
 }
+
+/** Use this function to create a single-process journal: outcomes live in memory and one apply runs per user at a time. */
+export function createMemoryJournal(): SyncJournal {
+  // ponytail: in-memory journal; a durable user-scoped journal and cross-process locking are needed for production.
+  const entries = new Map<string, SyncOutcome[]>();
+  const locks = new Set<string>();
+  const key = (owner: SyncContext, planId: string) => JSON.stringify([owner.userId, owner.connectionId, planId]);
+  return {
+    async withLock(owner, action) {
+      if (locks.has(owner.userId)) throw new Error("A sync is already applying for this user");
+      locks.add(owner.userId);
+      try {
+        return await action();
+      } finally {
+        locks.delete(owner.userId);
+      }
+    },
+    async read(owner, planId) {
+      return structuredClone(entries.get(key(owner, planId)) ?? []);
+    },
+    async write(owner, planId, outcomes) {
+      entries.set(key(owner, planId), structuredClone(outcomes));
+    },
+  };
+}

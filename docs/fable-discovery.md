@@ -10,8 +10,7 @@
 ## Export your book lists
 
 ```sh
-npm run build
-npm run export:fable
+npm run site-check -- export-lists
 ```
 
 1. A browser window opens on <https://fable.co/library>.
@@ -29,8 +28,7 @@ The files hold your own lists. `.gitignore` excludes `fable-lists/`. Never commi
 ## Capture the API automatically
 
 ```sh
-npm run build
-npm run discover:fable
+npm run site-check -- capture
 ```
 
 A browser window opens. Log in. The tool then opens site pages on its own and saves `fable-openapi.json`. It only follows links. It never clicks buttons or sends forms, so it sees `GET` requests only. Close the window to stop early.
@@ -56,8 +54,7 @@ The tool sees only the requests that you trigger.
 ## Run `discover`
 
 ```sh
-npm run build
-node dist/discovery/site-check-cli.js discover <file.har> --out fable-openapi.json
+npm run site-check -- discover <file.har> --out fable-openapi.json
 ```
 
 | Option          | Effect                                                      |

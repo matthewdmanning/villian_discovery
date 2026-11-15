@@ -1,18 +1,13 @@
 import { CircleCheck, CircleDashed, Plug } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Advanced, Field, Panel, Screen, sz } from "../components/ui.tsx";
-import { labelFor, screen } from "../lib/spec.ts";
+import { labelFor } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
-
-const codeField = screen("connect")
-  ?.regions.flatMap((r) => r.components)
-  .find((c) => c.type === "field" && !c.binds);
 
 export function Connect() {
   const { api, config, set, go } = useStore();
   const tokenFile = config.auth.tokenFile;
   const [connected, setConnected] = useState<boolean>();
-  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -34,14 +29,20 @@ export function Connect() {
     };
   }, [api, tokenFile]);
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  // Start sign-in as soon as the app knows it is not connected.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: start once per "not connected" result.
+  useEffect(() => {
+    if (connected === false && !error) void signIn();
+  }, [connected]);
+
+  async function signIn(e?: FormEvent) {
+    e?.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError(undefined);
     try {
-      await api.login(code, tokenFile);
+      await api.login(tokenFile);
       setConnected(true);
-      setCode("");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -66,32 +67,30 @@ export function Connect() {
         )}
       </div>
 
-      <Panel className="max-w-xl">
-        <form onSubmit={submit} className="space-y-2">
-          <Field label={codeField?.label ?? "Setup code"} hint={codeField?.hint}>
-            <input
-              className={`input w-full font-mono text-lg tracking-[0.3em] tabular-nums ${sz("input")} ${error ? "input-error" : ""}`}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={8}
-              placeholder="12345678"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-            />
-            {error && <p className="label text-error">{error}</p>}
-          </Field>
-          <div className="flex justify-end pt-2">
-            <button
-              type="submit"
-              className={`btn btn-primary btn-pop ${sz("btn")}`}
-              disabled={busy || code.length !== 8}
-            >
-              {busy ? <span className="loading loading-spinner loading-sm" /> : <Plug className="size-4" />}
-              Connect
-            </button>
-          </div>
-        </form>
-      </Panel>
+      {connected === false && (
+        <Panel className="max-w-xl">
+          <form onSubmit={signIn} className="space-y-2">
+            <p className="text-sm opacity-70">
+              A Libby window opens. This page continues on its own after you finish there.
+            </p>
+            <ol className="list-decimal space-y-1 pl-5 text-sm">
+              <li>At "Do you have a library card?", choose Yes.</li>
+              <li>Sign in with your library card.</li>
+              <li>
+                Already use Libby on your phone? Choose Recover Your Data, then Display Setup Code. On your phone, open
+                Libby, go to Menu, then Copy To Another Device, and enter that code.
+              </li>
+            </ol>
+            {error && <p className="text-sm text-error">{error}</p>}
+            <div className="flex justify-end pt-2">
+              <button type="submit" className={`btn btn-primary btn-pop ${sz("btn")}`} disabled={busy}>
+                {busy ? <span className="loading loading-spinner loading-sm" /> : <Plug className="size-4" />}
+                {error ? "Try again" : "Sign in to Libby"}
+              </button>
+            </div>
+          </form>
+        </Panel>
+      )}
 
       <div className="max-w-xl">
         <Advanced title="Advanced">

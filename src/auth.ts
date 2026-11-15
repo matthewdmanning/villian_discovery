@@ -22,6 +22,17 @@ export async function resolveIdentityToken(auth: {
   );
 }
 
+/** Use this function to read the identity token from libbyapp.com's `dewey.sentry.identity` storage value, which may be raw or JSON-quoted. */
+export function identityFromLibbyStorage(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "string" && parsed ? parsed : undefined;
+  } catch {
+    return raw;
+  }
+}
+
 export async function readTokenFile(path: string): Promise<string | undefined> {
   let text: string;
   try {

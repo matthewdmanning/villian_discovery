@@ -32,25 +32,21 @@ export function SyncScreen() {
   } = useStore();
   const review: SyncApprovals = syncResult?.review ?? { selected: [], removals: [] };
   const [settings, setSettings] = useState<SyncSettings>();
-  const [draft, setDraft] = useState<SyncSettings>({ ...SYNC_FALLBACKS });
   const [tab, setTab] = useState<(typeof TABS)[number]>("Changes");
-  const saved = settings !== undefined && JSON.stringify(settings) === JSON.stringify(draft);
+  const saved = settings !== undefined;
 
   useEffect(() => {
     let active = true;
     setSettings(undefined);
     api.getSyncSettings().then(
       (value) => {
-        if (active) {
-          setSettings(value);
-          setDraft(value);
-        }
+        if (active) setSettings(value);
       },
       (failure) => {
-        if (active)
-          setError(
-            `Saved settings could not be loaded: ${String(failure)}. The editor shows fallback values until you save or reset.`,
-          );
+        if (active) {
+          setSettings({ ...SYNC_FALLBACKS });
+          setError(`Saved settings could not be loaded: ${String(failure)}. Default settings are used.`);
+        }
       },
     );
     return () => {
@@ -58,15 +54,13 @@ export function SyncScreen() {
     };
   }, [api, setError]);
 
-  /** Use this function to save validated user overrides before generating a new preview; an empty object restores the shipped fallback values. */
-  async function saveSettings(input: unknown = draft) {
+  /** Use this function to save validated user overrides as soon as they change; clearing the result makes the preview run again. An empty object restores the shipped fallback values. */
+  async function saveSettings(input: unknown) {
     if (busy) return;
     setBusy(true);
     setError(undefined);
     try {
-      const value = await api.saveSyncSettings(input);
-      setSettings(value);
-      setDraft(value);
+      setSettings(await api.saveSyncSettings(input));
       setSyncResult(undefined);
     } catch (failure) {
       setError(`Settings were not saved: ${String(failure)}`);
@@ -99,6 +93,12 @@ export function SyncScreen() {
       setBusy(false);
     }
   }
+
+  // Compare automatically when Sync opens and after each settings change; a failure waits for "Preview changes".
+  // biome-ignore lint/correctness/useExhaustiveDependencies: sync reads current state; rerun only when these change.
+  useEffect(() => {
+    if (saved && !syncResult && !busy && !error) void sync();
+  }, [saved, syncResult]);
 
   /** Use this function to record explicit selections and independent risk approvals for this exact preview. */
   function toggleReview(kind: keyof SyncApprovals, id: string, checked: boolean) {
@@ -259,9 +259,6 @@ export function SyncScreen() {
           </p>
         )}
       </div>
-      {!saved && settings && (
-        <p className="text-sm text-warning">Save settings before previewing or applying changes.</p>
-      )}
       {error && (
         <div role="alert" className="alert alert-error border-2 border-pop">
           <span>
@@ -273,11 +270,9 @@ export function SyncScreen() {
       {tab === "Settings" ? (
         <div role="tabpanel" aria-label="Settings" className="contents">
           <SyncSettingsPanel
-            value={draft}
-            saved={saved}
-            busy={busy}
-            onChange={setDraft}
-            onSave={() => saveSettings()}
+            value={settings ?? SYNC_FALLBACKS}
+            busy={busy || !saved}
+            onChange={(value) => saveSettings(value)}
             onReset={() => saveSettings({})}
           />
         </div>
@@ -316,6 +311,13 @@ export function SyncScreen() {
               Last compared:{" "}
               <time dateTime={syncResult.comparedAt}>{new Date(syncResult.comparedAt).toLocaleString()}</time>
             </span>
+            {(["libby", "fable"] as const)
+              .filter((provider) => !syncResult.plan.schemas[provider].length)
+              .map((provider) => (
+                <span key={provider} className="mt-1 block">
+                  {APP_NAMES[provider]} is not connected.
+                </span>
+              ))}
           </p>
           {syncResult.plan.conflicts.map((conflict) => (
             <div
