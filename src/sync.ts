@@ -175,36 +175,70 @@ function joinRoots(parents: Map<string, string>, left: string, right: string): v
 }
 
 /**
- * Use this function to return whether a union-find root has members from both providers.
- * Inputs: `parents` — union-find parent map; `libby` and `fable` — parsed snapshots; `root` — candidate root.
+ * Use this function to list union-find roots that already hold books from both providers.
+ * Inputs: `parents` — union-find parent map; `libbyCount` and `fableCount` — provider snapshot counts.
  * Dependencies: `findRoot`.
  */
-function hasBothProviders(
-  parents: Map<string, string>,
-  libby: BookSnapshot[],
-  fable: BookSnapshot[],
-  root: string,
-): boolean {
-  for (let index = 0; index < libby.length; index++) {
-    if (findRoot(parents, `l:${index}`) === root) {
-      for (let fableIndex = 0; fableIndex < fable.length; fableIndex++) {
-        if (findRoot(parents, `f:${fableIndex}`) === root) return true;
-      }
-      return false;
-    }
+function matchedRoots(parents: Map<string, string>, libbyCount: number, fableCount: number): Set<string> {
+  const libbyRoots = new Set<string>();
+  for (let index = 0; index < libbyCount; index++) libbyRoots.add(findRoot(parents, `l:${index}`));
+  const matched = new Set<string>();
+  for (let index = 0; index < fableCount; index++) {
+    const root = findRoot(parents, `f:${index}`);
+    if (libbyRoots.has(root)) matched.add(root);
   }
-  return false;
+  return matched;
 }
 
 /**
- * Use this function to group snapshots using canonical IDs, verified shared identities, and optional exact work fallback.
- * Inputs: `libbyInput` and `fableInput` — provider snapshot arrays; `matching` — identifier-only or work policy.
- * Dependencies: `parseSnapshots`, `sharedIdentityKeys`, `workKey`, and union-find helpers.
+ * Use this function to join user-confirmed Libby/Fable pairs without letting a confirmation pull unrelated Libby works into one destination.
+ * Inputs: `parents` — union-find parent map; `libby` and `fable` — parsed snapshots; `confirmed` — Libby bookId to Fable bookId.
+ * Dependencies: `findRoot`, `joinRoots`, `workKey`.
+ */
+function joinConfirmed(
+  parents: Map<string, string>,
+  libby: BookSnapshot[],
+  fable: BookSnapshot[],
+  confirmed: Record<string, string>,
+): void {
+  const libbyIndex = new Map(libby.map((book, index) => [book.bookId, index]));
+  const fableIndex = new Map(fable.map((book, index) => [book.bookId, index]));
+  const pairs = Object.entries(confirmed).map(([libbyId, fableId]) => {
+    const left = libbyIndex.get(libbyId);
+    const right = fableIndex.get(fableId);
+    if (left === undefined || right === undefined)
+      throw new Error("A confirmed book match no longer exists; review matching again");
+    return { left, right };
+  });
+  const libbyInRoot = (root: string) => {
+    const members: number[] = [];
+    for (let index = 0; index < libby.length; index++)
+      if (findRoot(parents, `l:${index}`) === root) members.push(index);
+    return members;
+  };
+  const trusted = new Map<number, Set<number>>();
+  for (const { right } of pairs)
+    if (!trusted.has(right)) trusted.set(right, new Set(libbyInRoot(findRoot(parents, `f:${right}`))));
+  for (const { left, right } of pairs) joinRoots(parents, `f:${right}`, `l:${left}`);
+  for (const [right, before] of trusted) {
+    const members = libbyInRoot(findRoot(parents, `f:${right}`));
+    if (members.length < 2) continue;
+    const key = workKey(fable[right]!);
+    if (!key || members.some((index) => !before.has(index) && workKey(libby[index]!) !== key))
+      throw new Error("Confirmed matches cannot collapse unrelated books into one destination");
+  }
+}
+
+/**
+ * Use this function to group snapshots using canonical IDs, verified shared identities, user-confirmed pairs, and optional exact work fallback.
+ * Inputs: `libbyInput` and `fableInput` — provider snapshot arrays; `matching` — identifier-only or work policy; `confirmed` — Libby bookId to Fable bookId.
+ * Dependencies: `parseSnapshots`, `sharedIdentityKeys`, `joinConfirmed`, `workKey`, and union-find helpers.
  */
 export function matchSnapshotGroups(
   libbyInput: unknown,
   fableInput: unknown,
   matching?: SyncSettings["matching"],
+  confirmed: Record<string, string> = {},
 ): { groups: SnapshotGroup[]; conflicts: SnapshotMatchConflict[]; libby: BookSnapshot[]; fable: BookSnapshot[] } {
   const matchMode = matching ?? resolveSyncSettings({}).matching;
   const libby = parseSnapshots(libbyInput, "Libby");
@@ -231,13 +265,14 @@ export function matchSnapshotGroups(
     for (const index of entry.fable.slice(1)) joinRoots(parents, `f:${firstFable}`, `f:${index}`);
     joinRoots(parents, `l:${firstLibby}`, `f:${firstFable}`);
   }
+  joinConfirmed(parents, libby, fable, confirmed);
 
   const conflicts: SnapshotMatchConflict[] = [];
   if (matchMode === "work") {
     const workIndex = new Map<string, { libby: number[]; fable: number[] }>();
+    const matched = matchedRoots(parents, libby.length, fable.length);
     const addWork = (provider: "libby" | "fable", book: BookSnapshot, index: number): void => {
-      const root = findRoot(parents, `${provider === "libby" ? "l" : "f"}:${index}`);
-      if (hasBothProviders(parents, libby, fable, root)) return;
+      if (matched.has(findRoot(parents, `${provider === "libby" ? "l" : "f"}:${index}`))) return;
       const key = workKey(book);
       if (!key) return;
       const entry = workIndex.get(key) ?? { libby: [], fable: [] };
@@ -325,6 +360,23 @@ function chooseEditionField(
 }
 
 /**
+ * Use this function to combine edition fields that agree on one value, keeping their edit time and the most restrictive privacy.
+ * Inputs: `fields` — non-empty candidate fields sharing the chosen value; `value` — that value.
+ * Dependencies: none.
+ */
+function mergeEvidence(fields: SnapshotField[], value: SnapshotValue): SnapshotField {
+  const merged: SnapshotField = { value };
+  const times = fields.flatMap((field) => (field.updatedAt ? [field.updatedAt] : []));
+  if (times.length)
+    merged.updatedAt = times.reduce((left, right) => (Date.parse(right) > Date.parse(left) ? right : left));
+  const visibility = fields.map((field) => field.visibility);
+  if (visibility.includes("private")) merged.visibility = "private";
+  else if (visibility.every((item) => item === "public")) merged.visibility = "public";
+  else if (visibility.includes("unknown")) merged.visibility = "unknown";
+  return merged;
+}
+
+/**
  * Use this function to aggregate Libby authoritative status evidence across matched editions.
  * Inputs: `group` — a matched snapshot group; `field` — one Libby authoritative field; `settings` — progress policy.
  * Dependencies: `chooseEditionField`, `SyncSettings.progress`, and validated SnapshotField values.
@@ -356,12 +408,19 @@ function aggregateAuthoritative(
       }
       return { field: sorted[0]! };
     }
-    return { field: { value: Math.max(...values) } };
+    const furthest = Math.max(...values);
+    return {
+      field: mergeEvidence(
+        candidates.filter((candidate) => candidate.value === furthest),
+        furthest,
+      ),
+    };
   }
   if (field === "checkedOut" || field === "finished") {
-    if (candidates.some((candidate) => candidate.value === true)) return { field: { value: true } };
+    const yes = candidates.filter((candidate) => candidate.value === true);
+    if (yes.length) return { field: mergeEvidence(yes, true) };
     if (candidates.length === group.libby.length && candidates.every((candidate) => candidate.value === false)) {
-      return { field: { value: false } };
+      return { field: mergeEvidence(candidates, false) };
     }
     return { conflict: `Libby ${field} evidence is incomplete; false cannot be inferred.` };
   }
@@ -451,16 +510,17 @@ export function isMetadataFieldInScope(field: string, scope: SyncSettings["metad
 
 /**
  * Use this function to reconcile validated snapshots into rows and matching groups while preserving unknowns.
- * Inputs: `libbyInput` and `fableInput` — untrusted provider arrays; `settingsInput` — optional sync settings.
+ * Inputs: `libbyInput` and `fableInput` — untrusted provider arrays; `settingsInput` — optional sync settings; `confirmed` — user-confirmed Libby-to-Fable matches.
  * Dependencies: `matchSnapshotGroups`, status aggregation, and timestamp resolution.
  */
 export function reconcileSnapshotsDetailed(
   libbyInput: unknown,
   fableInput: unknown,
   settingsInput?: unknown,
+  confirmed?: Record<string, string>,
 ): ReconcileResult {
   const settings = resolveSyncSettings(settingsInput === undefined ? {} : settingsInput);
-  const matched = matchSnapshotGroups(libbyInput, fableInput, settings.matching);
+  const matched = matchSnapshotGroups(libbyInput, fableInput, settings.matching, confirmed);
   const rows: SyncField[] = [];
   for (const group of matched.groups) {
     const bookId = group.libby[0]?.bookId ?? group.fable[0]?.bookId ?? group.groupId;

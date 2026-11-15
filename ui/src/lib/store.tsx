@@ -1,7 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import type { InputFormat } from "../../../src/input.ts";
 import type { SyncField } from "../../../src/sync.ts";
-import type { SyncApplyReport, SyncPlan } from "../../../src/sync-plan.ts";
+import type { SyncApplyReport, SyncApprovals, SyncPlan } from "../../../src/sync-plan.ts";
 import { type BookRequest, type BookResult, demoApi, type LibbyCard, type LibraryApi } from "./api.ts";
 import { type Config, type ConfigInput, resolve, setPath } from "./config.ts";
 import { options, type ScreenId, screens } from "./spec.ts";
@@ -33,7 +33,9 @@ interface Store {
   setDraft(patch: Partial<BookDraft>): void;
   results: { rows: BookResult[]; dryRun: boolean } | undefined;
   setResults(r: { rows: BookResult[]; dryRun: boolean } | undefined): void;
-  syncResult: { rows: SyncField[]; plan: SyncPlan; report?: SyncApplyReport; comparedAt: string } | undefined;
+  syncResult:
+    | { rows: SyncField[]; plan: SyncPlan; report?: SyncApplyReport; comparedAt: string; review: SyncApprovals }
+    | undefined;
   setSyncResult(result: Store["syncResult"]): void;
   syncBusy: boolean;
   setSyncBusy(value: boolean): void;

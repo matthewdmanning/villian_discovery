@@ -468,4 +468,67 @@ describe("sync plan preview and apply", () => {
     expect(journal.locks).toBe(1);
     expect(syncDecisionKey(plan.rows.find((row) => row.field === "note")!)).toBe(JSON.stringify(["libby-1", "note"]));
   });
+
+  it("rejects a confirmed match onto a destination already grouped with another Libby work", async () => {
+    const snapshots = pair();
+    snapshots.libby.push({ bookId: "unrelated", title: "Different work", author: "Different author", fields: {} });
+    const adapters: SyncAdapters = {
+      libby: makeAdapter("libby", snapshots.libby),
+      fable: makeAdapter("fable", snapshots.fable),
+    };
+    await expect(
+      previewSync({ context, settings: SYNC_FALLBACKS, adapters, options: { matches: { unrelated: "fable-1" } } }),
+    ).rejects.toThrow(/unrelated/);
+  });
+
+  it("keeps existing workId matches when another Libby edition is confirmed to the same destination", async () => {
+    const snapshots = pair();
+    snapshots.libby.push({
+      bookId: "audio-edition",
+      title: "Same Book",
+      author: "Same Author",
+      fields: { note: field("new note", newer) },
+    });
+    const adapters: SyncAdapters = {
+      libby: makeAdapter("libby", snapshots.libby),
+      fable: makeAdapter("fable", snapshots.fable),
+    };
+    const plan = await previewSync({
+      context,
+      settings: SYNC_FALLBACKS,
+      adapters,
+      options: { matches: { "audio-edition": "fable-1" } },
+    });
+    const group = plan.groups.find((candidate) => candidate.fable.some((book) => book.bookId === "fable-1"));
+    expect(group?.libby.map((book) => book.bookId).sort()).toEqual(["audio-edition", "libby-1"]);
+    expect(plan.conflicts).toHaveLength(0);
+  });
+
+  it("keeps source privacy on furthest progress so the copy is not blocked as unknown", async () => {
+    const { plan } = await preview(
+      pair({ readingProgress: field(40, newer) }, { readingProgress: field(10, older) }),
+      {},
+      { fable: { writableFields: ["readingProgress"] } },
+    );
+    const operation = plan.operations.find((candidate) => candidate.field === "readingProgress");
+    expect(operation).toMatchObject({ after: 40, target: "fable" });
+    expect(operation?.blocked).toBeUndefined();
+    expect(plan.rows.find((row) => row.field === "readingProgress")?.libby?.updatedAt).toBe(newer);
+  });
+
+  it("does not propose clearing a known but already empty reading status", async () => {
+    const { plan } = await preview(
+      pair({ checkedOut: field(false), finished: field(false) }, {}, ["readingStatus"]),
+      {},
+      { fable: { writableFields: ["readingStatus"] } },
+    );
+    expect(plan.operations.filter((operation) => operation.field === "readingStatus")).toHaveLength(0);
+  });
+
+  it("does not flag Fable-only books as needing a match", async () => {
+    const snapshots = pair();
+    snapshots.fable.push({ bookId: "never-borrowed", title: "Shelf Only", author: "Someone", fields: {} });
+    const { plan } = await preview(snapshots);
+    expect(plan.conflicts).toHaveLength(0);
+  });
 });
