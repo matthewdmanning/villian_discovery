@@ -1,4 +1,4 @@
-import { describeErrorBody, HttpError, LibbyError } from "./errors.js";
+import { describeErrorBody, HttpError, LibbyError, MutationUncertainError } from "./errors.js";
 import type { Logger } from "./logger.js";
 
 export interface HttpOptions {
@@ -16,6 +16,7 @@ export interface RequestOptions {
   json?: unknown;
   form?: Record<string, string>;
   headers?: Record<string, string>;
+  signal?: AbortSignal | undefined;
 }
 
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
@@ -55,19 +56,28 @@ export class HttpClient {
     }
     const method = req.method ?? (body === undefined ? "GET" : "POST");
 
+    const readOnly = method === "GET";
     for (let attempt = 0; ; attempt++) {
       this.opts.logger.debug(`${method} ${url.toString()}${attempt ? ` (retry ${attempt})` : ""}`);
       let res: Response;
+      let text: string;
       try {
         res = await this.doFetch(url, {
           method,
           headers,
           ...(body !== undefined ? { body } : {}),
-          signal: AbortSignal.timeout(this.opts.timeoutMs),
+          signal: req.signal
+            ? AbortSignal.any([req.signal, AbortSignal.timeout(this.opts.timeoutMs)])
+            : AbortSignal.timeout(this.opts.timeoutMs),
         });
+        text = await res.text();
       } catch (err) {
+        req.signal?.throwIfAborted();
+        if (!readOnly) {
+          throw new MutationUncertainError(`Outcome unknown for ${method} ${url.pathname}`, { cause: err });
+        }
         if (attempt < this.opts.retries) {
-          await sleep(backoff(this.opts.retryBaseMs, attempt));
+          await sleep(backoff(this.opts.retryBaseMs, attempt), req.signal);
           continue;
         }
         throw new LibbyError(`Network error calling ${method} ${url.pathname}: ${String(err)}`, {
@@ -75,12 +85,14 @@ export class HttpClient {
         });
       }
 
-      const text = await res.text();
       const parsed = parseBody(text, res.headers.get("content-type"));
       if (res.ok) return parsed as T;
 
-      if (RETRYABLE_STATUS.has(res.status) && attempt < this.opts.retries) {
-        await sleep(retryAfterMs(res) ?? backoff(this.opts.retryBaseMs, attempt));
+      if (!readOnly && res.status >= 500) {
+        throw new MutationUncertainError(`Outcome unknown for ${method} ${url.pathname}: HTTP ${res.status}`);
+      }
+      if (readOnly && RETRYABLE_STATUS.has(res.status) && attempt < this.opts.retries) {
+        await sleep(retryAfterMs(res) ?? backoff(this.opts.retryBaseMs, attempt), req.signal);
         continue;
       }
       const { message, errorCode } = describeErrorBody(parsed);
@@ -122,4 +134,16 @@ function retryAfterMs(res: Response): number | undefined {
   return Number.isNaN(date) ? undefined : Math.max(0, Math.min(date - Date.now(), 60_000));
 }
 
-export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+export const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    signal?.throwIfAborted();
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });

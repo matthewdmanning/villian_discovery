@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Command, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
-import { loginWithSetupCode, writeTokenFile } from "./auth.js";
+import { loginWithDeviceCode, loginWithSetupCode, writeTokenFile } from "./auth.js";
 import {
   type Config,
   type ConfigInput,
@@ -128,20 +128,26 @@ program
     const deps = await createClients(cfg);
     if (cfg.dryRun) deps.logger.info("Dry run: nothing will be borrowed or held.");
     const fmt = cfg.output.format;
-    const results = await new Runner(cfg, deps).run(books, (r) => {
-      if (fmt === "ndjson") process.stdout.write(`${JSON.stringify(r)}\n`);
-    });
-    if (fmt === "json") process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
-    if (fmt === "table") process.stdout.write(`${formatTable(results)}\n`);
-    deps.logger.info(summarize(results));
-    if (cfg.output.reportFile) await writeReport(cfg.output.reportFile, results);
+    const results: BookResult[] = [];
+    try {
+      await new Runner(cfg, deps).run(books, (row) => {
+        results.push(row);
+        if (fmt === "ndjson") process.stdout.write(`${JSON.stringify(row)}\n`);
+      });
+    } finally {
+      // Retain completed actions in every report format even if a later action aborts.
+      if (fmt === "json") process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
+      if (fmt === "table") process.stdout.write(`${formatTable(results)}\n`);
+      deps.logger.info(summarize(results));
+      if (cfg.output.reportFile) await writeReport(cfg.output.reportFile, results);
+    }
     if (results.some((r) => r.status === "error")) process.exitCode = 1;
   });
 
 program
   .command("login")
   .description("Link this tool to your Libby account with a setup code and save the token.")
-  .requiredOption("--code <code>", "8-digit code from Libby: Menu > Copy To Another Device")
+  .option("--code <code>", "optional code displayed by an original device that supports that flow")
   .option("--token-file <path>", "where to save the identity token")
   .addOption(configOpt())
   .addOption(logOpt())
@@ -153,7 +159,23 @@ program
       logger,
       ...(cfg.http.sentryBaseUrl ? { baseUrl: cfg.http.sentryBaseUrl } : {}),
     });
-    const identity = await loginWithSetupCode(client, String(o.code).trim());
+    const controller = new AbortController();
+    const cancel = () => controller.abort(new Error("Libby pairing cancelled."));
+    process.once("SIGINT", cancel);
+    let identity: string;
+    try {
+      identity = o.code
+        ? await loginWithSetupCode(client, String(o.code).trim(), controller.signal)
+        : await loginWithDeviceCode(client, {
+            signal: controller.signal,
+            onCode: (code) =>
+              process.stderr.write(
+                `Setup code: ${code}\nOn your existing Libby device: Menu > Copy To Another Device > Enter Setup Code.\n`,
+              ),
+          });
+    } finally {
+      process.removeListener("SIGINT", cancel);
+    }
     await writeTokenFile(cfg.auth.tokenFile, identity);
     logger.info(`Logged in. Token saved to ${cfg.auth.tokenFile} (mode 600).`);
   });

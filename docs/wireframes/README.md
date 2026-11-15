@@ -31,10 +31,10 @@ Each screen maps 1:1 to a CLI command (`cli`), so a UI is a thin shell over the 
 ```
 ┌ Connect Libby ─────────────────────────────┐
 │ [i] Not connected | Connected (token file) │
-│ Setup code   [________]                    │
-│              Libby → Menu → Copy To ...    │
+│ Setup code   1234 5678 (displayed)          │
+│ Enter on existing Libby: Menu → Copy To... │
 │ Token file*  [~/.config/libby-shelf/...]   │
-│                               [ Connect ]  │
+│                  [ Display setup code ]   │
 └────────────────────────────────────────────┘   * advanced
 ```
 

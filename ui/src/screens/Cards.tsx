@@ -1,6 +1,7 @@
 import { TriangleAlert } from "lucide-react";
 import { OrderedList, Panel, Screen, sz } from "../components/ui.tsx";
 import type { LibbyCard } from "../lib/api.ts";
+import { cardSelected, libraryOrder, toggleCard } from "../lib/cards.ts";
 import { labelFor } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
 
@@ -17,25 +18,35 @@ function Usage({ card, kind }: { card: LibbyCard; kind: "loan" | "hold" }) {
 }
 
 export function Cards() {
-  const { cards, config, set } = useStore();
-  const using = (c: LibbyCard) =>
-    !config.cards.length || config.cards.includes(c.cardId) || config.cards.includes(c.cardName ?? "");
-  const toggle = (c: LibbyCard, on: boolean) => {
-    const next = cards.filter((x) => (x === c ? on : using(x))).map((x) => x.cardId);
-    set("cards", next.length === cards.length ? undefined : next);
-  };
-
-  const keys = cards.map((c) => c.advantageKey);
-  const order = [
-    ...config.libraries.filter((k) => keys.includes(k)),
-    ...keys.filter((k) => !config.libraries.includes(k)),
-  ];
+  const { cards, cardsLoading, cardsError, refreshCards, config, set } = useStore();
+  const using = (card: LibbyCard) => cardSelected(config.cards, card);
+  const selectedCount = cards.filter(using).length;
+  const toggle = (card: LibbyCard, on: boolean) => set("cards", toggleCard(cards, config.cards, card, on));
+  const order = libraryOrder(cards, config.libraries);
   const nameOf = (k: string) => cards.find((c) => c.advantageKey === k)?.cardName ?? k;
 
+  if (cardsLoading)
+    return (
+      <Screen id="cards">
+        <p role="status">Loading library cards…</p>
+      </Screen>
+    );
+  if (cardsError)
+    return (
+      <Screen id="cards">
+        <p role="alert">Could not load cards: {cardsError}</p>
+        <button type="button" className="btn btn-primary" onClick={refreshCards}>
+          Retry
+        </button>
+      </Screen>
+    );
   if (!cards.length)
     return (
       <Screen id="cards">
-        <span className="loading loading-dots loading-lg" />
+        <p>No library cards found. Connect Libby or add a card in Libby, then refresh.</p>
+        <button type="button" className="btn btn-primary" onClick={refreshCards}>
+          Refresh cards
+        </button>
       </Screen>
     );
 
@@ -61,6 +72,7 @@ export function Cards() {
                       type="checkbox"
                       aria-label={`Use ${c.cardName}`}
                       className={`checkbox checkbox-primary ${sz("checkbox")}`}
+                      disabled={using(c) && selectedCount === 1}
                       checked={using(c)}
                       onChange={(e) => toggle(c, e.target.checked)}
                     />
@@ -92,6 +104,7 @@ export function Cards() {
                 <input
                   type="checkbox"
                   className="checkbox checkbox-primary"
+                  disabled={using(c) && selectedCount === 1}
                   checked={using(c)}
                   onChange={(e) => toggle(c, e.target.checked)}
                 />

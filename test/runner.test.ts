@@ -95,7 +95,7 @@ describe("Runner", () => {
         match: /loan/,
         respond: () => ({
           status: 400,
-          body: { upstream: { userExplanation: "Title no longer available", errorCode: "X" } },
+          body: { upstream: { userExplanation: "Title no longer available", errorCode: "TitleNoLongerAvailable" } },
         }),
       },
       { method: "POST", match: /hold/, respond: () => ({ body: {} }) },
@@ -143,18 +143,33 @@ describe("Runner", () => {
 });
 
 describe("auth", () => {
-  it("setup-code login: chip, clone, sync", async () => {
+  it("setup-code login completes approval and persists the refreshed identity", async () => {
+    let acquisitions = 0;
     const { fetch, calls } = fakeFetch([
-      { method: "POST", match: /\/chip\?client=dewey$/, respond: () => ({ body: { identity: "new-token" } }) },
-      { method: "POST", match: /chip\/clone\/code/, respond: () => ({ body: { result: "cloned" } }) },
+      {
+        method: "POST",
+        match: /\/chip\?client=dewey$/,
+        respond: () => ({ body: { identity: ++acquisitions === 1 ? "anonymous" : "linked" } }),
+      },
+      { method: "POST", match: /chip\/clone\/code$/, respond: () => ({ body: { blessing: "approval" } }) },
+      { method: "POST", match: /chip\/clone$/, respond: () => ({ body: {} }) },
       syncRoute(),
     ]);
     const client = new LibbyClient({ ...http, fetch });
-    await expect(loginWithSetupCode(client, "12345678")).resolves.toBe("new-token");
-    const clone = calls[1]!;
-    expect(clone.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
-    expect(calls[2]!.headers.Authorization).toBe("Bearer new-token");
+    await expect(loginWithSetupCode(client, "12345678")).resolves.toBe("linked");
+    expect(calls.map((call) => call.url.pathname)).toEqual([
+      "/chip",
+      "/chip/clone/code",
+      "/chip/clone",
+      "/chip",
+      "/chip/sync",
+    ]);
+    expect(calls[1]!.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
+    expect(calls[2]!.body).toBe("blessing=approval");
+    expect(calls[3]!.headers.Authorization).toBe("Bearer anonymous");
+    expect(calls[4]!.headers.Authorization).toBe("Bearer linked");
     await expect(loginWithSetupCode(client, "123")).rejects.toThrow(/8 digits/);
+    expect(acquisitions).toBe(2);
   });
 
   it("token file round-trips", async () => {

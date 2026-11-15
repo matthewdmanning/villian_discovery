@@ -23,7 +23,7 @@ function download(rows: BookResult[], file: string | undefined) {
 }
 
 export function Results() {
-  const { results, setResults, books, api, config, configError, go } = useStore();
+  const { results, setResults, books, api, config, configError, go, refreshCards } = useStore();
   const [chip, setChip] = useState("all");
   const [busy, setBusy] = useState(false);
   const [runError, setRunError] = useState<string>();
@@ -67,6 +67,7 @@ export function Results() {
     setResults(undefined);
     try {
       setResults({ rows: await api.run(books, { ...config, dryRun: false }), dryRun: false });
+      refreshCards();
     } catch (err) {
       setRunError((err as Error).message);
     } finally {

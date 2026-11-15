@@ -1,3 +1,4 @@
+import type { PairingOptions } from "../../../src/auth.js";
 import type { BookRequest } from "../../../src/input.js";
 import { LibbyClient } from "../../../src/libby-client.js";
 import { silentLogger } from "../../../src/logger.js";
@@ -22,15 +23,27 @@ export interface Match {
 export interface LibbyApi {
   readonly demo: boolean;
   status(tokenFile: string): Promise<{ connected: boolean }>;
-  login(code: string, tokenFile: string): Promise<void>;
-  cards(): Promise<LibbyCard[]>;
+  login(tokenFile: string, options: PairingOptions): Promise<void>;
+  cards(tokenFile: string): Promise<LibbyCard[]>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
 }
 
 export type { BookRequest, BookResult, LibbyCard, ResultStatus };
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    signal?.throwIfAborted();
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 
 const CARDS: LibbyCard[] = [
   {
@@ -115,9 +128,9 @@ export const demoApi: LibbyApi = {
     await wait(150);
     return { connected: sessionStorageGet("demo-connected") === "1" };
   },
-  async login(code) {
-    await wait(600);
-    if (!/^\d{8}$/.test(code)) throw new Error("Setup code must be 8 digits");
+  async login(_tokenFile, options) {
+    options.onCode("12345678", Date.now() + 60_000);
+    await wait(600, options.signal);
     sessionStorageSet("demo-connected", "1");
   },
   async cards() {

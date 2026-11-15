@@ -52,6 +52,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run build
+      - run: npm run test:libby
       - name: Install UI dependencies
         run: npm ci --ignore-scripts --prefix ui
       - name: Typecheck and build UI
