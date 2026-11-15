@@ -48,3 +48,8 @@ export function describeErrorBody(body: unknown): { message?: string; errorCode?
 function str(v: unknown): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
+
+/** A write may have reached the server; callers must reconcile before further mutations. */
+export class MutationUncertainError extends LibbyError {
+  override name = "MutationUncertainError";
+}

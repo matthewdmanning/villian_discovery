@@ -73,3 +73,11 @@ export interface ThunderSearchResponse {
   totalItems?: number;
   [k: string]: unknown;
 }
+
+export interface SetupCodeResponse {
+  result?: string;
+  code?: string;
+  /** Unix timestamp in seconds. */
+  expiry?: number;
+  blessing?: string;
+}

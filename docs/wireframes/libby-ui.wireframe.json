@@ -23,13 +23,13 @@
           "id": "form",
           "components": [
             {
-              "type": "field",
+              "type": "output",
               "input": "code",
               "label": "8-digit setup code",
-              "hint": "Libby → Menu → Copy To Another Device"
+              "hint": "Enter this code on your existing Libby device: Menu → Copy To Another Device → Enter Setup Code"
             },
             { "type": "field", "input": "path", "label": "Token file", "binds": "auth.tokenFile", "advanced": true },
-            { "type": "button", "label": "Connect", "action": "login" }
+            { "type": "button", "label": "Display setup code", "action": "login" }
           ]
         }
       ]

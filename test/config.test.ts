@@ -38,3 +38,7 @@ it("mergeConfig ignores prototype-polluting keys", () => {
   expect(Object.getPrototypeOf(m)).toBe(Object.prototype);
   expect(Object.hasOwn(m.hold as object, "constructor")).toBe(false);
 });
+
+it.each(["auth", "borrow", "hold", "matching", "http", "output"])("rejects typos inside %s", (section) => {
+  expect(() => parseConfig({ [section]: { misspelledSetting: 1 } })).toThrow(/Unrecognized key/);
+});

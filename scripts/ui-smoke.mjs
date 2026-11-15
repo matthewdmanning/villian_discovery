@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 
 // Run against `npm run dev --prefix ui`; requires installed Chrome (or BROWSER_CHANNEL=msedge).
-const browser = await chromium.launch({ channel: process.env.BROWSER_CHANNEL ?? "chrome", headless: true });
+const browser = await chromium.launch({
+  ...(process.env.BROWSER_EXECUTABLE_PATH
+    ? { executablePath: process.env.BROWSER_EXECUTABLE_PATH }
+    : { channel: process.env.BROWSER_CHANNEL ?? "chrome" }),
+  headless: true,
+});
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
@@ -76,8 +81,87 @@ try {
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
   await input.fill("Another book");
   assert.equal(await actions.first().inputValue(), "", "new input must clear old row overrides");
+
+  await input.fill('{"books":[{"title":"Dune","author":"Frank Herbert"}]}');
+  assert.equal(await page.locator("tbody tr").count(), 1);
+  assert.equal(await page.locator("tbody tr td").first().textContent(), "Dune");
+
+  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
+  const mainCard = page.getByRole("checkbox", { name: "Use Main", exact: true });
+  const branchCard = page.getByRole("checkbox", { name: "Use Branch", exact: true });
+  await branchCard.uncheck();
+  assert.equal(await mainCard.isChecked(), true);
+  assert.equal(await mainCard.isDisabled(), true, "the final selected card must stay enabled for use");
+  await branchCard.check();
+
+  await page.evaluate(async () => {
+    const { demoApi } = await import("/src/lib/api.ts");
+    window.originalCards = demoApi.cards;
+    demoApi.cards = async (tokenFile) => {
+      window.cardsTokenFile = tokenFile;
+      if (!window.cardsAfterLogin) throw new Error("Sign in to load cards");
+      return [
+        { cardId: "a", advantageKey: "lib1", cardName: "One" },
+        { cardId: "b", advantageKey: "lib1", cardName: "Two" },
+      ];
+    };
+    demoApi.status = async () => ({ connected: false });
+    demoApi.login = async (_tokenFile, options) => {
+      options.onCode("12345678");
+      await new Promise((resolve, reject) => {
+        window.approvePairing = resolve;
+        options.signal?.addEventListener(
+          "abort",
+          () => {
+            window.pairingCancelled = true;
+            reject(options.signal.reason);
+          },
+          { once: true },
+        );
+      });
+      window.cardsAfterLogin = true;
+    };
+  });
+  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
+  await page.getByText("Advanced", { exact: true }).click();
+  const tokenFile = page.getByRole("textbox");
+  await tokenFile.fill("/tmp/demo-account.identity.json");
+  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
+  await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
+  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
+  await page.getByRole("button", { name: "Display setup code", exact: true }).click();
+  await page.getByText("12345678", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.pairingCancelled), true);
+  await page.getByText("Not connected", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Display setup code", exact: true }).click();
+  await page.getByText("12345678", { exact: true }).waitFor();
+  await page.evaluate(() => window.approvePairing());
+  await page.getByText("12345678", { exact: true }).waitFor({ state: "hidden" });
+  await page.getByText("Connected", { exact: true }).waitFor();
+  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Use One", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Move lib1 up", exact: true }).count(), 1);
+  assert.equal(await page.evaluate(() => window.cardsTokenFile), "/tmp/demo-account.identity.json");
+
+  await page.evaluate(async () => {
+    (await import("/src/lib/api.ts")).demoApi.cards = async () => [];
+  });
+  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
+  await page.getByRole("button", { name: "Display setup code", exact: true }).click();
+  await page.getByText("12345678", { exact: true }).waitFor();
+  await page.evaluate(() => window.approvePairing());
+  await page.getByText("12345678", { exact: true }).waitFor({ state: "hidden" });
+  await page.getByText("Connected", { exact: true }).waitFor();
+  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
+  await page.getByText("No library cards found.", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Refresh cards", exact: true }).waitFor();
   assert.deepEqual(errors, [], "browser errors or duplicate React keys");
-  console.log("UI regression checks passed: draft, duplicate edits, invalid config, run/status errors.");
+  console.log(
+    "UI regression checks passed: drafts, JSON, limits, run/status errors, pairing, card refresh/error/empty states and library ordering.",
+  );
 } finally {
   await browser.close();
 }

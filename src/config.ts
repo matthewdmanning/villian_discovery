@@ -15,10 +15,10 @@ const DEFAULT_TOKEN_FILE = join(
 );
 
 export const ConfigSchema = z
-  .object({
+  .strictObject({
     $schema: z.string().optional(),
     auth: z
-      .object({
+      .strictObject({
         /** Libby identity (Bearer) token. Prefer env LIBBY_IDENTITY_TOKEN. */
         identityToken: z.string().min(1).optional(),
         /** Where `login` stores, and `run` reads, the identity token. */
@@ -43,7 +43,7 @@ export const ConfigSchema = z
     mediaTypes: z.array(MediaTypeSchema).min(1).default(["ebook", "audiobook"]),
 
     borrow: z
-      .object({
+      .strictObject({
         /** "preference" = card's saved preference; "max" = longest offered; or a fixed day count. */
         lendingPeriod: z
           .union([z.literal("preference"), z.literal("max"), z.number().int().positive()])
@@ -56,7 +56,7 @@ export const ConfigSchema = z
       .prefault({}),
 
     hold: z
-      .object({
+      .strictObject({
         /**
          * Where to place holds when no library has a copy:
          * - best: one hold at the library with the shortest estimated wait.
@@ -78,7 +78,7 @@ export const ConfigSchema = z
       .prefault({}),
 
     matching: z
-      .object({
+      .strictObject({
         /** Minimum 0-1 similarity between requested and found title. */
         minTitleScore: z.number().min(0).max(1).default(0.85),
         /** Minimum 0-1 similarity for author, when an author is given. */
@@ -104,7 +104,7 @@ export const ConfigSchema = z
     failFast: z.boolean().default(false),
 
     http: z
-      .object({
+      .strictObject({
         timeoutMs: z.number().int().positive().default(30_000),
         retries: z.number().int().nonnegative().default(2),
         retryBaseMs: z.number().int().positive().default(500),
@@ -119,7 +119,7 @@ export const ConfigSchema = z
       .prefault({}),
 
     output: z
-      .object({
+      .strictObject({
         format: z.enum(["table", "json", "ndjson"]).default("table"),
         /** Also write the JSON report to this path. */
         reportFile: z.string().optional(),

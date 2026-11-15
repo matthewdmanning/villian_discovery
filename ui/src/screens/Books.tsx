@@ -1,10 +1,11 @@
 import { BookOpen, FileUp, Play, Sparkles } from "lucide-react";
 import { type DragEvent, useMemo, useRef, useState } from "react";
 import { ActionSchema, MediaTypeSchema } from "../../../src/config.ts";
-import { detectFormat, type InputFormat, parseBooks } from "../../../src/input.ts";
+import type { InputFormat } from "../../../src/input.ts";
 import { stripUndefined } from "../../../src/util.ts";
 import { ConfirmRun, dash, Empty, Panel, Screen, sz } from "../components/ui.tsx";
 import type { BookRequest } from "../lib/api.ts";
+import { parseBookDraft } from "../lib/books.ts";
 import { labelFor, screen } from "../lib/spec.ts";
 import { type BookDraftEdit, useStore } from "../lib/store.tsx";
 
@@ -18,36 +19,15 @@ const ACTIONS = ActionSchema.options;
 
 const SAMPLE = "Piranesi by Susanna Clarke\nProject Hail Mary by Andy Weir\nisbn:9780593135204\nDune - Frank Herbert";
 
-function parse(
-  text: string,
-  format: "auto" | InputFormat,
-  fileName?: string,
-): { books: BookRequest[]; error?: string } {
-  if (!text.trim()) return { books: [] };
-  const fmt =
-    format === "auto"
-      ? fileName
-        ? detectFormat(fileName)
-        : text.trimStart().startsWith("[")
-          ? "json"
-          : "text"
-      : format;
-  try {
-    return { books: parseBooks(text, fmt) };
-  } catch (e) {
-    return { books: [], error: (e as Error).message };
-  }
-}
-
 export function Books() {
-  const { config, configError, set, cards, api, go, setBooks, setResults, draft, setDraft } = useStore();
+  const { config, configError, set, cards, api, go, setBooks, setResults, draft, setDraft, refreshCards } = useStore();
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [runError, setRunError] = useState<string>();
   const confirm = useRef<HTMLDialogElement>(null);
 
   const parsed = useMemo(
-    () => parse(draft.text, draft.format, draft.fileName),
+    () => parseBookDraft(draft.text, draft.format, draft.fileName),
     [draft.text, draft.format, draft.fileName],
   );
   const bookRows = parsed.books.map((b, index) => ({
@@ -76,6 +56,7 @@ export function Books() {
     setResults(undefined);
     try {
       const rows = await api.run(books, config);
+      refreshCards();
       setBooks(books);
       setResults({ rows, dryRun: config.dryRun });
       go("results");
