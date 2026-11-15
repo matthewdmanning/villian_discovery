@@ -15,6 +15,7 @@ export type SyncContext = { userId: string; connectionId: string };
 export type SyncOperation = {
   id: string;
   bookId: string;
+  groupId: string;
   title: string;
   field: string;
   target: SyncProvider;
@@ -22,13 +23,14 @@ export type SyncOperation = {
   before: SnapshotField | undefined;
   after: SnapshotValue;
   removal: boolean;
-  publicExposure: boolean;
   blocked?: string;
 };
 export interface SyncAdapter {
   readonly verified: boolean;
+  /** The app's schema: shared field names its converter produces. Fields outside it do not exist in this app and are never synced to it. */
+  readonly fields: readonly string[];
   readonly writableFields: readonly string[];
-  readonly visibility?: Readonly<Record<string, "private" | "public">>;
+  /** Convert the app's native records into shared-schema snapshots that use only `fields`. */
   read(context: SyncContext): Promise<BookSnapshot[]>;
   /** Verified adapters must call assertCurrent immediately before submitting a conditional before-value/version write. */
   write(context: SyncContext, operation: SyncOperation, assertCurrent: () => Promise<void>): Promise<void>;
@@ -50,6 +52,7 @@ export type SyncPlan = {
   snapshots: Record<SyncProvider, BookSnapshot[]>;
   options: SyncPreviewOptions;
   capabilities: string;
+  schemas: Record<SyncProvider, string[]>;
 };
 export type SyncOutcome = {
   operationId: string;
@@ -63,9 +66,7 @@ export interface SyncJournal {
   write(context: SyncContext, planId: string, outcomes: SyncOutcome[]): Promise<void>;
 }
 const ContextSchema = z.object({ userId: z.string().min(1), connectionId: z.string().min(1) }).strict();
-const ApprovalSchema = z
-  .object({ selected: z.array(z.string()), removals: z.array(z.string()), publicCopies: z.array(z.string()) })
-  .strict();
+const ApprovalSchema = z.object({ selected: z.array(z.string()), removals: z.array(z.string()) }).strict();
 const OptionsSchema = z
   .object({
     resolutions: z.record(z.string(), z.enum(["libby", "fable"])).optional(),
@@ -101,18 +102,27 @@ function capabilities(adapters: SyncAdapters): string {
         provider,
         {
           verified: adapters[provider].verified,
+          schema: [...adapters[provider].fields].sort(),
           fields: [...adapters[provider].writableFields].sort(),
-          visibility: adapters[provider].visibility ?? {},
         },
       ]),
     ),
   );
 }
 
+/** Use this function to keep only fields in one app's schema, so converter extras never reach comparison. */
+function toSchema(books: BookSnapshot[], schema: readonly string[]): BookSnapshot[] {
+  return books.map(({ knownFields, fields, ...book }) => ({
+    ...book,
+    ...(knownFields ? { knownFields: knownFields.filter((field) => schema.includes(field)) } : {}),
+    fields: Object.fromEntries(Object.entries(fields).filter(([field]) => schema.includes(field))),
+  }));
+}
+
 /** Use this function to read both providers without returning a partial preview when either source fails. */
 async function readBoth(adapters: SyncAdapters, context: SyncContext): Promise<Record<SyncProvider, BookSnapshot[]>> {
   const [libby, fable] = await Promise.all([adapters.libby.read(context), adapters.fable.read(context)]);
-  return { libby, fable };
+  return { libby: toSchema(libby, adapters.libby.fields), fable: toSchema(fable, adapters.fable.fields) };
 }
 
 /** Use this function to classify explicit clears and reductions in string-array membership for mandatory removal review. */
@@ -173,6 +183,7 @@ function buildPlan(
     if (!authoritative && !isMetadataFieldInScope(row.field, settings.metadataScope)) continue;
     const target: SyncProvider = row.source === "libby" ? "fable" : "libby";
     if (authoritative && target === "libby") continue;
+    if (!adapters[target].fields.includes(row.field)) continue;
     if (
       target === "fable" &&
       ["checkedOut", "finished"].includes(row.field) &&
@@ -185,13 +196,19 @@ function buildPlan(
       const before = book.fields[row.field];
       if (before && sameValue(before.value, row.value)) continue;
       if (!before && (row.value === null || row.value === "")) continue;
-      const sourceField = row[row.source];
-      const destinationVisibility = before?.visibility ?? adapters[target].visibility?.[row.field];
-      const publicExposure = sourceField?.visibility === "private" && destinationVisibility === "public";
+      if (
+        row.field === "readingProgress" &&
+        !settings.allowProgressDecrease &&
+        typeof before?.value === "number" &&
+        typeof row.value === "number" &&
+        row.value < before.value
+      )
+        continue;
       const removal = isRemoval(before, row.value);
       const operation: SyncOperation = {
         id: JSON.stringify([id, target, book.bookId, row.field]),
         bookId: book.bookId,
+        groupId: group.groupId,
         title: row.title,
         field: row.field,
         target,
@@ -199,21 +216,14 @@ function buildPlan(
         before: before ? structuredClone(before) : undefined,
         after: structuredClone(row.value),
         removal,
-        publicExposure,
       };
       if (!adapters[target].verified || !adapters[row.source].verified)
         operation.blocked = "Provider contracts are not verified";
       else if (!adapters[target].writableFields.includes(row.field))
         operation.blocked = "This field is not a verified writable capability";
-      else if (!before && !book.knownFields?.includes(row.field))
-        operation.blocked = "Destination field is unknown; it is not an observed empty value";
       else if (/highlight|annotation|bookmark/i.test(row.field))
         operation.blocked = "Compatible edition and passage anchors are not verified";
       else if (removal && settings.removals === "none") operation.blocked = "Removals are disabled in your settings";
-      else if (destinationVisibility !== "private" && sourceField?.visibility !== "public" && !publicExposure)
-        operation.blocked = "Source or destination privacy is unknown";
-      else if (publicExposure && settings.publicCopy === "block")
-        operation.blocked = "Public copying is blocked in your settings";
       operations.push(operation);
     }
   }
@@ -235,6 +245,7 @@ function buildPlan(
     snapshots: structuredClone(snapshots),
     options: structuredClone(options),
     capabilities: capabilities(adapters),
+    schemas: { libby: [...adapters.libby.fields], fable: [...adapters.fable.fields] },
   };
 }
 
@@ -264,19 +275,10 @@ function snapshotKey(snapshots: Record<SyncProvider, BookSnapshot[]>): string {
   });
 }
 
-/** Use this function to verify a proposed value and expected privacy against a fresh destination read. */
-function appliedValue(
-  operation: SyncOperation,
-  snapshots: Record<SyncProvider, BookSnapshot[]>,
-  adapters: SyncAdapters,
-): boolean {
+/** Use this function to verify a proposed value against a fresh destination read. */
+function appliedValue(operation: SyncOperation, snapshots: Record<SyncProvider, BookSnapshot[]>): boolean {
   const field = snapshots[operation.target].find((book) => book.bookId === operation.bookId)?.fields[operation.field];
-  const expectedVisibility = operation.before?.visibility ?? adapters[operation.target].visibility?.[operation.field];
-  return (
-    !!field &&
-    sameValue(field.value, operation.after) &&
-    (expectedVisibility === undefined || field.visibility === expectedVisibility)
-  );
+  return !!field && sameValue(field.value, operation.after);
 }
 
 /** Use this function to apply a trusted preview with user-scoped locking, fresh reads, mandatory approvals, and verified per-operation outcomes. */
@@ -297,7 +299,7 @@ export async function applySync(input: {
   if (stable(settings) !== stable(input.plan.settings) || capabilities(input.adapters) !== input.plan.capabilities)
     throw new Error("Settings or capabilities changed; create a new preview");
   const allowedIds = new Set(input.plan.operations.map((operation) => operation.id));
-  if ([...approvals.selected, ...approvals.removals, ...approvals.publicCopies].some((id) => !allowedIds.has(id)))
+  if ([...approvals.selected, ...approvals.removals].some((id) => !allowedIds.has(id)))
     throw new Error("Unknown operation approval");
   return input.journal.withLock(context, async () => {
     const outcomes = new Map(
@@ -323,9 +325,9 @@ export async function applySync(input: {
       fresh.libby = parsed.libby;
       fresh.fable = parsed.fable;
       for (const operation of input.plan.operations) {
-        if (outcomes.get(operation.id)?.status === "success" && !appliedValue(operation, fresh, input.adapters))
+        if (outcomes.get(operation.id)?.status === "success" && !appliedValue(operation, fresh))
           throw new Error("A previously applied value changed; create a new preview");
-        if (outcomes.has(operation.id) && appliedValue(operation, fresh, input.adapters)) {
+        if (outcomes.has(operation.id) && appliedValue(operation, fresh)) {
           const book = expected[operation.target].find((candidate) => candidate.bookId === operation.bookId);
           const actual = fresh[operation.target].find((candidate) => candidate.bookId === operation.bookId)?.fields[
             operation.field
@@ -358,8 +360,6 @@ export async function applySync(input: {
       let reason = operation.blocked;
       if (operation.removal && !approvals.removals.includes(operation.id))
         reason = "Explicit removal approval is required";
-      if (operation.publicExposure && !approvals.publicCopies.includes(operation.id))
-        reason = "Explicit public-copy approval is required";
       if (reason) {
         await persist({ operationId: operation.id, status: "skipped", message: reason });
         continue;
@@ -386,7 +386,7 @@ export async function applySync(input: {
       }
       try {
         const fresh = await readBoth(input.adapters, context);
-        if (appliedValue(operation, fresh, input.adapters)) {
+        if (appliedValue(operation, fresh)) {
           const target = expected[operation.target].find((book) => book.bookId === operation.bookId)!;
           target.fields[operation.field] = structuredClone(
             fresh[operation.target].find((book) => book.bookId === operation.bookId)!.fields[operation.field]!,

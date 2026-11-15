@@ -10,12 +10,13 @@ describe("sync settings", () => {
       progress: "furthest",
       conflicts: "ask",
       removals: "none",
-      publicCopy: "review",
+      showNonConflicting: "no",
+      allowProgressDecrease: false,
     });
-    expect(resolveSyncSettings({ progress: "latest", publicCopy: "block" })).toEqual({
+    expect(resolveSyncSettings({ progress: "latest", removals: "all-supported" })).toEqual({
       ...SYNC_FALLBACKS,
       progress: "latest",
-      publicCopy: "block",
+      removals: "all-supported",
     });
   });
 
@@ -23,7 +24,7 @@ describe("sync settings", () => {
     expect(() => resolveSyncSettings({ progress: "never" })).toThrow();
     expect(() => resolveSyncSettings({ extra: "value" })).toThrow();
     expect(() => resolveSyncSettings(null)).toThrow();
-    expect(() => resolveSyncSettings({}, { ...SYNC_FALLBACKS, publicCopy: undefined })).toThrow();
+    expect(() => resolveSyncSettings({}, { ...SYNC_FALLBACKS, removals: undefined })).toThrow();
   });
 
   it("has no embedded defaults", () => {

@@ -1,107 +1,102 @@
-import { Eye, Trash2 } from "lucide-react";
+import { Ban, CircleCheck, CircleX, Trash2 } from "lucide-react";
+import type { SyncProvider } from "../../../src/sync.ts";
 import type { SyncOperation, SyncOutcome } from "../../../src/sync-plan.ts";
 import { displaySyncValue, SYNC_FIELD_LABELS } from "../lib/sync-format.ts";
 
-/** Use this component to review one proposed write and explicitly acknowledge any removal or private-to-public copying before applying. */
+export const APP_NAMES: Record<SyncProvider, string> = { libby: "Libby", fable: "Fable" };
+
+/** Use this function to tell whether a change overwrites a different value the destination app already holds. */
+export function isAppConflict({ before }: SyncOperation): boolean {
+  const value = before?.value;
+  return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && !value.length);
+}
+
+/** Use this component to show one app's value in that app's color; the app name is for screen readers and the edit time is on hover. */
+export function AppValue({
+  provider,
+  value,
+  field,
+  updatedAt,
+}: {
+  provider: SyncProvider;
+  value: unknown;
+  field: string;
+  updatedAt?: string | undefined;
+}) {
+  const name = APP_NAMES[provider];
+  return (
+    <span
+      className={`font-semibold ${provider === "libby" ? "text-libby" : "text-fable"}`}
+      title={updatedAt ? `${name} · edited ${new Date(updatedAt).toLocaleString()}` : name}
+    >
+      <span className="sr-only">{name}: </span>
+      {displaySyncValue(value, field)}
+    </span>
+  );
+}
+
+/** Use this component to review one proposed write on one line and explicitly acknowledge any removal before applying. */
 export function SyncChange({
   operation,
   selected,
   removalApproved,
-  exposureApproved,
   outcome,
   disabled,
   onSelect,
   onRemoval,
-  onExposure,
 }: {
   operation: SyncOperation;
   selected: boolean;
   removalApproved: boolean;
-  exposureApproved: boolean;
   outcome?: SyncOutcome["status"] | undefined;
   disabled: boolean;
   onSelect(value: boolean): void;
   onRemoval(value: boolean): void;
-  onExposure(value: boolean): void;
 }) {
-  const { title, field, target, before, after, blocked, removal, publicExposure: exposure } = operation;
-  const provider = target === "libby" ? "Libby" : "Fable";
+  const { title, field, target, source, before, after, blocked, removal } = operation;
+  const provider = APP_NAMES[target];
   const label = SYNC_FIELD_LABELS[field] ?? field;
   const completed = outcome === "success";
   return (
-    <li
-      className={`rounded-box border-2 p-4 ${removal ? "border-error bg-error/5" : exposure ? "border-warning bg-warning/5" : "border-base-300"}`}
-    >
-      <label className="flex items-start justify-between gap-4 font-semibold">
-        <span>
-          {title}{" "}
-          <span className="block text-sm capitalize opacity-70">
-            {label} → {provider}
-          </span>
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm">
+      {removal && <Trash2 className="size-4 shrink-0 text-error" role="img" aria-label="Removal" />}
+      <span className="min-w-0 flex-1 break-words">
+        <span className="capitalize">{label}</span>:{" "}
+        <AppValue provider={target} value={before?.value} field={field} updatedAt={before?.updatedAt} /> →{" "}
+        <AppValue provider={source} value={after} field={field} />
+      </span>
+      {blocked && (
+        <span title={`Blocked: ${blocked}`}>
+          <Ban className="size-4 shrink-0 text-warning" role="img" aria-label={`Blocked: ${blocked}`} />
         </span>
-        <input
-          type="checkbox"
-          className="checkbox checkbox-primary"
-          aria-label={`Apply ${label} to ${provider} for ${title}`}
-          checked={selected}
-          disabled={disabled || Boolean(blocked) || completed}
-          onChange={(event) => onSelect(event.target.checked)}
-        />
-      </label>
-      <dl className="my-3 grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <dt className="opacity-60">Before</dt>
-          <dd className="break-words">{displaySyncValue(before?.value, field)}</dd>
-        </div>
-        <div>
-          <dt className="opacity-60">After</dt>
-          <dd className="break-words font-semibold">{displaySyncValue(after, field)}</dd>
-        </div>
-      </dl>
-      {removal && (
-        <div className="my-3 flex gap-2 text-sm font-semibold text-error">
-          <Trash2 className="size-5 shrink-0" />
-          <span>REMOVAL: clears a field or removes data from {provider}. Review the before and after values.</span>
-        </div>
       )}
-      {exposure && (
-        <div className="my-3 flex gap-2 text-sm font-semibold text-warning">
-          <Eye className="size-5 shrink-0" />
-          <span>PUBLIC EXPOSURE: copies private data to a public destination.</span>
-        </div>
+      {outcome === "success" && (
+        <CircleCheck className="size-4 shrink-0 text-success" role="img" aria-label="Applied" />
       )}
-      {blocked && <p className="text-sm font-semibold text-warning">Blocked: {blocked}</p>}
-      {selected && !blocked && !completed && (
-        <div className="space-y-3 text-sm">
-          {removal && (
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-error checkbox-sm"
-                checked={removalApproved}
-                disabled={disabled}
-                aria-label={`Confirm removal of ${label} on ${provider} for ${title}`}
-                onChange={(event) => onRemoval(event.target.checked)}
-              />
-              I reviewed and approve this removal.
-            </label>
-          )}
-          {exposure && (
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                className="checkbox checkbox-warning checkbox-sm"
-                checked={exposureApproved}
-                disabled={disabled}
-                aria-label={`Confirm public copying of ${label} to ${provider} for ${title}`}
-                onChange={(event) => onExposure(event.target.checked)}
-              />
-              I approve making this private data public.
-            </label>
-          )}
-        </div>
+      {outcome && outcome !== "success" && (
+        <CircleX className="size-4 shrink-0 text-error" role="img" aria-label={`Result: ${outcome}`} />
       )}
-      {outcome && <p className="mt-3 text-sm font-semibold">Result: {outcome}</p>}
+      {selected && removal && !blocked && !completed && (
+        <label className="flex items-center gap-1 text-error">
+          <input
+            type="checkbox"
+            className="checkbox checkbox-error checkbox-sm"
+            checked={removalApproved}
+            disabled={disabled}
+            aria-label={`Confirm removal of ${label} on ${provider} for ${title}`}
+            onChange={(event) => onRemoval(event.target.checked)}
+          />
+          Approve removal
+        </label>
+      )}
+      <input
+        type="checkbox"
+        className="checkbox checkbox-primary checkbox-sm"
+        aria-label={`Apply ${label} to ${provider} for ${title}`}
+        checked={selected}
+        disabled={disabled || Boolean(blocked) || completed}
+        onChange={(event) => onSelect(event.target.checked)}
+      />
     </li>
   );
 }

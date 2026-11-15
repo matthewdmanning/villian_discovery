@@ -2,13 +2,11 @@ import { z } from "zod";
 import { normalizeName, normalizeTitle, toIsbn13 } from "./matcher.js";
 import { resolveSyncSettings, type SyncSettings } from "./sync-config.js";
 
-export const SnapshotVisibilitySchema = z.enum(["private", "public", "unknown"]);
 export const SnapshotValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())]);
 export const SnapshotFieldSchema = z
   .object({
     value: SnapshotValueSchema,
     updatedAt: z.iso.datetime({ offset: true }).optional(),
-    visibility: SnapshotVisibilitySchema.optional(),
   })
   .strict();
 
@@ -360,7 +358,7 @@ function chooseEditionField(
 }
 
 /**
- * Use this function to combine edition fields that agree on one value, keeping their edit time and the most restrictive privacy.
+ * Use this function to combine edition fields that agree on one value, keeping their latest edit time.
  * Inputs: `fields` — non-empty candidate fields sharing the chosen value; `value` — that value.
  * Dependencies: none.
  */
@@ -369,10 +367,6 @@ function mergeEvidence(fields: SnapshotField[], value: SnapshotValue): SnapshotF
   const times = fields.flatMap((field) => (field.updatedAt ? [field.updatedAt] : []));
   if (times.length)
     merged.updatedAt = times.reduce((left, right) => (Date.parse(right) > Date.parse(left) ? right : left));
-  const visibility = fields.map((field) => field.visibility);
-  if (visibility.includes("private")) merged.visibility = "private";
-  else if (visibility.every((item) => item === "public")) merged.visibility = "public";
-  else if (visibility.includes("unknown")) merged.visibility = "unknown";
   return merged;
 }
 
@@ -442,31 +436,17 @@ function deriveReadingStatus(
   const progress = aggregateAuthoritative(group, "readingProgress", settings);
   if (finished.conflict || finished.field?.value === undefined)
     return { conflict: finished.conflict ?? "Finished status is unknown." };
-  if (finished.field.value === true) return { field: { value: "finished", ...derivedVisibility(group) } };
+  if (finished.field.value === true) return { field: { value: "finished" } };
   const checkedOutValue = checkedOut.field?.value;
   const progressValue = progress.field?.value;
-  if (checkedOutValue === false || progressValue === 0) return { field: { value: null, ...derivedVisibility(group) } };
+  if (checkedOutValue === false || progressValue === 0) return { field: { value: null } };
   if (checkedOut.conflict || progress.conflict) {
     return { conflict: checkedOut.conflict ?? progress.conflict ?? "Reading status is unknown." };
   }
   if (checkedOutValue === true && typeof progressValue === "number" && progressValue > 0) {
-    return { field: { value: "currently-reading", ...derivedVisibility(group) } };
+    return { field: { value: "currently-reading" } };
   }
   return { conflict: "Reading status is unknown because Libby evidence is incomplete." };
-}
-
-/**
- * Use this function to carry known Libby privacy metadata onto a derived status field.
- * Inputs: `group` — matched provider snapshots whose status evidence is being aggregated.
- * Dependencies: Libby status field visibility values.
- */
-function derivedVisibility(group: SnapshotGroup): { visibility?: SnapshotField["visibility"] } {
-  const values = group.libby
-    .flatMap((book) => [book.fields.readingProgress, book.fields.checkedOut, book.fields.finished])
-    .filter((field): field is SnapshotField => field !== undefined)
-    .map((field) => field.visibility);
-  if (values.includes("private")) return { visibility: "private" };
-  return values.length && values.every((value) => value === "public") ? { visibility: "public" } : {};
 }
 
 /**

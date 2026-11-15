@@ -121,51 +121,87 @@ try {
   assert.equal(await actions.first().inputValue(), "", "new input must clear old row overrides");
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
-  const syncRows = page.locator("table tbody tr");
-  await syncRows.nth(9).waitFor();
-  const progressRow = syncRows.filter({ hasText: "Piranesi" }).filter({ hasText: "Reading progress" });
-  assert.equal((await progressRow.locator("td").nth(4).textContent()).trim(), "65%");
-  assert.equal((await progressRow.locator("td").nth(5).textContent()).trim(), "Libby");
-  const ratingRow = syncRows.filter({ hasText: "Piranesi" }).filter({ hasText: "rating" });
-  assert.equal((await ratingRow.locator("td").nth(4).textContent()).trim(), "5");
-  assert.equal((await ratingRow.locator("td").nth(5).textContent()).trim(), "Fable");
-  const shelvesRow = syncRows.filter({ hasText: "shelves" });
-  assert.match(await shelvesRow.textContent(), /Needs review/);
-  const duneStatus = syncRows.filter({ hasText: "Dune" }).filter({ hasText: "Reading status" });
-  assert.equal((await duneStatus.locator("td").nth(4).textContent()).trim(), "Finished");
+  const openTab = (name) => page.getByRole("tab", { name, exact: true }).click();
+  const bookItem = (book) => page.locator("main li").filter({ has: page.locator("span.truncate", { hasText: book }) });
+  const squash = (text) => text.replace(/\s+/g, " ").trim();
+  const bookLine = async (book) => {
+    const summary = bookItem(book).locator("summary");
+    return squash(await ((await summary.count()) ? summary : bookItem(book)).textContent());
+  };
+  await openTab("Library");
+  await bookItem("Piranesi").waitFor();
+  assert.equal(await page.locator("table").count(), 0);
+  assert.doesNotMatch(
+    await page.locator("[role=tabpanel][aria-label=Library]").textContent(),
+    /Checked out:|Finished:|→/,
+  );
+  assert.match(await page.getByRole("region", { name: "Checked out" }).textContent(), /Dune.*Piranesi/);
+  assert.match(await bookLine("Piranesi"), /^Piranesi ?65%.*In Progress$/);
+  assert.equal(await bookItem("Piranesi").getByRole("img", { name: "5 of 5 stars", exact: true }).count(), 1);
+  assert.match(
+    await bookItem("Piranesi").getByText("In Progress", { exact: true }).getAttribute("class"),
+    /text-status-progress/,
+  );
+  assert.match(squash(await bookItem("Piranesi").textContent()), /shelves: ?Libby: Favorites ?or ?Fable: Book club/);
+  assert.equal(await page.locator("svg.lucide-triangle-alert").count(), 0);
+  assert.match(await bookLine("Dune"), /^Dune ?100%.*Finished$/);
+  await openTab("Changes");
+  assert.match(await bookLine("Dune"), /^Dune ?100% \(\+80%\).*Finished$/);
+  assert.equal(await bookItem("Dune").locator("summary").count(), 0);
+  assert.equal(await page.locator("svg.lucide-triangle-alert").count(), 0);
+  const duneNotes = page.getByRole("checkbox", { name: "Apply notes to Libby for Dune", exact: true });
+  assert.equal(await duneNotes.count(), 0);
+  assert.equal(await page.getByText("non-conflicting changes hidden", { exact: false }).count(), 0);
+  const showAll = page.getByLabel("Show non-conflicting changes", { exact: true });
+  await openTab("Settings");
+  await page.getByText("Advanced", { exact: true }).click();
+  assert.equal(await page.getByLabel("Allow decrease in progress", { exact: true }).isChecked(), false);
+  await showAll.selectOption("yes");
+  await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await openTab("Changes");
+  await bookItem("Dune").locator("summary").click();
+  await duneNotes.waitFor();
+  await openTab("Settings");
+  await showAll.selectOption("no");
+  await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await openTab("Changes");
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("region", { name: "Apply results" }).waitFor();
   assert.match(await page.getByRole("region", { name: "Apply results" }).textContent(), /success/);
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
-  assert.equal((await progressRow.locator("td").nth(3).textContent()).trim().startsWith("65%"), true);
-  assert.equal((await duneStatus.locator("td").nth(3).textContent()).trim().startsWith("Finished"), true);
-  await page.getByText("Sync settings", { exact: true }).click();
+  await page.getByText("No applicable changes in this preview.", { exact: true }).waitFor();
+  await openTab("Library");
+  assert.match(await bookLine("Piranesi"), /^Piranesi ?65%/);
+  await openTab("Settings");
   await page.getByLabel("Removals", { exact: true }).selectOption("fields-memberships");
   assert.equal(await page.getByRole("button", { name: "Preview changes", exact: true }).isDisabled(), true);
   await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await openTab("Library");
   await page.getByRole("button", { name: "Use Libby shelves for Piranesi", exact: true }).click();
+  await openTab("Changes");
   const removal = page.getByRole("checkbox", { name: "Apply shelves to Fable for Piranesi", exact: true });
   await removal.check();
   assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), true);
   await page.getByRole("checkbox", { name: "Confirm removal of shelves on Fable for Piranesi", exact: true }).check();
-  assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), true);
-  await page
-    .getByRole("checkbox", { name: "Confirm public copying of shelves to Fable for Piranesi", exact: true })
-    .check();
+  assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), false);
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("region", { name: "Apply results" }).waitFor();
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
-  assert.equal((await shelvesRow.locator("td").nth(3).textContent()).trim().startsWith("Favorites"), true);
-  await page.getByLabel("Libby progress across editions", { exact: true }).selectOption("choose");
-  await page.getByRole("button", { name: "Save sync settings", exact: true }).click();
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
-  const edition = page.getByLabel("Progress edition for Piranesi", { exact: true });
-  await edition.selectOption("libby:piranesi-ebook");
-  assert.equal((await progressRow.locator("td").nth(4).textContent()).trim(), "45%");
-  await page.getByRole("button", { name: "Use fallback settings", exact: true }).click();
+  await openTab("Library");
+  await bookItem("Piranesi").waitFor();
+  assert.match(squash(await bookItem("Piranesi").textContent()), /shelves: ?Favorites/);
+  await openTab("Settings");
+  for (const removed of ["Libby progress across editions", "Book matching"])
+    assert.equal(await page.getByLabel(removed, { exact: true }).count(), 0);
+  const advanced = page.locator("details").filter({ has: page.getByText("Advanced", { exact: true }) });
+  assert.equal(await advanced.getByLabel("Shared metadata", { exact: true }).count(), 1);
+  await page.getByRole("button", { name: "Reset to defaults", exact: true }).click();
   assert.equal(await page.getByLabel("Removals", { exact: true }).inputValue(), "none");
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await openTab("Changes");
   const comparisonStatus = await page.getByRole("status").textContent();
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();

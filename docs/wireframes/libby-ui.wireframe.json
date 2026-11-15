@@ -263,7 +263,7 @@
             },
             {
               "type": "rule",
-              "label": "Removals default to off. Every removal and private-to-public copy needs explicit review."
+              "label": "Removals default to off. Every removal needs explicit review."
             }
           ]
         },
@@ -272,7 +272,7 @@
           "components": [
             {
               "type": "table",
-              "label": "Combined library",
+              "label": "Library",
               "columns": ["book", "field", "libby", "fable", "value", "source"]
             }
           ]

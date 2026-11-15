@@ -119,12 +119,6 @@ Use this function to derive Fable's reading status from complete Libby evidence.
 Inputs: `group` — matched Libby/Fable snapshots; `settings` — progress policy for derived status.
 Dependencies: `aggregateAuthoritative`.
 
-## `derivedVisibility` — src/sync.ts
-
-Use this function to carry known Libby privacy metadata onto a derived status field.
-Inputs: `group` — matched provider snapshots whose status evidence is being aggregated.
-Dependencies: Libby status field visibility values.
-
 ## `resolveOrdinaryField` — src/sync.ts
 
 Use this function to resolve a normal field from both providers using timestamps or configured preference.
@@ -205,7 +199,7 @@ Dependencies: The project types and helpers referenced by this function in src/s
 
 ## `appliedValue` — src/sync-plan.ts
 
-Use this function to verify a proposed value and expected privacy against a fresh destination read.
+Use this function to verify a proposed value against a fresh destination read.
 Inputs: The typed parameters provide the source values, user context, or UI controls described above.
 Dependencies: The project types and helpers referenced by this function in src/sync-plan.ts.
 
@@ -217,7 +211,7 @@ Dependencies: The project types and helpers referenced by this function in src/s
 
 ## `SyncChange` — ui/src/components/SyncChange.tsx
 
-Use this component to review one proposed write and explicitly acknowledge any removal or private-to-public copying before applying.
+Use this component to review one proposed write and explicitly acknowledge any removal before applying.
 Inputs: The typed parameters provide the source values, user context, or UI controls described above.
 Dependencies: The project types and helpers referenced by this function in ui/src/components/SyncChange.tsx.
 
@@ -301,7 +295,7 @@ Dependencies: The project types and helpers referenced by this function in ui/sr
 
 ## `displaySyncValue` — ui/src/lib/sync-format.ts
 
-Use this function to display normalized sync values without confusing unknown, cleared, zero, or false values.
+Use this function to display normalized sync values without confusing empty, cleared, zero, or false values.
 Inputs: The typed parameters provide the source values, user context, or UI controls described above.
 Dependencies: The project types and helpers referenced by this function in ui/src/lib/sync-format.ts.
 

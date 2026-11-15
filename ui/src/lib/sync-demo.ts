@@ -51,21 +51,15 @@ const journal: SyncJournal = {
 
 /** Use this function to build a simulated provider; its writes replace guarded in-memory fields and never call a network service. */
 function demoAdapter(provider: "libby" | "fable"): SyncAdapter {
-  const writableFields =
+  const fields =
     provider === "libby"
-      ? ["rating", "notes", "shelves"]
+      ? ["readingProgress", "checkedOut", "finished", "rating", "notes", "shelves"]
       : ["readingProgress", "readingStatus", "rating", "notes", "shelves"];
-  const visibility: Record<string, "private" | "public"> = {
-    readingProgress: "private",
-    readingStatus: "private",
-    rating: "private",
-    notes: "private",
-    shelves: provider === "fable" ? "public" : "private",
-  };
+  const writableFields = provider === "libby" ? ["rating", "notes", "shelves"] : fields;
   return {
     verified: true,
+    fields,
     writableFields,
-    visibility,
     async read(owner) {
       if (journalKey(owner, "") !== journalKey(context, "")) throw new Error("Demo account changed");
       return structuredClone(snapshots[provider]);
@@ -86,7 +80,6 @@ function demoAdapter(provider: "libby" | "fable"): SyncAdapter {
       fields[operation.field] = {
         value: structuredClone(operation.after),
         updatedAt: new Date().toISOString(),
-        visibility: operation.before?.visibility ?? visibility[operation.field] ?? "unknown",
       };
     },
   };

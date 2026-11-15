@@ -9,7 +9,8 @@ export const SyncSettingsSchema = z
     progress: z.enum(["furthest", "latest", "choose"]),
     conflicts: z.enum(["ask", "libby", "fable"]),
     removals: z.enum(["none", "fields-memberships", "all-supported"]),
-    publicCopy: z.enum(["review", "block"]),
+    showNonConflicting: z.enum(["no", "yes"]),
+    allowProgressDecrease: z.boolean(),
   })
   .strict();
 

@@ -1,30 +1,23 @@
-import { RefreshCw } from "lucide-react";
+import { Ban, CircleCheck, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { SyncField } from "../../../src/sync.ts";
+import type { SyncField, SyncProvider } from "../../../src/sync.ts";
 import { SYNC_FALLBACKS, type SyncSettings } from "../../../src/sync-config.ts";
 import { type SyncApprovals, type SyncPreviewOptions, syncDecisionKey } from "../../../src/sync-plan.ts";
-import { SyncChange } from "../components/SyncChange.tsx";
+import {
+  BookLine,
+  BookSections,
+  type BookSummary,
+  hasValue,
+  LINE_FIELDS,
+  summarizeBooks,
+} from "../components/SyncBook.tsx";
+import { APP_NAMES, AppValue, isAppConflict, SyncChange } from "../components/SyncChange.tsx";
 import { SyncSettingsPanel } from "../components/SyncSettings.tsx";
-import { Empty, Panel, Screen, sz } from "../components/ui.tsx";
-import { screen } from "../lib/spec.ts";
+import { Empty, Panel, Screen } from "../components/ui.tsx";
 import { useStore } from "../lib/store.tsx";
 import { displaySyncValue as displayValue, SYNC_FIELD_LABELS as labels } from "../lib/sync-format.ts";
 
-const components = screen("sync")?.regions.flatMap((region) => region.components) ?? [];
-const rules = components.filter((component) => component.type === "rule");
-/** Use this component to show a source field and its actual edit timestamp, using displayValue for the normalized value. */
-function SourceValue({ value, field }: { value: SyncField["libby"]; field: string }) {
-  return (
-    <div>
-      <span>{displayValue(value?.value, field)}</span>
-      {value?.updatedAt && (
-        <time dateTime={value.updatedAt} className="mt-1 block text-xs opacity-60">
-          {new Date(value.updatedAt).toLocaleString()}
-        </time>
-      )}
-    </div>
-  );
-}
+const TABS = ["Changes", "Library", "Settings"] as const;
 
 /** Use this screen to compare Libby and Fable through the store's API and retain the last successful reconciliation in the store. */
 export function SyncScreen() {
@@ -37,9 +30,10 @@ export function SyncScreen() {
     syncError: error,
     setSyncError: setError,
   } = useStore();
-  const review: SyncApprovals = syncResult?.review ?? { selected: [], removals: [], publicCopies: [] };
+  const review: SyncApprovals = syncResult?.review ?? { selected: [], removals: [] };
   const [settings, setSettings] = useState<SyncSettings>();
   const [draft, setDraft] = useState<SyncSettings>({ ...SYNC_FALLBACKS });
+  const [tab, setTab] = useState<(typeof TABS)[number]>("Changes");
   const saved = settings !== undefined && JSON.stringify(settings) === JSON.stringify(draft);
 
   useEffect(() => {
@@ -94,10 +88,9 @@ export function SyncScreen() {
         comparedAt: new Date().toISOString(),
         review: {
           selected: plan.operations
-            .filter((operation) => !operation.blocked && !operation.removal && !operation.publicExposure)
+            .filter((operation) => !operation.blocked && !operation.removal)
             .map((operation) => operation.id),
           removals: [],
-          publicCopies: [],
         },
       });
     } catch (failure) {
@@ -143,41 +136,82 @@ export function SyncScreen() {
           (outcome) => outcome.operationId === operation.id && outcome.status === "success",
         ),
     ) ?? [];
+  const operations = syncResult?.plan.operations ?? [];
+  const visibleOperations = operations
+    .filter((operation) => settings?.showNonConflicting === "yes" || isAppConflict(operation))
+    .sort((left, right) => Number(right.removal) - Number(left.removal));
   const missingApproval = remaining.some(
-    (operation) =>
-      operation.blocked ||
-      (operation.removal && !review.removals.includes(operation.id)) ||
-      (operation.publicExposure && !review.publicCopies.includes(operation.id)),
+    (operation) => operation.blocked || (operation.removal && !review.removals.includes(operation.id)),
   );
 
-  /** Use this function to resolve ordinary metadata conflicts by generating a new preview; Libby-authoritative fields cannot be overridden. */
-  function conflictControls(row: SyncField) {
-    if (!row.conflict || ["readingProgress", "checkedOut", "finished", "readingStatus"].includes(row.field))
-      return null;
+  /** Use this function to show one app's side of a conflict; ordinary metadata sides are buttons that resolve the conflict with a new preview, while Libby-authoritative fields cannot be overridden. */
+  function conflictSide(row: SyncField, provider: SyncProvider) {
+    const field = row[provider];
+    if (!field) return null;
+    const value = <AppValue provider={provider} value={field.value} field={row.field} updatedAt={field.updatedAt} />;
+    if (["readingProgress", "checkedOut", "finished", "readingStatus"].includes(row.field)) return value;
     return (
-      <div className="mt-2 flex flex-wrap gap-2">
-        {(["libby", "fable"] as const)
-          .filter((provider) => row[provider])
-          .map((provider) => (
-            <button
-              key={provider}
-              type="button"
-              className="btn btn-outline btn-xs"
-              disabled={busy || !saved}
-              aria-label={`Use ${provider === "libby" ? "Libby" : "Fable"} ${labels[row.field] ?? row.field} for ${row.title}`}
-              onClick={() =>
-                sync({
-                  ...syncResult?.plan.options,
-                  resolutions: { ...syncResult?.plan.options.resolutions, [syncDecisionKey(row)]: provider },
-                })
-              }
-            >
-              Use {provider === "libby" ? "Libby" : "Fable"}
-            </button>
-          ))}
-      </div>
+      <button
+        type="button"
+        className="cursor-pointer rounded-field px-1 underline decoration-dotted hover:bg-base-200 disabled:cursor-default"
+        disabled={busy || !saved}
+        aria-label={`Use ${APP_NAMES[provider]} ${labels[row.field] ?? row.field} for ${row.title}`}
+        onClick={() =>
+          sync({
+            ...syncResult?.plan.options,
+            resolutions: { ...syncResult?.plan.options.resolutions, [syncDecisionKey(row)]: provider },
+          })
+        }
+      >
+        {value}
+      </button>
     );
   }
+
+  /** Use this function to show one field in a book's pulldown: its current value, or both apps' values to choose from. */
+  function fieldDetail(row: SyncField) {
+    return (
+      <li key={row.field} className="flex flex-wrap items-center gap-x-2 py-1.5">
+        <span className="capitalize">{labels[row.field] ?? row.field}:</span>
+        {row.conflict ? (
+          <>
+            {conflictSide(row, "libby")}
+            <span className="opacity-60" title={row.conflict}>
+              or
+            </span>
+            {conflictSide(row, "fable")}
+          </>
+        ) : (
+          <span className="min-w-0 break-words">{displayValue(row.value, row.field)}</span>
+        )}
+      </li>
+    );
+  }
+
+  /** Use this function to show "Review" in a line cell whose field has no current value; the reason shows on hover. */
+  function lineCell(book: BookSummary, field: string) {
+    const row = book.rows.find((candidate) => candidate.field === field && candidate.conflict);
+    return (
+      row && (
+        <span className="text-sm opacity-60" title={row.conflict}>
+          Review
+        </span>
+      )
+    );
+  }
+
+  /** Use this function to select or clear several operations at once, such as every line change for one book. */
+  function selectOperations(ids: string[], checked: boolean) {
+    if (!syncResult) return;
+    const selected = new Set(syncResult.review.selected);
+    for (const id of ids) {
+      if (checked) selected.add(id);
+      else selected.delete(id);
+    }
+    setSyncResult({ ...syncResult, review: { ...syncResult.review, selected: [...selected] } });
+  }
+
+  const outcomeOf = (id: string) => syncResult?.report?.outcomes.find((outcome) => outcome.operationId === id)?.status;
 
   return (
     <Screen
@@ -204,31 +238,27 @@ export function SyncScreen() {
         </div>
       }
     >
-      <div role="note" className="alert alert-info border-2 border-pop">
-        {api.demo
-          ? "Demo accounts: Apply only updates simulated data. Your real Libby and Fable accounts are not read or changed."
-          : "Preview changes before applying them. Unverified provider capabilities remain blocked."}
-      </div>
-      <Panel title="Sync rules">
-        <ul className="space-y-2 text-sm">
-          {rules.map((rule) => (
-            <li key={rule.label}>{rule.label}</li>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div role="tablist" className="tabs tabs-box w-fit">
+          {TABS.map((name) => (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              aria-selected={tab === name}
+              className={`tab ${tab === name ? "tab-active" : ""}`}
+              onClick={() => setTab(name)}
+            >
+              {name}
+            </button>
           ))}
-        </ul>
-      </Panel>
-      <details open={settings === undefined}>
-        <summary className="cursor-pointer font-display font-semibold">Sync settings</summary>
-        <div className="mt-4">
-          <SyncSettingsPanel
-            value={draft}
-            saved={saved}
-            busy={busy}
-            onChange={setDraft}
-            onSave={() => saveSettings()}
-            onReset={() => saveSettings({})}
-          />
         </div>
-      </details>
+        {tab !== "Settings" && (
+          <p className="text-sm font-semibold">
+            <span className="text-libby">Libby</span> · <span className="text-fable">Fable</span>
+          </p>
+        )}
+      </div>
       {!saved && settings && (
         <p className="text-sm text-warning">Save settings before previewing or applying changes.</p>
       )}
@@ -240,8 +270,45 @@ export function SyncScreen() {
           </span>
         </div>
       )}
-      {syncResult ? (
-        <>
+      {tab === "Settings" ? (
+        <div role="tabpanel" aria-label="Settings" className="contents">
+          <SyncSettingsPanel
+            value={draft}
+            saved={saved}
+            busy={busy}
+            onChange={setDraft}
+            onSave={() => saveSettings()}
+            onReset={() => saveSettings({})}
+          />
+        </div>
+      ) : syncResult && tab === "Library" ? (
+        <div role="tabpanel" aria-label="Library" className="contents">
+          <Panel title="Library">
+            <BookSections
+              books={summarizeBooks(syncResult.rows)}
+              render={(book) => {
+                const details = book.rows.filter((row) =>
+                  row.conflict
+                    ? !["checkedOut", "finished"].includes(row.field)
+                    : !LINE_FIELDS.has(row.field) && hasValue(row.value),
+                );
+                return (
+                  <BookLine
+                    key={book.groupId}
+                    book={book}
+                    progressCell={lineCell(book, "readingProgress")}
+                    ratingCell={lineCell(book, "rating")}
+                    statusCell={lineCell(book, "readingStatus")}
+                    details={details.length ? details.map(fieldDetail) : undefined}
+                    open={details.some((row) => row.conflict)}
+                  />
+                );
+              }}
+            />
+          </Panel>
+        </div>
+      ) : syncResult ? (
+        <div role="tabpanel" aria-label="Changes" className="contents">
           <p role="status" className="text-sm opacity-70">
             {new Set(syncResult.rows.map((row) => row.bookId)).size} books · {syncResult.rows.length} fields ·{" "}
             {syncResult.rows.filter((row) => row.conflict).length} need review
@@ -337,12 +404,7 @@ export function SyncScreen() {
               </div>
             </Panel>
           )}
-          <Panel title="Proposed changes">
-            <p className="mb-3 text-sm opacity-70">
-              {syncResult.plan.operations.length} changes ·{" "}
-              {syncResult.plan.operations.filter((operation) => operation.blocked).length} blocked. Select changes and
-              review any risk confirmations before Apply.
-            </p>
+          <Panel>
             {syncResult.plan.operations.some((operation) => operation.removal) && (
               <div className="alert alert-error mb-4">
                 <strong>
@@ -354,26 +416,85 @@ export function SyncScreen() {
             {!syncResult.plan.operations.length ? (
               <p>No applicable changes in this preview.</p>
             ) : (
-              <ul className="space-y-3">
-                {[...syncResult.plan.operations]
-                  .sort((left, right) => Number(right.removal) - Number(left.removal))
-                  .map((operation) => (
-                    <SyncChange
-                      key={operation.id}
-                      operation={operation}
-                      disabled={busy || !saved}
-                      selected={review.selected.includes(operation.id)}
-                      removalApproved={review.removals.includes(operation.id)}
-                      exposureApproved={review.publicCopies.includes(operation.id)}
-                      outcome={
-                        syncResult.report?.outcomes.find((outcome) => outcome.operationId === operation.id)?.status
+              <BookSections
+                books={summarizeBooks(syncResult.rows).filter((book) =>
+                  visibleOperations.some((operation) => operation.groupId === book.groupId),
+                )}
+                render={(book) => {
+                  const bookOperations = visibleOperations.filter((operation) => operation.groupId === book.groupId);
+                  const lineOperations = bookOperations.filter(
+                    (operation) => LINE_FIELDS.has(operation.field) && !operation.removal,
+                  );
+                  const detailOperations = bookOperations.filter((operation) => !lineOperations.includes(operation));
+                  const selectable = lineOperations.filter(
+                    (operation) => !operation.blocked && outcomeOf(operation.id) !== "success",
+                  );
+                  const blocked = lineOperations.filter((operation) => operation.blocked);
+                  const progress = lineOperations.find((operation) => operation.field === "readingProgress");
+                  const before = progress?.before?.value;
+                  return (
+                    <BookLine
+                      key={book.groupId}
+                      book={book}
+                      progressChange={
+                        typeof progress?.after === "number"
+                          ? progress.after - (typeof before === "number" ? before : 0)
+                          : undefined
                       }
-                      onSelect={(value) => toggleReview("selected", operation.id, value)}
-                      onRemoval={(value) => toggleReview("removals", operation.id, value)}
-                      onExposure={(value) => toggleReview("publicCopies", operation.id, value)}
+                      lead={
+                        <>
+                          {lineOperations.length > 0 ? (
+                            <input
+                              type="checkbox"
+                              className="checkbox checkbox-primary checkbox-sm"
+                              aria-label={`Apply changes for ${book.title}`}
+                              checked={
+                                selectable.length > 0 &&
+                                selectable.every((operation) => review.selected.includes(operation.id))
+                              }
+                              disabled={busy || !saved || !selectable.length}
+                              onChange={(event) =>
+                                selectOperations(
+                                  selectable.map((operation) => operation.id),
+                                  event.target.checked,
+                                )
+                              }
+                            />
+                          ) : (
+                            <span className="w-5 shrink-0" />
+                          )}
+                          {blocked.length > 0 && (
+                            <span title={blocked.map((operation) => operation.blocked).join("; ")}>
+                              <Ban className="size-4 shrink-0 text-warning" role="img" aria-label="Blocked" />
+                            </span>
+                          )}
+                          {lineOperations.length > 0 &&
+                            lineOperations.every((operation) => outcomeOf(operation.id) === "success") && (
+                              <CircleCheck className="size-4 shrink-0 text-success" role="img" aria-label="Applied" />
+                            )}
+                        </>
+                      }
+                      details={
+                        detailOperations.length
+                          ? detailOperations.map((operation) => (
+                              <SyncChange
+                                key={operation.id}
+                                operation={operation}
+                                disabled={busy || !saved}
+                                selected={review.selected.includes(operation.id)}
+                                removalApproved={review.removals.includes(operation.id)}
+                                outcome={outcomeOf(operation.id)}
+                                onSelect={(value) => toggleReview("selected", operation.id, value)}
+                                onRemoval={(value) => toggleReview("removals", operation.id, value)}
+                              />
+                            ))
+                          : undefined
+                      }
+                      open={detailOperations.some((operation) => operation.removal)}
                     />
-                  ))}
-              </ul>
+                  );
+                }}
+              />
             )}
             {syncResult.report && (
               <section className="mt-4 rounded-field border-2 border-base-300 p-3 text-sm" aria-label="Apply results">
@@ -385,95 +506,10 @@ export function SyncScreen() {
                     </li>
                   ))}
                 </ul>
-                <p className="mt-2">Preview again to compare the current provider state.</p>
               </section>
             )}
           </Panel>
-          <Panel title={components.find((component) => component.type === "table")?.label}>
-            <div className="hidden overflow-x-auto md:block">
-              <table className={`table ${sz("table")}`}>
-                <thead>
-                  <tr>
-                    <th>Book</th>
-                    <th>Field</th>
-                    <th>Libby</th>
-                    <th>Fable</th>
-                    <th>Combined value</th>
-                    <th>Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {syncResult.rows.map((row) => (
-                    <tr key={JSON.stringify([row.bookId, row.field])}>
-                      <td className="font-semibold">{row.title}</td>
-                      <td className="capitalize">{labels[row.field] ?? row.field}</td>
-                      <td>
-                        <SourceValue value={row.libby} field={row.field} />
-                      </td>
-                      <td>
-                        <SourceValue value={row.fable} field={row.field} />
-                      </td>
-                      <td>
-                        {row.conflict ? (
-                          <div>
-                            <span className="text-warning">Needs review: {row.conflict}</span>
-                            {conflictControls(row)}
-                          </div>
-                        ) : (
-                          displayValue(row.value, row.field)
-                        )}
-                      </td>
-                      <td>
-                        {row.conflict ? (
-                          <span className="badge badge-warning">Conflict</span>
-                        ) : (
-                          <span className={`badge ${row.source === "libby" ? "badge-primary" : "badge-secondary"}`}>
-                            {row.source === "libby" ? "Libby" : "Fable"}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <ul className="space-y-3 md:hidden">
-              {syncResult.rows.map((row) => (
-                <li
-                  key={JSON.stringify([row.bookId, row.field])}
-                  className="rounded-field border-2 border-base-300 p-3"
-                >
-                  <p className="font-semibold">{row.title}</p>
-                  <p className="mt-1 text-sm capitalize">{labels[row.field] ?? row.field}</p>
-                  <dl className="my-3 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt className="opacity-60">Libby</dt>
-                      <dd>
-                        <SourceValue value={row.libby} field={row.field} />
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="opacity-60">Fable</dt>
-                      <dd>
-                        <SourceValue value={row.fable} field={row.field} />
-                      </dd>
-                    </div>
-                  </dl>
-                  {row.conflict ? (
-                    <div>
-                      <p className="text-sm text-warning">Needs review: {row.conflict}</p>
-                      {conflictControls(row)}
-                    </div>
-                  ) : (
-                    <p className="text-sm font-semibold">
-                      {displayValue(row.value, row.field)} · {row.source === "libby" ? "Libby" : "Fable"}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </Panel>
-        </>
+        </div>
       ) : (
         <Empty icon={<RefreshCw className="size-7" />} title="Compare your libraries">
           <p className="max-w-sm text-center text-sm opacity-70">

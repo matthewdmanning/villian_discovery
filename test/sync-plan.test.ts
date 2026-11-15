@@ -20,8 +20,8 @@ const older = "2026-01-01T00:00:00Z";
 
 type AdapterOptions = {
   verified?: boolean;
+  fields?: string[];
   writableFields?: string[];
-  visibility?: Record<string, "private" | "public">;
   failWrites?: string[];
   commitThenThrow?: string[];
   failNextRead?: boolean;
@@ -39,8 +39,8 @@ type FakeJournal = SyncJournal & {
   writes: number;
 };
 
-function field(value: SnapshotValue, updatedAt?: string, visibility: "private" | "public" = "private"): SnapshotField {
-  return { value, ...(updatedAt ? { updatedAt } : {}), visibility };
+function field(value: SnapshotValue, updatedAt?: string): SnapshotField {
+  return { value, ...(updatedAt ? { updatedAt } : {}) };
 }
 
 function pair(
@@ -65,8 +65,8 @@ function pair(
 function makeAdapter(provider: SyncProvider, snapshots: BookSnapshot[], options: AdapterOptions = {}): FakeAdapter {
   const adapter: FakeAdapter = {
     verified: options.verified ?? true,
+    fields: options.fields ?? ["note", "rating", "tags", "readingProgress", "checkedOut", "finished", "readingStatus"],
     writableFields: options.writableFields ?? ["note", "rating", "tags"],
-    ...(options.visibility ? { visibility: options.visibility } : {}),
     state: structuredClone(snapshots),
     reads: 0,
     writes: [],
@@ -87,10 +87,8 @@ function makeAdapter(provider: SyncProvider, snapshots: BookSnapshot[], options:
       const current = book.fields[operation.field];
       if (JSON.stringify(current) !== JSON.stringify(operation.before)) throw new Error("CAS mismatch");
       if (options.failWrites?.includes(operation.field)) throw new Error(`${operation.field} write failed`);
-      const visibility = current?.visibility ?? this.visibility?.[operation.field];
       book.fields[operation.field] = {
         value: structuredClone(operation.after),
-        ...(visibility ? { visibility } : {}),
         updatedAt: "2026-01-03T00:00:00Z",
       };
       if (options.commitThenThrow?.includes(operation.field)) throw new Error("write committed before failure");
@@ -132,11 +130,10 @@ async function preview(
   return { settings, adapters, plan };
 }
 
-function approvals(plan: SyncPlan, extra: { removals?: string[]; publicCopies?: string[] } = {}) {
+function approvals(plan: SyncPlan, extra: { removals?: string[] } = {}) {
   return {
     selected: plan.operations.map((operation) => operation.id),
     removals: extra.removals ?? [],
-    publicCopies: extra.publicCopies ?? [],
   };
 }
 
@@ -208,7 +205,7 @@ describe("sync plan preview and apply", () => {
       applySync({
         context,
         settings,
-        readSettings: async () => ({ ...settings, publicCopy: "block" }),
+        readSettings: async () => ({ ...settings, removals: "all-supported" }),
         plan,
         adapters,
         journal: makeJournal(),
@@ -260,7 +257,7 @@ describe("sync plan preview and apply", () => {
     expect(plan.operations.some((operation) => operation.bookId === "fable-1")).toBe(true);
     expect(plan.operations.some((operation) => operation.bookId === "other-edition")).toBe(false);
   });
-  it("previews and applies a safe metadata change while preserving destination privacy", async () => {
+  it("previews and applies a safe metadata change", async () => {
     const { settings, adapters, plan } = await preview();
     expect(plan.operations).toHaveLength(1);
     expect(plan.operations[0]).toMatchObject({ field: "note", source: "libby", target: "fable" });
@@ -274,22 +271,33 @@ describe("sync plan preview and apply", () => {
     ]);
     expect((adapters.fable as FakeAdapter).state[0]!.fields.note).toMatchObject({
       value: "new note",
-      visibility: "private",
       updatedAt: "2026-01-03T00:00:00Z",
     });
   });
 
-  it("blocks unverified providers, unknown destinations, and default removals", async () => {
+  it("blocks unverified providers and default removals", async () => {
     const unverified = await preview(pair(), {}, { fable: { verified: false } });
     expect(unverified.plan.operations[0]).toMatchObject({ blocked: "Provider contracts are not verified" });
 
-    const unknown = await preview(pair({ note: field("new note", newer) }, {}, []));
-    expect(unknown.plan.operations[0]).toMatchObject({
-      blocked: "Destination field is unknown; it is not an observed empty value",
-    });
-
     const removal = await preview(pair({ note: field(null, newer) }));
     expect(removal.plan.operations[0]).toMatchObject({ blocked: "Removals are disabled in your settings" });
+  });
+
+  it("fills a destination field that is empty in its app schema", async () => {
+    const { plan } = await preview(pair({ note: field("new note", newer) }, {}));
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.blocked).toBeUndefined();
+  });
+
+  it("ignores fields outside an app's schema instead of flagging them", async () => {
+    const { plan } = await preview(
+      pair({ note: field("new note", newer), loanDays: field(14, newer) }, { note: field("old note", older) }),
+      {},
+      { fable: { fields: ["rating"] } },
+    );
+    expect(plan.operations).toHaveLength(0);
+    expect(plan.schemas.fable).toEqual(["rating"]);
+    expect(plan.rows.map((row) => row.field)).not.toContain("loanDays");
   });
 
   it("requires removal approval even when removals are enabled", async () => {
@@ -299,18 +307,6 @@ describe("sync plan preview and apply", () => {
     const journal = makeJournal();
     const report = await applySync({ context, settings, plan, adapters, journal, approvals: approvals(plan) });
     expect(report.outcomes[0]).toMatchObject({ status: "skipped", message: "Explicit removal approval is required" });
-  });
-
-  it("requires independent public-copy approval for private-to-public changes", async () => {
-    const snapshots = pair({ note: field("new note", newer, "private") }, { note: field("old note", older, "public") });
-    const { settings, adapters, plan } = await preview(snapshots);
-    expect(plan.operations[0]).toMatchObject({ publicExposure: true });
-    const journal = makeJournal();
-    const report = await applySync({ context, settings, plan, adapters, journal, approvals: approvals(plan) });
-    expect(report.outcomes[0]).toMatchObject({
-      status: "skipped",
-      message: "Explicit public-copy approval is required",
-    });
   });
 
   it.each([
@@ -336,7 +332,7 @@ describe("sync plan preview and apply", () => {
   });
 
   it.each([
-    ["settings", () => ({ ...SYNC_FALLBACKS, publicCopy: "block" as const })],
+    ["settings", () => ({ ...SYNC_FALLBACKS, removals: "all-supported" as const })],
     ["context", () => context],
   ])("rejects changed %s before writing", async (kind, value) => {
     const { settings, adapters, plan } = await preview();
@@ -504,7 +500,19 @@ describe("sync plan preview and apply", () => {
     expect(plan.conflicts).toHaveLength(0);
   });
 
-  it("keeps source privacy on furthest progress so the copy is not blocked as unknown", async () => {
+  it("never lowers progress unless decreases are allowed", async () => {
+    const snapshots = pair({ readingProgress: field(30, newer) }, { readingProgress: field(80, older) });
+    const fable = { fable: { writableFields: ["readingProgress"] } };
+    const kept = await preview(snapshots, {}, fable);
+    expect(kept.plan.operations.filter((operation) => operation.field === "readingProgress")).toHaveLength(0);
+    const lowered = await preview(snapshots, { allowProgressDecrease: true }, fable);
+    expect(lowered.plan.operations.find((operation) => operation.field === "readingProgress")).toMatchObject({
+      after: 30,
+      target: "fable",
+    });
+  });
+
+  it("proposes an unblocked copy of the furthest progress", async () => {
     const { plan } = await preview(
       pair({ readingProgress: field(40, newer) }, { readingProgress: field(10, older) }),
       {},

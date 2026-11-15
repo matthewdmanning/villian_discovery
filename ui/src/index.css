@@ -6,7 +6,9 @@
 /*
  * Design tokens. Components use only these semantic names:
  * daisyUI colors (base-*, primary, secondary, accent, neutral, info, success, warning, error and their -content),
- * plus `pop` (outline + offset shadow ink) and the font roles below. No raw palette classes in components.
+ * plus `pop` (outline + offset shadow ink), the app text colors `libby` and `fable`, the reading status colors
+ * `status-unopened`, `status-progress`, `status-dnf`, `status-finished`, the rating color `star`, and the font roles below.
+ * No raw palette classes in components.
  */
 
 @plugin "daisyui/theme" {
@@ -79,17 +81,38 @@
   --noise: 0;
 }
 
-/* `pop`: the ink used for chunky outlines and offset shadows. */
+/* `pop`: the ink used for chunky outlines and offset shadows. `libby`/`fable`: readable text colors that name each app. */
 :root,
 [data-theme="shelfie"] {
   --pop-ink: oklch(26% 0.045 300);
+  --app-libby: oklch(50% 0.19 2);
+  --app-fable: oklch(48% 0.11 230);
+  --status-unopened: oklch(50% 0.14 250);
+  --status-progress: oklch(50% 0.14 150);
+  --status-dnf: oklch(55% 0.01 300);
+  --status-finished: oklch(48% 0.14 305);
+  --rating-star: oklch(66% 0.16 70);
 }
 [data-theme="shelfie-night"] {
   --pop-ink: oklch(10% 0.02 300);
+  --app-libby: oklch(78% 0.14 2);
+  --app-fable: oklch(80% 0.1 230);
+  --status-unopened: oklch(78% 0.11 250);
+  --status-progress: oklch(80% 0.13 150);
+  --status-dnf: oklch(72% 0.01 300);
+  --status-finished: oklch(78% 0.11 305);
+  --rating-star: oklch(82% 0.15 80);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
     --pop-ink: oklch(10% 0.02 300);
+    --app-libby: oklch(78% 0.14 2);
+    --app-fable: oklch(80% 0.1 230);
+    --status-unopened: oklch(78% 0.11 250);
+    --status-progress: oklch(80% 0.13 150);
+    --status-dnf: oklch(72% 0.01 300);
+    --status-finished: oklch(78% 0.11 305);
+    --rating-star: oklch(82% 0.15 80);
   }
 }
 
@@ -98,6 +121,13 @@
   --font-display: "Fredoka Variable", "Nunito Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --color-pop: var(--pop-ink);
+  --color-libby: var(--app-libby);
+  --color-fable: var(--app-fable);
+  --color-status-unopened: var(--status-unopened);
+  --color-status-progress: var(--status-progress);
+  --color-status-dnf: var(--status-dnf);
+  --color-status-finished: var(--status-finished);
+  --color-star: var(--rating-star);
   --shadow-pop: 4px 4px 0 0 var(--pop-ink);
   --shadow-pop-sm: 2px 2px 0 0 var(--pop-ink);
 }

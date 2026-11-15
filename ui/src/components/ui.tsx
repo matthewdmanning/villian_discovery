@@ -4,6 +4,8 @@ import type { ResultStatus } from "../lib/api.ts";
 import { options, type ScreenId, screen } from "../lib/spec.ts";
 
 export const compact = options.density === "compact";
+/** Section heading style shared by panel titles and list category labels. */
+export const heading = "text-lg font-semibold";
 /** daisyUI size modifier for form controls and buttons, from `options.density`. */
 export const sz = (kind: "btn" | "input" | "select" | "toggle" | "checkbox" | "textarea" | "table" | "badge") =>
   compact ? `${kind}-sm` : "";
@@ -38,7 +40,7 @@ export function Panel({
 }) {
   return (
     <div className={`surface ${compact ? "p-4" : "p-5 sm:p-6"} ${className}`}>
-      {title && <h2 className="mb-4 text-lg font-semibold">{title}</h2>}
+      {title && <h2 className={`mb-4 ${heading}`}>{title}</h2>}
       {children}
     </div>
   );
@@ -54,7 +56,7 @@ export function Advanced({ title, children }: { title: string; children: ReactNo
   );
 }
 
-export function Toggle(props: { label: string; checked: boolean; onChange(v: boolean): void }) {
+export function Toggle(props: { label: string; checked: boolean; disabled?: boolean; onChange(v: boolean): void }) {
   return (
     <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
       <span>{props.label}</span>
@@ -62,6 +64,7 @@ export function Toggle(props: { label: string; checked: boolean; onChange(v: boo
         type="checkbox"
         className={`toggle toggle-primary ${sz("toggle")}`}
         checked={props.checked}
+        disabled={props.disabled}
         onChange={(e) => props.onChange(e.target.checked)}
       />
     </label>

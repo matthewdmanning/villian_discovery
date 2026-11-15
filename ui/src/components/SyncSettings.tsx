@@ -1,32 +1,26 @@
 import type { SyncSettings } from "../../../src/sync-config.ts";
 import { SyncSettingsSchema } from "../../../src/sync-config.ts";
-import { Panel, sz } from "./ui.tsx";
+import { Panel, sz, Toggle } from "./ui.tsx";
 
-const LABELS: Record<keyof Omit<SyncSettings, "version">, string> = {
-  metadataScope: "Shared metadata",
-  matching: "Book matching",
-  progress: "Libby progress across editions",
+const LABELS = {
   conflicts: "Undated conflicts",
   removals: "Removals",
-  publicCopy: "Private data to public destinations",
-};
+  showNonConflicting: "Show non-conflicting changes",
+  metadataScope: "Shared metadata",
+} as const;
+type SelectKey = keyof typeof LABELS;
 const CHOICES: Record<string, string> = {
   "all-shared": "All compatible shared metadata",
   "lists-tags": "Lists and tags",
   "lists-tags-notes": "Lists, tags, and notes",
-  work: "Automatically match the same work",
-  identifiers: "Verified identifiers only",
-  furthest: "Furthest known progress",
-  latest: "Most recent verified state",
-  choose: "Choose an edition",
   ask: "Ask for each conflict",
   libby: "Prefer Libby",
   fable: "Prefer Fable",
   none: "No removals",
   "fields-memberships": "Field clears and memberships",
   "all-supported": "All supported removals",
-  review: "Allow only after explicit review",
-  block: "Block public copying",
+  no: "No",
+  yes: "Yes",
 };
 
 /** Use this component to edit one user's validated sync settings; choices come from SyncSettingsSchema and saving is delegated to the owning screen. */
@@ -45,6 +39,24 @@ export function SyncSettingsPanel({
   onSave(): void;
   onReset(): void;
 }) {
+  const select = (key: SelectKey) => (
+    <label key={key} className="flex flex-col gap-2 text-sm font-semibold">
+      <span>{LABELS[key]}</span>
+      <select
+        aria-label={LABELS[key]}
+        className={`select w-full ${sz("select")}`}
+        value={value[key]}
+        disabled={busy}
+        onChange={(event) => onChange(SyncSettingsSchema.parse({ ...value, [key]: event.target.value }))}
+      >
+        {SyncSettingsSchema.shape[key].options.map((option) => (
+          <option key={option} value={option}>
+            {CHOICES[option] ?? option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
   return (
     <Panel title="Your sync settings">
       <p className="mb-4 text-sm opacity-70">
@@ -52,29 +64,26 @@ export function SyncSettingsPanel({
         confirmation.
       </p>
       <div className="grid gap-4 sm:grid-cols-2">
-        {(Object.keys(LABELS) as (keyof typeof LABELS)[]).map((key) => (
-          <label key={key} className="flex flex-col gap-2 text-sm font-semibold">
-            <span>{LABELS[key]}</span>
-            <select
-              aria-label={LABELS[key]}
-              className={`select w-full ${sz("select")}`}
-              value={value[key]}
-              disabled={busy}
-              onChange={(event) => onChange(SyncSettingsSchema.parse({ ...value, [key]: event.target.value }))}
-            >
-              {SyncSettingsSchema.shape[key].options.map((option) => (
-                <option key={option} value={option}>
-                  {CHOICES[option] ?? option}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
+        {select("conflicts")}
+        {select("removals")}
+        {select("showNonConflicting")}
       </div>
+      <details className="mt-4">
+        <summary className="cursor-pointer font-semibold">Advanced</summary>
+        <div className="mt-2 grid gap-4 sm:grid-cols-2">
+          {select("metadataScope")}
+          <Toggle
+            label="Allow decrease in progress"
+            checked={value.allowProgressDecrease}
+            disabled={busy}
+            onChange={(checked) => onChange(SyncSettingsSchema.parse({ ...value, allowProgressDecrease: checked }))}
+          />
+        </div>
+      </details>
       <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
         <span className="text-sm opacity-70">{saved ? "Settings saved" : "Save settings before previewing"}</span>
         <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onReset}>
-          Use fallback settings
+          Reset to defaults
         </button>
         <button type="button" className="btn btn-primary btn-sm" disabled={busy || saved} onClick={onSave}>
           Save sync settings

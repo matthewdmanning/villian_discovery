@@ -13,7 +13,8 @@ The application ships `src/sync.fallbacks.json` (copied into `dist/` when built)
 | Libby progress across editions | Furthest known progress                                         |
 | Undated conflicts              | Ask for each conflict                                           |
 | Removals                       | None                                                            |
-| Private data copied publicly   | Only after explicit review                                      |
+| Show non-conflicting changes   | No                                                              |
+| Allow decrease in progress     | No (Advanced): progress never moves to a lower value            |
 
 For example, a user may save `{ "version": 1, "removals": "fields-memberships" }`; remaining fields inherit the shipped file. Unknown settings, invalid values, null configuration objects, and incomplete fallback files produce errors rather than silently changing policy. Using the fallback settings is an explicit reset of the user's overrides.
 
@@ -29,16 +30,26 @@ Verified shared IDs/ISBNs take precedence over exact normalized title-and-author
 
 ## Metadata and proposed changes
 
-For compatible metadata, newer actual field edit timestamps win. Missing or equal timestamps on conflicting values need a choice unless the user's settings explicitly select a provider preference. Fetch time and list-level edit times are not field edit times. One provider's missing field can be unknown rather than empty; adapters must report supported/known fields explicitly.
+For compatible metadata, newer actual field edit timestamps win. Missing or equal timestamps on conflicting values need a choice unless the user's settings explicitly select a provider preference. Fetch time and list-level edit times are not field edit times.
 
-Explicit null represents a field clearing. Reduced string-array membership represents a removal. Removals are blocked under the shipped policy; enabling them still requires a clearly marked preview and explicit approval. Private-to-public copying requires separate approval. Unsupported data and unverified operations remain visible and blocked.
+Explicit null represents a field clearing. Reduced string-array membership represents a removal. Removals are blocked under the shipped policy; enabling them still requires a clearly marked preview and explicit approval. Unsupported data and unverified operations remain visible and blocked.
 
 Apply must re-read both sources and revalidate settings, connected accounts, capabilities, and affected data before writing. Changed inputs require a new preview. Per-operation results distinguish successful, failed, uncertain, and skipped writes; partial success is not reported as a complete sync. An ambiguous timeout is verified against the destination before a retry, and completed operations are not replayed.
 
 Sync never borrows, returns, renews, or places holds. Existing discovery/export commands remain read-only.
 
+## App schemas
+
+Each app has its own schema. Every source app adapter must have a schema converter:
+
+- `fields` lists the shared field names the app has.
+- `read()` converts the app's native records into those shared fields.
+- Fields outside an app's schema are dropped on read.
+
+**Rule: never flag incompatible fields.** A field that one app does not have is not a conflict, a block, or an "Unknown" value. Sync skips it for that app, and the UI does not show that app for that field. A field in an app's schema with no value is empty, and sync can fill it.
+
 ## Normalized snapshots
 
-Provider snapshots use a stable `bookId`, descriptive `title`, optional `author`, ISBN/shared work identity, and per-field `{ value, updatedAt?, visibility? }` records. Reading progress is a percentage from 0 to 100; checked-out and finished values are booleans. Ordinary values may be strings, finite numbers, booleans, null, or string arrays. Timestamps must be ISO date-times with timezone information.
+Provider snapshots use a stable `bookId`, descriptive `title`, optional `author`, ISBN/shared work identity, and per-field `{ value, updatedAt? }` records. Reading progress is a percentage from 0 to 100; checked-out and finished values are booleans. Ordinary values may be strings, finite numbers, booleans, null, or string arrays. Timestamps must be ISO date-times with timezone information.
 
-Duplicate provider IDs, invalid reading values, and invalid timestamps are rejected. Title edits to be reconciled belong in a timestamped field; the snapshot title is also a display label. Adapter capabilities and known-field markers distinguish unsupported/unknown data from an explicitly observed empty destination.
+Duplicate provider IDs, invalid reading values, and invalid timestamps are rejected. Title edits to be reconciled belong in a timestamped field; the snapshot title is also a display label.

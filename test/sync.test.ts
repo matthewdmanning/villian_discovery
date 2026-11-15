@@ -23,42 +23,6 @@ describe("reconcileSnapshots", () => {
     );
     expect(result.groups.every((group) => !group.libby.length || !group.fable.length)).toBe(true);
   });
-  it("keeps derived reading state private when any contributing edition is private", () => {
-    const result = reconcileSnapshotsDetailed(
-      [
-        {
-          bookId: "one",
-          workId: "work",
-          title: "One",
-          fields: {
-            finished: { value: false, visibility: "public" },
-            checkedOut: { value: true, visibility: "public" },
-            readingProgress: { value: 10, visibility: "public" },
-          },
-        },
-        {
-          bookId: "two",
-          workId: "work",
-          title: "One",
-          fields: {
-            finished: { value: false, visibility: "private" },
-            checkedOut: { value: false, visibility: "private" },
-            readingProgress: { value: 40, visibility: "private" },
-          },
-        },
-      ],
-      [
-        {
-          bookId: "fable",
-          workId: "work",
-          title: "One",
-          fields: { readingStatus: { value: "currently-reading", visibility: "public" } },
-        },
-      ],
-      SYNC_FALLBACKS,
-    );
-    expect(result.rows.find((row) => row.field === "readingStatus")?.libby?.visibility).toBe("private");
-  });
   it("preserves explicit clearing and metadata present in only one source", () => {
     const rows = reconcileSnapshots(
       [
