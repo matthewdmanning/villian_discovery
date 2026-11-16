@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   lint:
-    name: Format & lint
+    name: Format, lint & PR checks
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,28 +27,37 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      - name: Check branch name (see CONTRIBUTING.md)
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: node scripts/branch-name.ts "$HEAD_REF"
       - run: npm ci --ignore-scripts
+      - name: Lint PR title (becomes the squash commit message)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
       - name: Biome (format + lint + import order)
         run: npx biome ci --reporter=github .
       - name: Typecheck
         run: npm run typecheck
 
   test:
-    name: Test (Node ${{ matrix.node }})
+    name: Test & build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        node: [26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ matrix.node }}
+          node-version-file: .nvmrc
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            ui/package-lock.json
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: npm run build
@@ -59,42 +68,6 @@ jobs:
         run: npm run build --prefix ui
       - name: CLI smoke test
         run: node dist/cli.js --help
-
-  commitlint:
-    name: PR title (Conventional Commits)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - name: Lint PR title (becomes the squash commit message)
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
-
-  branch-name:
-    name: Branch name
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-      - name: Check branch name (see CONTRIBUTING.md)
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: node scripts/branch-name.ts "$HEAD_REF"
 
   dependency-review:
     name: Dependency review
