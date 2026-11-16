@@ -20,9 +20,17 @@ npm link        # optional: puts `libby-shelf` on PATH
 
 Option A — browser sign-in (recommended): run `libby-shelf login`. A Chrome or Edge window opens libbyapp.com. Follow Libby's own steps there ([Setting up Libby on another device](https://help.libbyapp.com/en-us/6070.htm)). The command ends when Libby shows your cards.
 
+Option B — setup code, no browser:
+
+1. Run `libby-shelf login --device-code`. This tool displays an 8-digit setup code.
+2. On your existing Libby device, open Menu → _Copy To Another Device_ → _Enter Setup Code_, then enter the displayed code.
+3. Leave the command running until approval completes. It refreshes the linked identity before saving the token. Codes refresh automatically; login times out after five minutes, and Ctrl+C cancels it.
+
+For an original device that explicitly offers a displayed code, `login --code <code>` remains an optional input-code flow. It also completes approval before saving.
+
 Token saved to `$XDG_CONFIG_HOME/libby-shelf/identity.json` (default `~/.config/...`), mode `600`. Override: `--token-file`, `auth.tokenFile`, or `LIBBY_TOKEN_FILE`.
 
-Option B — existing token: `export LIBBY_IDENTITY_TOKEN=...` (libbyapp.com → DevTools → Local Storage → `dewey:sentry.identity`).
+Option C — existing token: `export LIBBY_IDENTITY_TOKEN=...` (libbyapp.com → DevTools → Local Storage → `dewey:sentry.identity`).
 
 Never commit tokens. `.gitignore` excludes `.libby/`, `*.identity.json`, root `libby.config.json`.
 
@@ -60,16 +68,20 @@ Per-book fields `format`, `action`, `libraries` override config for that book. S
 Per book:
 
 1. Search each selected library (Thunder catalog). Order: `titleId` lookup → ISBN identifier search → `title author` text search.
-2. Match: ISBN match wins; else title similarity ≥ `minTitleScore` and author ≥ `minAuthorScore` (Dice bigrams; case, accents, articles, subtitles, name order ignored). Media type must be in `mediaTypes`; earlier type preferred.
+2. Match: ISBN match wins; else title similarity ≥ `minTitleScore` and author ≥ `minAuthorScore` (Dice bigrams; case, accents, articles, subtitles, name order ignored). Media type must be in `mediaTypes`; earlier type preferred among equally suitable editions. Matching editions remain available to the planner so an available accepted format can be borrowed.
 3. Skip if already on loan/hold (`skipExisting`).
 4. `action`:
-   - `auto` — borrow first available library (priority order), else hold. Failed borrow → retries as hold.
+   - `auto` — borrow first available library (priority order), else hold. Confirmed `TitleNoLongerAvailable` rejection → try a hold. Uncertain writes are checked against the shelf; unresolved outcomes abort.
    - `borrow` — borrow or skip.
    - `hold` — hold only.
 5. Hold placement: `best` shortest estimated wait · `first` first owning library · `all` one per owning library.
 6. Guards: card loan/hold limits (`respectCardLimits`), per-run caps (`borrow.maxPerRun`, `hold.maxPerRun`), `hold.maxEstimatedWaitDays`, `hold.maxHoldsCount`.
 
-Per-book failures are reported and the run continues (`failFast` to stop). Auth failures (401/403) abort.
+Per-book failures are reported and the run continues (`failFast` to stop). Auth failures (401/403) abort, including failed hold suspension. Completed actions are retained in streamed and file reports if a later action aborts. A placed hold whose suspension fails is preserved as `held` and the failure is reported separately.
+
+Dry runs simulate counters, card slots, and existing-title checks across the entire list. They send no account writes. Catalog results refresh between searches and runs.
+
+Network/5xx retries apply to GET requests only. Account writes are never blindly replayed: a lost response triggers shelf reconciliation for borrows and holds, and the run stops if the outcome remains uncertain.
 
 ## Configuration
 
@@ -100,7 +112,7 @@ Layers, later wins: defaults < config file (`-c`, else `./libby.config.json`) < 
 | `dryRun`                                     | `false`                 | plan only                                                                |
 | `delayMs`                                    | `750`                   | pause between books                                                      |
 | `failFast`                                   | `false`                 | stop on first error                                                      |
-| `http.timeoutMs` / `retries` / `retryBaseMs` | `30000` / `2` / `500`   | retries on network, 429, 5xx; honours `Retry-After`                      |
+| `http.timeoutMs` / `retries` / `retryBaseMs` | `30000` / `2` / `500`   | GET retries on network, 429, 5xx; honours `Retry-After`                  |
 | `http.userAgent`                             | Safari UA               | request UA                                                               |
 | `http.sentryBaseUrl` / `thunderBaseUrl`      | see below               | endpoint overrides                                                       |
 | `output.format`                              | `table`                 | `table` \| `json` \| `ndjson`                                            |
@@ -129,9 +141,9 @@ Lower level: `LibbyClient`, `ThunderClient`, `Runner`, `planBook` (pure), `bestM
 cd ui && npm install && npm run dev
 ```
 
-Runs on built-in demo data (`demo` badge): nothing reaches Libby.
+Runs on built-in demo data (`demo` badge): nothing reaches Libby. Demo pairing displays a sample code and completes automatically.
 
-To use your real accounts on Windows, double-click `Start libby-shelf.cmd`. It installs what is missing, starts a local server on <http://127.0.0.1:8787>, and opens it. On other systems, run `npm ci && npm ci --prefix ui && npm run live`. Connect Libby opens libbyapp.com for your sign-in on its own. Sync compares on its own when it opens; the first comparison opens a browser window for your Fable login. Settings save as you change them. Live sync only reads: every write stays blocked until its contract is verified ([docs/sync-contracts.md](docs/sync-contracts.md)). Search and Run are not live yet.
+To use your real accounts on Windows, double-click `Start libby-shelf.cmd`. It installs what is missing, starts a local server on <http://127.0.0.1:8787>, and opens it. On other systems, run `npm ci && npm ci --prefix ui && npm run live`. Connect Libby opens libbyapp.com for your sign-in on its own; "phone code" shows a setup code in the app instead. Sync compares on its own when it opens; the first comparison opens a browser window for your Fable login. Settings save as you change them. Live sync only reads: every write stays blocked until its contract is verified ([docs/sync-contracts.md](docs/sync-contracts.md)). Login, token-file changes, and completed runs refresh card data. At least one card must stay selected because an empty CLI card filter means all cards.
 
 Book drafts and per-row edits survive screen navigation for the current tab. Changing the input or its format clears row overrides. Invalid rules block runs until corrected. Demo plans use the library planner, including card limits, per-run limits, and lending periods.
 
@@ -139,21 +151,24 @@ Library cards includes priority ordering in the card list, highest first. Unchec
 
 Build the UI with `npm run build --prefix ui`; CI checks both the library and UI. On Windows, tests skip the POSIX-only token permission assertion while still checking token file round-trips.
 
-With the UI dev server running and Chrome installed, `npm run test:ui` checks draft preservation, independent duplicate rows, invalid rules, and API error feedback. Set `UI_URL` for another server address or `BROWSER_CHANNEL=msedge` to use Edge.
+With the UI dev server running and Chrome installed, `npm run test:ui` checks draft preservation, independent duplicate rows, invalid rules, and API error feedback. Set `UI_URL` for another server address, `BROWSER_CHANNEL=msedge` to use Edge, or `BROWSER_EXECUTABLE_PATH` for an installed Chromium executable.
 
 The **Sync libraries** tab uses Preview → Review → Apply. Libby controls reading state; Finished wins, otherwise Currently Reading requires a checked-out book with positive progress. Other shared metadata uses actual edit recency, with conflicts shown for review. Per-user settings override a shipped fallback file; removals default to off and always require explicit review. The demo only changes simulated accounts. Live writes remain unavailable until provider contracts are verified. See [sync behavior and settings](docs/sync.md) and [contract verification](docs/sync-contracts.md).
 
 ## Endpoints used
 
-| Purpose       | Request                                                                                |
-| ------------- | -------------------------------------------------------------------------------------- |
-| new identity  | `POST sentry.libbyapp.com/chip?client=dewey`                                           |
-| account state | `GET /chip/sync`                                                                       |
-| borrow        | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}` |
-| hold          | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`              |
-| suspend hold  | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                |
-| search        | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                          | identifier&mediaTypes&x-client-id=dewey` |
-| title lookup  | `GET .../v2/libraries/{key}/media/{titleId}`                                           |
+| Purpose                 | Request                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| new identity            | `POST sentry.libbyapp.com/chip?client=dewey`                                              |
+| setup-code display/poll | `GET /chip/clone/code` (`role=pointer`, optional `code`)                                  |
+| optional input code     | `POST /chip/clone/code` (form `code`, `role=pointer`)                                     |
+| complete pairing        | `POST /chip/clone` (form `blessing`), then authenticated `POST /chip` to refresh identity |
+| account state           | `GET /chip/sync`                                                                          |
+| borrow                  | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}`    |
+| hold                    | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`                 |
+| suspend hold            | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                   |
+| search                  | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                             | identifier&mediaTypes&x-client-id=dewey` |
+| title lookup            | `GET .../v2/libraries/{key}/media/{titleId}`                                              |
 
 Sources: [ping/libby-calibre-plugin](https://github.com/ping/libby-calibre-plugin) (based on [lullius/pylibby](https://github.com/lullius/pylibby)), [mknabe/book-club](https://github.com/mknabe/book-club).
 

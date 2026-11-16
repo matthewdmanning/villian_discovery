@@ -1,29 +1,36 @@
 import { CircleCheck, CircleDashed, Plug } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Advanced, Field, Panel, Screen, Segmented, sz } from "../components/ui.tsx";
-import { labelFor } from "../lib/spec.ts";
+import { labelFor, screen } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
 
 const SIGN_IN_METHODS = ["library card", "passkey", "phone code"] as const;
 type SignInMethod = (typeof SIGN_IN_METHODS)[number];
 // Libby's documented steps: help.libbyapp.com/en-us/6103.htm, 6070.htm, and 6302.htm.
 const SIGN_IN_STEPS: Record<SignInMethod, string[]> = {
-  "library card": ["Find your library, then sign in with your library card."],
+  "library card": [
+    'In the Libby window, at "Do you have a library card?", choose Yes.',
+    "Find your library, then sign in with your library card.",
+  ],
   passkey: [
+    'In the Libby window, at "Do you have a library card?", choose Yes.',
     "Choose Recover Your Data, then Recover With Passkey.",
     "Confirm with your device PIN or fingerprint.",
     "No passkey yet? In Libby on your phone, go to Menu, then Back Up Your Data, then Create Recovery Passkey.",
   ],
-  "phone code": [
-    "Choose Recover Your Data, then Display Setup Code.",
-    "On your phone, open Libby, go to Menu, then Copy To Another Device, and enter that code.",
-  ],
+  "phone code": ["On your phone, open Libby, go to Menu, then Copy To Another Device, then Enter Setup Code."],
 };
 
+const codeField = screen("connect")
+  ?.regions.flatMap((r) => r.components)
+  .find((c) => c.type === "output" && !c.binds);
+
 export function Connect() {
-  const { api, config, set, go } = useStore();
+  const { api, config, set, go, login } = useStore();
   const tokenFile = config.auth.tokenFile;
   const [connected, setConnected] = useState<boolean>();
+  const [code, setCode] = useState("");
+  const controller = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [method, setMethod] = useState<SignInMethod>("library card");
@@ -31,6 +38,9 @@ export function Connect() {
   useEffect(() => {
     let cancelled = false;
     setConnected(undefined);
+    setError(undefined);
+    setBusy(false);
+    setCode("");
     api.status(tokenFile).then(
       (s) => {
         if (!cancelled) setConnected(s.connected);
@@ -43,6 +53,7 @@ export function Connect() {
     );
     return () => {
       cancelled = true;
+      controller.current?.abort();
     };
   }, [api, tokenFile]);
 
@@ -57,14 +68,38 @@ export function Connect() {
     if (busy) return;
     setBusy(true);
     setError(undefined);
+    const attempt = new AbortController();
+    controller.current = attempt;
     try {
-      await api.login(tokenFile);
-      setConnected(true);
+      await login({
+        method: method === "phone code" ? "device-code" : "browser",
+        signal: attempt.signal,
+        onCode: (next) => setCode(next),
+      });
+      if (!attempt.signal.aborted) {
+        setConnected(true);
+        setCode("");
+      }
     } catch (err) {
-      setError((err as Error).message);
+      if (!attempt.signal.aborted) {
+        setCode("");
+        setError((err as Error).message);
+      }
     } finally {
-      setBusy(false);
+      if (!attempt.signal.aborted) setBusy(false);
     }
+  }
+
+  function cancel() {
+    controller.current?.abort();
+    setBusy(false);
+    setCode("");
+  }
+
+  /** Use this function to switch sign-in methods; a running attempt stops so the new method can start. */
+  function choose(next: SignInMethod) {
+    cancel();
+    setMethod(next);
   }
 
   return (
@@ -87,26 +122,41 @@ export function Connect() {
       {connected === false && (
         <Panel className="max-w-xl">
           <form onSubmit={signIn} className="space-y-2">
+            <Segmented<SignInMethod> label="Sign in with" value={method} choices={SIGN_IN_METHODS} onChange={choose} />
             <p className="text-sm opacity-70">
-              A Libby window opens. This page continues on its own after you finish there.
+              {method === "phone code"
+                ? "This page shows a setup code. It continues on its own after your phone accepts it."
+                : "A Libby window opens. This page continues on its own after you finish there."}
             </p>
-            <Segmented<SignInMethod>
-              label="Sign in with"
-              value={method}
-              choices={SIGN_IN_METHODS}
-              onChange={setMethod}
-            />
+            {method === "phone code" && (
+              <Field label={codeField?.label ?? "Setup code"} hint={codeField?.hint}>
+                <output className="block font-mono text-2xl tracking-[0.3em] tabular-nums" aria-live="polite">
+                  {code || "Generate a code to connect this device"}
+                </output>
+                {api.demo && <p className="text-sm opacity-70">Demo pairing completes automatically.</p>}
+              </Field>
+            )}
             <ol className="list-decimal space-y-1 pl-5 text-sm">
-              <li>At "Do you have a library card?", choose Yes.</li>
               {SIGN_IN_STEPS[method].map((step) => (
                 <li key={step}>{step}</li>
               ))}
             </ol>
             {error && <p className="text-sm text-error">{error}</p>}
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-end gap-2 pt-2">
+              {busy && (
+                <button type="button" className="btn btn-ghost" onClick={cancel}>
+                  Cancel
+                </button>
+              )}
               <button type="submit" className={`btn btn-primary btn-pop ${sz("btn")}`} disabled={busy}>
                 {busy ? <span className="loading loading-spinner loading-sm" /> : <Plug className="size-4" />}
-                {error ? "Try again" : "Sign in to Libby"}
+                {busy
+                  ? "Waiting…"
+                  : error
+                    ? "Try again"
+                    : method === "phone code"
+                      ? "Display setup code"
+                      : "Sign in to Libby"}
               </button>
             </div>
           </form>
@@ -118,6 +168,7 @@ export function Connect() {
           <Field label={labelFor("connect", "auth.tokenFile", "Token file")}>
             <input
               className={`input w-full font-mono text-sm ${sz("input")}`}
+              disabled={busy}
               value={tokenFile}
               onChange={(e) => set("auth.tokenFile", e.target.value || undefined)}
             />

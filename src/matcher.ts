@@ -18,8 +18,13 @@ export interface Match {
 
 /** Picks the best matching title, or undefined if nothing clears the thresholds. */
 export function bestMatch(book: BookRequest, items: ThunderMedia[], o: MatchOptions): Match | undefined {
+  return rankedMatches(book, items, o)[0];
+}
+
+/** Retains matching editions so the planner can choose an eligible, available format. */
+export function rankedMatches(book: BookRequest, items: ThunderMedia[], o: MatchOptions): Match[] {
   const types = book.mediaTypes?.length ? book.mediaTypes : o.mediaTypes;
-  let best: (Match & { rank: number }) | undefined;
+  const matches: (Match & { rank: number })[] = [];
   for (const media of items) {
     const type = media.type?.id;
     if (type && !types.includes(type)) continue;
@@ -29,11 +34,9 @@ export function bestMatch(book: BookRequest, items: ThunderMedia[], o: MatchOpti
     // Rank: ISBN match first, then title+author score, then preferred media type.
     const typeBonus = type ? (types.length - types.indexOf(type)) / (types.length * 100) : 0;
     const rank = (m.isbnMatch ? 10 : 0) + m.titleScore + (m.authorScore ?? 0) + typeBonus;
-    if (!best || rank > best.rank) best = { ...m, rank };
+    matches.push({ ...m, rank });
   }
-  if (!best) return undefined;
-  const { rank: _r, ...match } = best;
-  return match;
+  return matches.sort((a, b) => b.rank - a.rank).map(({ rank: _rank, ...match }) => match);
 }
 
 export function scoreMatch(book: BookRequest, media: ThunderMedia, o: MatchOptions): Match | undefined {
@@ -60,7 +63,13 @@ export function titleSimilarity(wanted: string, media: ThunderMedia, ignoreSubti
 }
 
 export function authorSimilarity(wanted: string, media: ThunderMedia): number {
-  const names = [media.firstCreatorName, ...(media.creators ?? []).map((c) => c.name)].filter((n): n is string => !!n);
+  const creators = media.creators ?? [];
+  const hasRoles = creators.some((c) => c.role);
+  const names = (
+    hasRoles
+      ? creators.filter((c) => /^(author|writer)$/i.test(c.role ?? "")).map((c) => c.name)
+      : [media.firstCreatorName, ...creators.map((c) => c.name)]
+  ).filter((n): n is string => !!n);
   if (!names.length) return 0;
   const w = normalizeName(wanted);
   return Math.max(...names.map((n) => dice(w, normalizeName(n))));
@@ -92,7 +101,7 @@ export function normalizeTitle(s: string, ignoreSubtitle: boolean): string {
   let t = fold(s);
   if (ignoreSubtitle) t = t.split(/[:(]/)[0] ?? t;
   t = t
-    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/[^\p{L}\p{N} ]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
   return t.replace(ARTICLES, "");
@@ -101,9 +110,9 @@ export function normalizeTitle(s: string, ignoreSubtitle: boolean): string {
 /** Order-insensitive name key; retaining initials supports stricter work identity matching. */
 export function normalizeName(s: string, includeInitials = false): string {
   return fold(s)
-    .replace(/[^a-z ]+/g, " ")
+    .replace(/[^\p{L} ]+/gu, " ")
     .split(/\s+/)
-    .filter((p) => p.length > 1 || (includeInitials && p.length > 0))
+    .filter((p) => p && (includeInitials || !/^[a-z]$/.test(p))) // Latin initials only on request; keep single-character names
     .sort()
     .join(" ");
 }
@@ -114,6 +123,7 @@ function fold(s: string): string {
 
 /** Sørensen–Dice coefficient over character bigrams. 1 = identical. */
 export function dice(a: string, b: string): number {
+  if (!a || !b) return 0;
   if (a === b) return 1;
   if (a.length < 2 || b.length < 2) return 0;
   const grams = new Map<string, number>();

@@ -1,5 +1,5 @@
 import { HttpClient, type HttpOptions } from "./http.js";
-import type { ChipResponse, MediaType, SyncResponse } from "./types.js";
+import type { ChipResponse, MediaType, SetupCodeResponse, SyncResponse } from "./types.js";
 
 // libbyapp.com calls this host; the older sentry-read.svc.overdrive.com fails its TLS certificate check.
 export const DEFAULT_SENTRY_BASE_URL = "https://sentry.libbyapp.com/";
@@ -20,13 +20,14 @@ export class LibbyClient {
   }
 
   /** Creates an anonymous identity ("chip"). Stores and returns its token. */
-  async createChip(): Promise<string> {
+  async createChip(signal?: AbortSignal): Promise<string> {
     const saved = this.identityToken;
     this.identityToken = undefined;
     try {
       const res = await this.http.request<ChipResponse>("chip", {
         method: "POST",
         query: { client: "dewey" },
+        signal,
       });
       if (!res.identity) throw new Error("Libby chip response had no identity token");
       this.identityToken = res.identity;
@@ -37,9 +38,34 @@ export class LibbyClient {
     }
   }
 
+  /** Display/poll a code on this new device; enter it on the existing Libby device. */
+  setupCode(code?: string, signal?: AbortSignal): Promise<SetupCodeResponse> {
+    return this.http.request("chip/clone/code", { query: { role: "pointer", code }, signal });
+  }
+
+  /** Optional input-code flow for devices that can display a code on the original device. */
+  cloneByCode(code: string, signal?: AbortSignal): Promise<SetupCodeResponse> {
+    if (!/^\d{8}$/.test(code)) throw new Error("Libby setup code must be 8 digits");
+    return this.http.request("chip/clone/code", { form: { code, role: "pointer" }, signal });
+  }
+
+  async completeClone(blessing: string, signal?: AbortSignal): Promise<string> {
+    if (!blessing || blessing === "failure") throw new Error("Libby pairing approval was not granted");
+    await this.http.request("chip/clone", { form: { blessing }, signal });
+    // Reacquire with the linked identity so the persisted token reflects the cloned account.
+    const res = await this.http.request<ChipResponse>("chip", {
+      method: "POST",
+      query: { client: "dewey" },
+      signal,
+    });
+    if (!res.identity) throw new Error("Libby identity refresh returned no token");
+    this.identityToken = res.identity;
+    return res.identity;
+  }
+
   /** Full account state: cards, loans, holds. */
-  sync(): Promise<SyncResponse> {
-    return this.http.request<SyncResponse>("chip/sync");
+  sync(signal?: AbortSignal): Promise<SyncResponse> {
+    return this.http.request<SyncResponse>("chip/sync", { signal });
   }
 
   borrow(args: {

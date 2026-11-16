@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { readTokenFile, signInToLibby } from "./auth.js";
+import { loginWithDeviceCode, readTokenFile, signInToLibby, writeTokenFile } from "./auth.js";
 import { type ConfigInput, configFromEnv, mergeConfig, parseConfig } from "./config.js";
 import { type BrowserSession, openBrowserSession, openSite } from "./discovery/browser.js";
 import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discovery/export-lists.js";
@@ -50,6 +50,8 @@ let matches: Record<string, string> = {};
 let fable: Promise<FableGet> | undefined;
 let browser: Promise<BrowserSession> | undefined;
 let libbySignIn: Promise<void> | undefined;
+let deviceLogin: Promise<void> | undefined;
+let deviceCode: string | undefined;
 
 /** Use this function to get a Libby client for the saved login; it throws when no one has signed in. */
 async function libby(): Promise<LibbyClient> {
@@ -137,6 +139,22 @@ const routes: Record<string, Handler> = {
     await libbySignIn;
     return {};
   },
+  "POST /api/login/device-code": async () => {
+    // Libby's API shows a setup code for the user's existing Libby device; GET returns the current code.
+    deviceLogin ??= loginWithDeviceCode(new LibbyClient(http), {
+      onCode: (code) => {
+        deviceCode = code;
+      },
+    })
+      .then((identity) => writeTokenFile(config.auth.tokenFile, identity))
+      .finally(() => {
+        deviceLogin = undefined;
+        deviceCode = undefined;
+      });
+    await deviceLogin;
+    return {};
+  },
+  "GET /api/login/device-code": async () => ({ code: deviceCode }),
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };

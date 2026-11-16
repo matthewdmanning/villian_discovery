@@ -1,3 +1,4 @@
+import type { PairingOptions } from "../../../src/auth.js";
 import type { BookRequest } from "../../../src/input.js";
 import { LibbyClient } from "../../../src/libby-client.js";
 import { silentLogger } from "../../../src/logger.js";
@@ -25,9 +26,9 @@ export interface Match {
 export interface LibraryApi {
   readonly demo: boolean;
   status(tokenFile: string): Promise<{ connected: boolean }>;
-  /** Sign in to Libby; the live server opens libbyapp.com for the user. */
-  login(tokenFile: string): Promise<void>;
-  cards(): Promise<LibbyCard[]>;
+  /** Sign in to Libby: `browser` opens libbyapp.com; `device-code` shows a setup code through `onCode`. */
+  login(tokenFile: string, options: LoginOptions): Promise<void>;
+  cards(tokenFile: string): Promise<LibbyCard[]>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
   previewSync(options?: SyncPreviewOptions): Promise<SyncPlan>;
@@ -36,9 +37,23 @@ export interface LibraryApi {
   saveSyncSettings(input: unknown): Promise<SyncSettings>;
 }
 
+export type LoginOptions = PairingOptions & { method: "browser" | "device-code" };
+
 export type { BookRequest, BookResult, LibbyCard, ResultStatus };
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    signal?.throwIfAborted();
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 
 const CARDS: LibbyCard[] = [
   {
@@ -124,8 +139,9 @@ export const demoApi: LibraryApi = {
     await wait(150);
     return { connected: sessionStorageGet("demo-connected") === "1" };
   },
-  async login() {
-    await wait(600);
+  async login(_tokenFile, options) {
+    if (options.method === "device-code") options.onCode("12345678", Date.now() + 60_000);
+    await wait(600, options.signal);
     sessionStorageSet("demo-connected", "1");
   },
   async cards() {

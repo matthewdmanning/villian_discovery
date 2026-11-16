@@ -1,10 +1,10 @@
 import type { Config } from "./config.js";
-import { ConfigError, HttpError } from "./errors.js";
+import { ConfigError, HttpError, MutationUncertainError } from "./errors.js";
 import { sleep } from "./http.js";
 import type { BookRequest } from "./input.js";
 import type { LibbyClient } from "./libby-client.js";
 import type { Logger } from "./logger.js";
-import { bestMatch } from "./matcher.js";
+import { bestMatch, rankedMatches } from "./matcher.js";
 import { type Candidate, type Plan, planBook, type RunState } from "./planner.js";
 import type { ThunderClient } from "./thunder-client.js";
 import type { LibbyCard, SyncResponse, ThunderMedia } from "./types.js";
@@ -36,8 +36,6 @@ export interface RunnerDeps {
 }
 
 export class Runner {
-  private searchCache = new Map<string, ThunderMedia[]>();
-
   constructor(
     private readonly cfg: Config,
     private readonly deps: RunnerDeps,
@@ -60,9 +58,9 @@ export class Runner {
       if (i > 0 && this.cfg.delayMs) await sleep(this.cfg.delayMs);
       logger.info(`[${i + 1}/${books.length}] ${book.raw}`);
       try {
-        for (const r of await this.processBook(book, cards, state)) emit(r);
+        await this.processBook(book, cards, state, emit);
       } catch (e) {
-        if (e instanceof HttpError && e.isAuthError) throw e; // token invalid: abort
+        if (e instanceof MutationUncertainError || (e instanceof HttpError && e.isAuthError)) throw e;
         if (this.cfg.failFast) throw e;
         emit({ input: book.raw, status: "error", message: (e as Error).message });
       }
@@ -76,9 +74,10 @@ export class Runner {
     const out: Candidate[] = [];
     for (const lib of libs) {
       const items = await this.search(lib, book);
-      const match = bestMatch(book, items, { ...this.cfg.matching, mediaTypes: this.cfg.mediaTypes });
-      if (!match) continue;
-      for (const card of cards.filter((c) => c.advantageKey === lib)) out.push({ card, match });
+      const matches = rankedMatches(book, items, { ...this.cfg.matching, mediaTypes: this.cfg.mediaTypes });
+      for (const match of matches) {
+        for (const card of cards.filter((c) => c.advantageKey === lib)) out.push({ card, match });
+      }
     }
     return out;
   }
@@ -93,13 +92,23 @@ export class Runner {
     }));
   }
 
-  private async processBook(book: BookRequest, cards: LibbyCard[], state: RunState): Promise<BookResult[]> {
+  private async processBook(
+    book: BookRequest,
+    cards: LibbyCard[],
+    state: RunState,
+    emit: (row: BookResult) => void,
+  ): Promise<void> {
     const candidates = await this.findCandidates(book, cards);
     let plan = planBook(book, candidates, state, this.cfg);
     this.deps.logger.debug(`plan: ${describePlan(plan)}`);
-    if (this.cfg.dryRun) return planToResults(book, plan, true);
+    if (this.cfg.dryRun) {
+      applyPlan(state, plan);
+      for (const row of planToResults(book, plan, true)) emit(row);
+      return;
+    }
 
     if (plan.kind === "borrow") {
+      let borrowed = false;
       try {
         await this.deps.libby.borrow({
           cardId: plan.card.cardId,
@@ -108,60 +117,103 @@ export class Runner {
           days: plan.days,
           luckyDay: plan.luckyDay,
         });
-        bump(state, plan.card.cardId, "loan");
-        state.loanTitleIds.add(plan.media.id);
-        state.borrowsThisRun++;
-        return planToResults(book, plan, false);
-      } catch (e) {
-        const auto = (book.action ?? this.cfg.action) === "auto";
-        if (!auto || !(e instanceof HttpError) || e.isAuthError) throw e;
-        this.deps.logger.warn(`Borrow failed (${e.message}); trying a hold instead.`);
-        plan = planBook({ ...book, action: "hold" }, candidates, state, this.cfg);
+        borrowed = true;
+      } catch (error) {
+        borrowed = await this.reconcileWrite("loan", plan.card.cardId, plan.media.id, error);
+        if (!borrowed) {
+          const auto = (book.action ?? this.cfg.action) === "auto";
+          const unavailable = error instanceof HttpError && error.errorCode === "TitleNoLongerAvailable";
+          if (!auto || !unavailable || this.cfg.failFast) throw error;
+          this.deps.logger.warn("Title no longer available; trying a hold instead.");
+          plan = planBook({ ...book, action: "hold" }, candidates, state, this.cfg);
+        }
+      }
+      if (borrowed) {
+        applyPlan(state, plan);
+        for (const row of planToResults(book, plan, false)) emit(row);
+        return;
       }
     }
 
     if (plan.kind === "hold") {
-      const done: BookResult[] = [];
-      for (const t of plan.targets) {
+      for (const target of plan.targets) {
         try {
           await this.deps.libby.placeHold({
-            cardId: t.card.cardId,
-            titleId: t.media.id,
+            cardId: target.card.cardId,
+            titleId: target.media.id,
             ...(this.cfg.hold.emailAddress ? { emailAddress: this.cfg.hold.emailAddress } : {}),
           });
-        } catch (e) {
-          if (e instanceof HttpError && e.isAuthError) throw e;
-          done.push({ ...rowFor(book, t.card, t.media), status: "error", message: (e as Error).message });
-          continue;
+        } catch (error) {
+          if (!(await this.reconcileWrite("hold", target.card.cardId, target.media.id, error))) {
+            if (this.cfg.failFast) throw error;
+            emit({ ...rowFor(book, target.card, target.media), status: "error", message: (error as Error).message });
+            continue;
+          }
         }
-        bump(state, t.card.cardId, "hold");
-        state.holdTitleIds.add(t.media.id);
-        state.holdsThisRun++;
+        applyPlan(state, { kind: "hold", targets: [target] });
         let message: string | undefined;
         if (this.cfg.hold.suspendDays > 0) {
           try {
             await this.deps.libby.suspendHold({
-              cardId: t.card.cardId,
-              titleId: t.media.id,
+              cardId: target.card.cardId,
+              titleId: target.media.id,
               days: this.cfg.hold.suspendDays,
             });
             message = `suspended ${this.cfg.hold.suspendDays} days`;
-          } catch (e) {
-            message = `hold placed; suspend failed: ${(e as Error).message}`;
+          } catch (error) {
+            // Report the completed hold before propagating any subsequent failure.
+            emit({
+              ...rowFor(book, target.card, target.media),
+              status: "held",
+              message: `hold placed; suspend failed: ${(error as Error).message}`,
+            });
+            if (
+              error instanceof MutationUncertainError ||
+              (error instanceof HttpError && error.isAuthError) ||
+              this.cfg.failFast
+            )
+              throw error;
+            emit({
+              ...rowFor(book, target.card, target.media),
+              status: "error",
+              message: `suspend failed: ${(error as Error).message}`,
+            });
+            continue;
           }
         }
-        done.push({ ...rowFor(book, t.card, t.media), status: "held", ...(message ? { message } : {}) });
+        emit({ ...rowFor(book, target.card, target.media), status: "held", ...(message ? { message } : {}) });
       }
-      return done;
+      return;
     }
-    return planToResults(book, plan, false);
+    for (const row of planToResults(book, plan, false)) emit(row);
+  }
+
+  /** Never replay a mutation whose response was lost; establish its outcome from the shelf. */
+  private async reconcileWrite(
+    kind: "loan" | "hold",
+    cardId: string,
+    titleId: string,
+    error: unknown,
+  ): Promise<boolean> {
+    if (error instanceof HttpError && error.isAuthError) throw error;
+    if (!(error instanceof MutationUncertainError) && !(error instanceof HttpError)) throw error;
+    let shelf: SyncResponse;
+    try {
+      shelf = await this.deps.libby.sync();
+    } catch (cause) {
+      if (cause instanceof HttpError && cause.isAuthError) throw cause;
+      throw new MutationUncertainError("Unable to verify the write outcome; stopping before further actions.", {
+        cause,
+      });
+    }
+    const items = kind === "loan" ? shelf.loans : shelf.holds;
+    if (items?.some((item) => item.cardId === cardId && String(item.id) === titleId)) return true;
+    if (error instanceof MutationUncertainError) throw error;
+    return false;
   }
 
   private async search(libraryKey: string, book: BookRequest): Promise<ThunderMedia[]> {
     const mediaTypes = book.mediaTypes?.length ? book.mediaTypes : this.cfg.mediaTypes;
-    const key = `${libraryKey}\u0000${book.titleId ?? ""}\u0000${book.isbn ?? ""}\u0000${book.title ?? ""}\u0000${book.author ?? ""}\u0000${mediaTypes.join(",")}`;
-    const hit = this.searchCache.get(key);
-    if (hit) return hit;
     const { thunder } = this.deps;
     let items: ThunderMedia[] = [];
     if (book.titleId) {
@@ -173,12 +225,12 @@ export class Runner {
     } else {
       const perPage = this.cfg.matching.perPage;
       if (book.isbn) items = await thunder.searchLibrary(libraryKey, { identifier: book.isbn, mediaTypes, perPage });
-      if (!items.length && book.title) {
+      const accepted = bestMatch(book, items, { ...this.cfg.matching, mediaTypes: this.cfg.mediaTypes });
+      if (!accepted && book.title) {
         const query = [book.title, book.author].filter(Boolean).join(" ");
         items = await thunder.searchLibrary(libraryKey, { query, mediaTypes, perPage });
       }
     }
-    this.searchCache.set(key, items);
     return items;
   }
 }
@@ -230,6 +282,20 @@ function bump(state: RunState, cardId: string, kind: "loan" | "hold") {
   const c = state.counts.get(cardId) ?? { loan: 0, hold: 0 };
   c[kind]++;
   state.counts.set(cardId, c);
+}
+
+function applyPlan(state: RunState, plan: Plan) {
+  if (plan.kind === "borrow") {
+    bump(state, plan.card.cardId, "loan");
+    state.loanTitleIds.add(plan.media.id);
+    state.borrowsThisRun++;
+  } else if (plan.kind === "hold") {
+    for (const target of plan.targets) {
+      bump(state, target.card.cardId, "hold");
+      state.holdTitleIds.add(target.media.id);
+      state.holdsThisRun++;
+    }
+  }
 }
 
 function rowFor(book: BookRequest, card: LibbyCard, media: ThunderMedia): Omit<BookResult, "status"> {

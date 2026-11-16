@@ -31,10 +31,10 @@ Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliat
 ```
 ┌ Connect Libby ─────────────────────────────┐
 │ [i] Not connected | Connected (token file) │
-│ Setup code   [________]                    │
-│              Libby → Menu → Copy To ...    │
+│ Setup code   1234 5678 (displayed)          │
+│ Enter on existing Libby: Menu → Copy To... │
 │ Token file*  [~/.config/libby-shelf/...]   │
-│                               [ Connect ]  │
+│                  [ Display setup code ]   │
 └────────────────────────────────────────────┘   * advanced
 ```
 

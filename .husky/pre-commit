@@ -1,1 +1,4 @@
+# Same branch-name rule as CI; no branch (rebase, detached HEAD) skips it.
+branch=$(git branch --show-current)
+[ -z "$branch" ] || node scripts/branch-name.ts "$branch" || exit 1
 gitleaks git --pre-commit --staged --redact --verbose

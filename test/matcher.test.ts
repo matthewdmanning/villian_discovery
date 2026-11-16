@@ -64,3 +64,23 @@ it("normalizers", () => {
   expect(normalizeName("J. R. R. Tolkien")).toBe("tolkien");
   expect(toIsbn13("0593135202")).toBe("9780593135204");
 });
+
+it("preserves non-Latin titles and authors without matching unrelated books", () => {
+  const chinese = media({ title: "三体", firstCreatorName: "刘慈欣" });
+  expect(bestMatch({ raw: "", title: "三体", author: "刘慈欣" }, [chinese], opts)?.titleScore).toBe(1);
+  expect(bestMatch({ raw: "", title: "活着", author: "余华" }, [chinese], opts)).toBeUndefined();
+  expect(bestMatch({ raw: "", title: "()" }, [media({ title: "!!!" })], opts)).toBeUndefined();
+  expect(normalizeName("余华")).toBe("余华");
+  expect(bestMatch({ raw: "", title: "Война и мир" }, [media({ title: "Война и мир" })], opts)).toBeDefined();
+});
+
+it("compares authors rather than narrators or other contributors", () => {
+  const title = media({
+    creators: [
+      { name: "Andy Weir", role: "Author" },
+      { name: "Ray Porter", role: "Narrator" },
+    ],
+  });
+  expect(bestMatch({ raw: "", title: title.title, author: "Ray Porter" }, [title], opts)).toBeUndefined();
+  expect(bestMatch({ raw: "", title: title.title, author: "Andy Weir" }, [title], opts)).toBeDefined();
+});

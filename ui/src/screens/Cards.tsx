@@ -2,6 +2,7 @@ import { ChevronDown, ChevronUp, GripVertical, TriangleAlert } from "lucide-reac
 import { type DragEvent, useState } from "react";
 import { Panel, Screen, sz } from "../components/ui.tsx";
 import type { LibbyCard } from "../lib/api.ts";
+import { cardSelected, libraryOrder, toggleCard } from "../lib/cards.ts";
 import { useStore } from "../lib/store.tsx";
 
 function Usage({ card, kind }: { card: LibbyCard; kind: "loan" | "hold" }) {
@@ -17,29 +18,12 @@ function Usage({ card, kind }: { card: LibbyCard; kind: "loan" | "hold" }) {
 }
 
 export function Cards() {
-  const { cards, config, set } = useStore();
+  const { cards, cardsLoading, cardsError, refreshCards, config, set } = useStore();
   const [dragging, setDragging] = useState<string>();
-  const selected = config.cards.map((value) => value.toLowerCase());
-  const using = (c: LibbyCard) =>
-    !selected.length ||
-    selected.includes(c.cardId.toLowerCase()) ||
-    selected.includes((c.cardName ?? "").toLowerCase());
-  const usedCount = cards.filter(using).length;
-  const toggle = (c: LibbyCard, on: boolean) => {
-    if (!on && using(c) && usedCount === 1) return;
-    const next = cards.filter((x) => (x === c ? on : using(x))).map((x) => x.cardId);
-    set("cards", next.length === cards.length ? undefined : next);
-  };
-
-  const keys = [...new Set(cards.map((c) => c.advantageKey))];
-  const order = [
-    ...new Set([
-      ...config.libraries
-        .map((key) => keys.find((k) => k.toLowerCase() === key.toLowerCase()))
-        .filter((k) => k !== undefined),
-      ...keys,
-    ]),
-  ];
+  const using = (c: LibbyCard) => cardSelected(config.cards, c);
+  const selectedCount = cards.filter(using).length;
+  const toggle = (c: LibbyCard, on: boolean) => set("cards", toggleCard(cards, config.cards, c, on));
+  const order = libraryOrder(cards, config.libraries);
   const enabled = order.filter((key) => cards.some((c) => c.advantageKey === key && using(c)));
   const sorted = [...cards].sort(
     (a, b) => Number(using(b)) - Number(using(a)) || order.indexOf(a.advantageKey) - order.indexOf(b.advantageKey),
@@ -112,10 +96,28 @@ export function Cards() {
     );
   }
 
+  if (cardsLoading)
+    return (
+      <Screen id="cards">
+        <p role="status">Loading library cards…</p>
+      </Screen>
+    );
+  if (cardsError)
+    return (
+      <Screen id="cards">
+        <p role="alert">Could not load cards: {cardsError}</p>
+        <button type="button" className="btn btn-primary" onClick={refreshCards}>
+          Retry
+        </button>
+      </Screen>
+    );
   if (!cards.length)
     return (
       <Screen id="cards">
-        <span className="loading loading-dots loading-lg" />
+        <p>No library cards found. Connect Libby or add a card in Libby, then refresh.</p>
+        <button type="button" className="btn btn-primary" onClick={refreshCards}>
+          Refresh cards
+        </button>
       </Screen>
     );
 
@@ -144,8 +146,8 @@ export function Cards() {
                       type="checkbox"
                       aria-label={`Use ${c.cardName ?? c.cardId}`}
                       className={`checkbox checkbox-primary ${sz("checkbox")}`}
+                      disabled={using(c) && selectedCount === 1}
                       checked={using(c)}
-                      disabled={using(c) && usedCount === 1}
                       onChange={(e) => toggle(c, e.target.checked)}
                     />
                   </td>
@@ -178,8 +180,8 @@ export function Cards() {
                   type="checkbox"
                   aria-label={`Use ${c.cardName ?? c.cardId}`}
                   className="checkbox checkbox-primary"
+                  disabled={using(c) && selectedCount === 1}
                   checked={using(c)}
-                  disabled={using(c) && usedCount === 1}
                   onChange={(e) => toggle(c, e.target.checked)}
                 />
               </label>

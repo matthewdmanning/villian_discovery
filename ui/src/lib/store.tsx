@@ -2,7 +2,14 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useS
 import type { InputFormat } from "../../../src/input.ts";
 import type { SyncField } from "../../../src/sync.ts";
 import type { SyncApplyReport, SyncApprovals, SyncPlan } from "../../../src/sync-plan.ts";
-import { type BookRequest, type BookResult, demoApi, type LibbyCard, type LibraryApi } from "./api.ts";
+import {
+  type BookRequest,
+  type BookResult,
+  demoApi,
+  type LibbyCard,
+  type LibraryApi,
+  type LoginOptions,
+} from "./api.ts";
 import { type Config, type ConfigInput, resolve, setPath } from "./config.ts";
 import { options, type ScreenId, screens } from "./spec.ts";
 
@@ -27,6 +34,10 @@ interface Store {
   configError?: string;
   set(path: string, value: unknown): void;
   cards: LibbyCard[];
+  cardsLoading: boolean;
+  cardsError?: string;
+  refreshCards(): void;
+  login(options: LoginOptions): Promise<void>;
   books: BookRequest[];
   setBooks(b: BookRequest[]): void;
   draft: BookDraft;
@@ -65,6 +76,16 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     return { overrides, ...resolve(overrides) };
   });
   const [cards, setCards] = useState<LibbyCard[]>([]);
+  const [cardsLoading, setCardsLoading] = useState(true);
+  const [cardsError, setCardsError] = useState<string>();
+  const [cardRevision, setCardRevision] = useState(0);
+  const tokenFile = resolved.config.auth.tokenFile;
+  const refreshCards = useCallback(() => setCardRevision((revision) => revision + 1), []);
+  const login = async (options: LoginOptions) => {
+    await api.login(tokenFile, options);
+    options.signal?.throwIfAborted();
+    refreshCards();
+  };
   const [books, setBooks] = useState<BookRequest[]>([]);
   const [draft, setDraftState] = useState<BookDraft>({ text: "", format: "auto", edits: {} });
   const [results, setResults] = useState<Store["results"]>();
@@ -72,9 +93,30 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState<string>();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: cardRevision intentionally triggers explicit card reloads.
   useEffect(() => {
-    api.cards().then(setCards, () => setCards([]));
-  }, [api]);
+    let cancelled = false;
+    setCards([]);
+    setCardsLoading(true);
+    setCardsError(undefined);
+    api.cards(tokenFile).then(
+      (next) => {
+        if (!cancelled) {
+          setCards(next);
+          setCardsLoading(false);
+        }
+      },
+      (error) => {
+        if (!cancelled) {
+          setCardsError((error as Error).message);
+          setCardsLoading(false);
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [api, tokenFile, cardRevision]);
 
   useEffect(() => {
     try {
@@ -114,6 +156,10 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     ...(error && { configError: error }),
     set,
     cards,
+    cardsLoading,
+    ...(cardsError && { cardsError }),
+    refreshCards,
+    login,
     books,
     setBooks,
     draft,

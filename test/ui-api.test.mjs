@@ -96,8 +96,8 @@ describe("demoApi.run", () => {
       config,
     );
 
-    expect(results.map((result) => result.status)).toEqual(["would-hold", "would-hold"]);
-    expect(results.every((result) => result.mediaType === "audiobook")).toBe(true);
+    expect(results.map((result) => result.status)).toEqual(["would-hold", "skipped"]);
+    expect(results[0].mediaType).toBe("audiobook");
   });
 
   it("uses the selected card lending period for a borrow", async () => {
