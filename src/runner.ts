@@ -83,6 +83,16 @@ export class Runner {
     return out;
   }
 
+  /** Use this function to list what each card's library would match for a book, as flat `search` rows. */
+  async searchMatches(book: BookRequest, cards: LibbyCard[]) {
+    return (await this.findCandidates(book, cards)).map(({ card, match }) => ({
+      card,
+      media: match.media,
+      titleScore: match.titleScore,
+      ...(match.authorScore !== undefined && { authorScore: match.authorScore }),
+    }));
+  }
+
   private async processBook(book: BookRequest, cards: LibbyCard[], state: RunState): Promise<BookResult[]> {
     const candidates = await this.findCandidates(book, cards);
     let plan = planBook(book, candidates, state, this.cfg);

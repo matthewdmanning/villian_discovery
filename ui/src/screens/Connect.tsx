@@ -1,8 +1,24 @@
 import { CircleCheck, CircleDashed, Plug } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { Advanced, Field, Panel, Screen, sz } from "../components/ui.tsx";
+import { Advanced, Field, Panel, Screen, Segmented, sz } from "../components/ui.tsx";
 import { labelFor } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
+
+const SIGN_IN_METHODS = ["library card", "passkey", "phone code"] as const;
+type SignInMethod = (typeof SIGN_IN_METHODS)[number];
+// Libby's documented steps: help.libbyapp.com/en-us/6103.htm, 6070.htm, and 6302.htm.
+const SIGN_IN_STEPS: Record<SignInMethod, string[]> = {
+  "library card": ["Find your library, then sign in with your library card."],
+  passkey: [
+    "Choose Recover Your Data, then Recover With Passkey.",
+    "Confirm with your device PIN or fingerprint.",
+    "No passkey yet? In Libby on your phone, go to Menu, then Back Up Your Data, then Create Recovery Passkey.",
+  ],
+  "phone code": [
+    "Choose Recover Your Data, then Display Setup Code.",
+    "On your phone, open Libby, go to Menu, then Copy To Another Device, and enter that code.",
+  ],
+};
 
 export function Connect() {
   const { api, config, set, go } = useStore();
@@ -10,6 +26,7 @@ export function Connect() {
   const [connected, setConnected] = useState<boolean>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [method, setMethod] = useState<SignInMethod>("library card");
 
   useEffect(() => {
     let cancelled = false;
@@ -73,13 +90,17 @@ export function Connect() {
             <p className="text-sm opacity-70">
               A Libby window opens. This page continues on its own after you finish there.
             </p>
+            <Segmented<SignInMethod>
+              label="Sign in with"
+              value={method}
+              choices={SIGN_IN_METHODS}
+              onChange={setMethod}
+            />
             <ol className="list-decimal space-y-1 pl-5 text-sm">
               <li>At "Do you have a library card?", choose Yes.</li>
-              <li>Sign in with your library card.</li>
-              <li>
-                Already use Libby on your phone? Choose Recover Your Data, then Display Setup Code. On your phone, open
-                Libby, go to Menu, then Copy To Another Device, and enter that code.
-              </li>
+              {SIGN_IN_STEPS[method].map((step) => (
+                <li key={step}>{step}</li>
+              ))}
             </ol>
             {error && <p className="text-sm text-error">{error}</p>}
             <div className="flex justify-end pt-2">

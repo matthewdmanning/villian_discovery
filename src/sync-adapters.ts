@@ -15,7 +15,7 @@ import type { ShelfItem, SyncResponse } from "./types.js";
 export interface FableEntry {
   book?: FableBook & {
     id?: string;
-    reading_progress?: { current_percentage?: number | null; status?: string | null } | null;
+    reading_progress?: { current_percentage?: number | null } | null;
     user_rating?: unknown;
   };
   note?: string | null;
@@ -24,6 +24,13 @@ export interface FableEntry {
 const LIBBY_FIELDS = ["checkedOut"] as const;
 const FABLE_FIELDS = ["readingProgress", "readingStatus", "rating", "notes", "shelves"] as const;
 const PAGE = { limit: 50, offset: 0 };
+// Fable keeps `reading_progress.status` at "unread" for books on its Currently Reading list; the built-in list is the status.
+const STATUS_BY_SYSTEM_LIST: Record<string, string> = {
+  want_to_read: "want-to-read",
+  current_reading: "currently-reading",
+  finished: "finished",
+  did_not_finish: "did-not-finish",
+};
 
 /** Use this function to build a snapshot field only when the app returned a usable value. */
 const field = (value: SnapshotField["value"] | undefined): SnapshotField | undefined =>
@@ -65,6 +72,7 @@ export function libbySnapshots(state: SyncResponse): BookSnapshot[] {
 export function fableSnapshots(lists: { list: FableList; entries: FableEntry[] }[]): BookSnapshot[] {
   const books = new Map<string, { snapshot: BookSnapshot; shelves: string[] }>();
   for (const { list, entries } of lists) {
+    const status = STATUS_BY_SYSTEM_LIST[list.system_type ?? ""];
     for (const { book, note } of entries) {
       const id = book?.id;
       const title = book?.title?.trim();
@@ -72,12 +80,12 @@ export function fableSnapshots(lists: { list: FableList; entries: FableEntry[] }
       const known = books.get(id);
       if (known) {
         known.shelves.push(list.name);
+        if (!known.snapshot.fields.readingStatus && status) known.snapshot.fields.readingStatus = { value: status };
         // ponytail: Fable notes belong to a list entry; the first non-empty note stands for the book.
         if (!known.snapshot.fields.notes && note) known.snapshot.fields.notes = { value: note };
         continue;
       }
       const progress = book.reading_progress;
-      const status = progress?.status?.replaceAll("_", "-");
       const author = book.authors?.[0]?.name?.trim();
       const isbn = book.isbn?.trim() || book.display_isbn?.trim();
       books.set(id, {
@@ -90,7 +98,7 @@ export function fableSnapshots(lists: { list: FableList; entries: FableEntry[] }
           providerId: id,
           fields: present({
             readingProgress: field(progress?.current_percentage ?? undefined),
-            readingStatus: field(status || undefined),
+            readingStatus: field(status),
             rating: field(typeof book.user_rating === "number" ? book.user_rating : undefined),
             notes: field(note || undefined),
           }),

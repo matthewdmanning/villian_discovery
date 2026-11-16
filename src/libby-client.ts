@@ -1,7 +1,8 @@
 import { HttpClient, type HttpOptions } from "./http.js";
 import type { ChipResponse, MediaType, SyncResponse } from "./types.js";
 
-export const DEFAULT_SENTRY_BASE_URL = "https://sentry-read.svc.overdrive.com/";
+// libbyapp.com calls this host; the older sentry-read.svc.overdrive.com fails its TLS certificate check.
+export const DEFAULT_SENTRY_BASE_URL = "https://sentry.libbyapp.com/";
 
 /**
  * Client for Libby's private "Sentry" API (the backend of libbyapp.com).
@@ -34,12 +35,6 @@ export class LibbyClient {
       this.identityToken = saved;
       throw e;
     }
-  }
-
-  /** Links the current chip to an account using an 8-digit Libby setup code. */
-  async cloneByCode(code: string): Promise<unknown> {
-    if (!/^\d{8}$/.test(code)) throw new Error("Libby setup code must be 8 digits");
-    return this.http.request("chip/clone/code", { form: { code } });
   }
 
   /** Full account state: cards, loans, holds. */

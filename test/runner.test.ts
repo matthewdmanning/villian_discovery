@@ -2,8 +2,9 @@ import { mkdtemp, open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loginWithSetupCode, readTokenFile, writeTokenFile } from "../src/auth.js";
+import { readTokenFile, signInToLibby, writeTokenFile } from "../src/auth.js";
 import { parseConfig } from "../src/config.js";
+import type { BrowserSession } from "../src/discovery/browser.js";
 import { HttpError } from "../src/errors.js";
 import { LibbyClient } from "../src/libby-client.js";
 import { silentLogger } from "../src/logger.js";
@@ -23,7 +24,7 @@ function setup(routes: Parameters<typeof fakeFetch>[0], cfgOver = {}) {
 
 const syncRoute = (over: object = {}) => ({
   method: "GET",
-  match: /^https:\/\/sentry-read\.svc\.overdrive\.com\/chip\/sync$/,
+  match: /^https:\/\/sentry\.libbyapp\.com\/chip\/sync$/,
   respond: () => ({
     body: {
       result: "synchronized",
@@ -143,18 +144,87 @@ describe("Runner", () => {
 });
 
 describe("auth", () => {
-  it("setup-code login: chip, clone, sync", async () => {
-    const { fetch, calls } = fakeFetch([
-      { method: "POST", match: /\/chip\?client=dewey$/, respond: () => ({ body: { identity: "new-token" } }) },
-      { method: "POST", match: /chip\/clone\/code/, respond: () => ({ body: { result: "cloned" } }) },
-      syncRoute(),
+  it("browser sign-in saves the first seen Libby API token that has cards", async () => {
+    const signedIn = syncRoute().respond;
+    const { fetch } = fakeFetch([
+      {
+        match: /chip\/sync$/,
+        respond: (_url, init) =>
+          (init.headers as Record<string, string>).Authorization === "Bearer signed-in"
+            ? signedIn()
+            : { body: { cards: [] } },
+      },
     ]);
-    const client = new LibbyClient({ ...http, fetch });
-    await expect(loginWithSetupCode(client, "12345678")).resolves.toBe("new-token");
-    const clone = calls[1]!;
-    expect(clone.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
-    expect(calls[2]!.headers.Authorization).toBe("Bearer new-token");
-    await expect(loginWithSetupCode(client, "123")).rejects.toThrow(/8 digits/);
+    const request = (url: string, token: string) => ({
+      url: () => url,
+      headers: () => ({ authorization: `Bearer ${token}` }),
+    });
+    const page = {
+      url: () => "about:blank",
+      goto: async () => {},
+      isClosed: () => false,
+      close: async () => {},
+      evaluate: async () => null,
+      context: () => ({ newCDPSession: async () => ({ send: async () => {}, detach: async () => {} }) }),
+    };
+    const context = {
+      on: (_: string, listener: (r: ReturnType<typeof request>) => void) => {
+        listener(request("https://thunder.api.overdrive.com/v2/libraries", "not-libby"));
+        listener(request("https://sentry.libbyapp.com/chip", "anonymous"));
+        listener(request("https://vandal.libbyapp.com/tags", "signed-in"));
+      },
+      off: () => {},
+      pages: () => [page],
+    };
+    const session = { context, page, isClosed: () => false } as unknown as BrowserSession;
+    const tokenFile = join(await mkdtemp(join(tmpdir(), "libby-signin-")), "identity.json");
+    await signInToLibby(session, { http: { ...http, fetch }, tokenFile, log: () => {} });
+    expect(await readTokenFile(tokenFile)).toBe("signed-in");
+  });
+
+  it.each([
+    ["an anonymous identity", '"anonymous"', 1],
+    ["no identity", null, 1],
+    ["a signed-in identity", '"signed-in"', 0],
+  ])("browser sign-in with %s clears Libby's data %i times", async (_, initial, clears) => {
+    const { fetch } = fakeFetch([
+      {
+        match: /chip\/sync$/,
+        respond: (_url, init) =>
+          (init.headers as Record<string, string>).Authorization === "Bearer anonymous"
+            ? { body: { cards: [] } }
+            : syncRoute().respond(),
+      },
+    ]);
+    const cleared: unknown[] = [];
+    let stored: string | null = initial;
+    const page = {
+      url: () => "about:blank",
+      goto: async () => {},
+      isClosed: () => false,
+      close: async () => {},
+      evaluate: async () => stored,
+      context: () => ({
+        newCDPSession: async () => ({
+          send: async (method: string, params: unknown) => {
+            cleared.push({ method, params });
+            stored = '"signed-in"';
+          },
+          detach: async () => {},
+        }),
+      }),
+    };
+    const context = { on: () => {}, off: () => {}, pages: () => [page] };
+    const session = { context, page, isClosed: () => false } as unknown as BrowserSession;
+    const tokenFile = join(await mkdtemp(join(tmpdir(), "libby-reset-")), "identity.json");
+    await signInToLibby(session, { http: { ...http, fetch }, tokenFile, log: () => {} });
+    expect(cleared).toEqual(
+      Array(clears).fill({
+        method: "Storage.clearDataForOrigin",
+        params: { origin: "https://libbyapp.com", storageTypes: "all" },
+      }),
+    );
+    expect(await readTokenFile(tokenFile)).toBe("signed-in");
   });
 
   it("token file round-trips", async () => {

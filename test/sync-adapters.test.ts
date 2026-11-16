@@ -46,12 +46,16 @@ describe("fableSnapshots", () => {
       title: "Piranesi",
       authors: [{ name: "Susanna Clarke" }],
       isbn: "9781635575637",
-      reading_progress: { current_percentage: 65, status: "currently_reading" },
+      // Live Fable data: a book on the Currently Reading list still reports "unread".
+      reading_progress: { current_percentage: 65, status: "unread" },
       user_rating: null,
     };
     const books = fableSnapshots([
-      { list: { id: "l1", name: "Favorites" }, entries: [{ book, note: null }] },
-      { list: { id: "l2", name: "Book club" }, entries: [{ book, note: "Read the ending again" }, { note: "orphan" }] },
+      { list: { id: "l1", name: "Favorites", system_type: null }, entries: [{ book, note: null }] },
+      {
+        list: { id: "l2", name: "Currently Reading", system_type: "current_reading" },
+        entries: [{ book, note: "Read the ending again" }, { note: "orphan" }],
+      },
     ]);
     expect(books).toEqual([
       {
@@ -64,7 +68,7 @@ describe("fableSnapshots", () => {
           readingProgress: { value: 65 },
           readingStatus: { value: "currently-reading" },
           notes: { value: "Read the ending again" },
-          shelves: { value: ["Favorites", "Book club"] },
+          shelves: { value: ["Favorites", "Currently Reading"] },
         },
       },
     ]);

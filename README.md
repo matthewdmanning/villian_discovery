@@ -18,14 +18,11 @@ npm link        # optional: puts `libby-shelf` on PATH
 
 ## Authenticate (once)
 
-Option A — setup code (recommended):
-
-1. Libby app → Menu → _Copy To Another Device_ → 8-digit code.
-2. `libby-shelf login --code 12345678`
+Option A — browser sign-in (recommended): run `libby-shelf login`. A Chrome or Edge window opens libbyapp.com. Follow Libby's own steps there ([Setting up Libby on another device](https://help.libbyapp.com/en-us/6070.htm)). The command ends when Libby shows your cards.
 
 Token saved to `$XDG_CONFIG_HOME/libby-shelf/identity.json` (default `~/.config/...`), mode `600`. Override: `--token-file`, `auth.tokenFile`, or `LIBBY_TOKEN_FILE`.
 
-Option B — existing token: `export LIBBY_IDENTITY_TOKEN=...` (libbyapp.com → DevTools → Local Storage → `dewey.sentry.identity`).
+Option B — existing token: `export LIBBY_IDENTITY_TOKEN=...` (libbyapp.com → DevTools → Local Storage → `dewey:sentry.identity`).
 
 Never commit tokens. `.gitignore` excludes `.libby/`, `*.identity.json`, root `libby.config.json`.
 
@@ -148,16 +145,15 @@ The **Sync libraries** tab uses Preview → Review → Apply. Libby controls rea
 
 ## Endpoints used
 
-| Purpose         | Request                                                                                |
-| --------------- | -------------------------------------------------------------------------------------- |
-| new identity    | `POST sentry-read.svc.overdrive.com/chip?client=dewey`                                 |
-| link setup code | `POST /chip/clone/code` (form `code`)                                                  |
-| account state   | `GET /chip/sync`                                                                       |
-| borrow          | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}` |
-| hold            | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`              |
-| suspend hold    | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                |
-| search          | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                          | identifier&mediaTypes&x-client-id=dewey` |
-| title lookup    | `GET .../v2/libraries/{key}/media/{titleId}`                                           |
+| Purpose       | Request                                                                                |
+| ------------- | -------------------------------------------------------------------------------------- |
+| new identity  | `POST sentry.libbyapp.com/chip?client=dewey`                                           |
+| account state | `GET /chip/sync`                                                                       |
+| borrow        | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}` |
+| hold          | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`              |
+| suspend hold  | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                |
+| search        | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                          | identifier&mediaTypes&x-client-id=dewey` |
+| title lookup  | `GET .../v2/libraries/{key}/media/{titleId}`                                           |
 
 Sources: [ping/libby-calibre-plugin](https://github.com/ping/libby-calibre-plugin) (based on [lullius/pylibby](https://github.com/lullius/pylibby)), [mknabe/book-club](https://github.com/mknabe/book-club).
 

@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Command, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
-import { loginWithSetupCode, writeTokenFile } from "./auth.js";
+import { signInToLibby } from "./auth.js";
 import {
   type Config,
   type ConfigInput,
@@ -14,10 +14,10 @@ import {
   mergeConfig,
   parseConfig,
 } from "./config.js";
+import { openBrowserSession } from "./discovery/browser.js";
 import { LibbyError } from "./errors.js";
 import { createClients } from "./index.js";
 import { type BookRequest, type InputFormat, parseBookLine, readBooksFile } from "./input.js";
-import { LibbyClient } from "./libby-client.js";
 import { createLogger } from "./logger.js";
 import { formatTable, summarize } from "./report.js";
 import { type BookResult, cardLabel, Runner, selectCards } from "./runner.js";
@@ -140,21 +140,23 @@ program
 
 program
   .command("login")
-  .description("Link this tool to your Libby account with a setup code and save the token.")
-  .requiredOption("--code <code>", "8-digit code from Libby: Menu > Copy To Another Device")
+  .description("Sign in to Libby in a browser window and save the token.")
   .option("--token-file <path>", "where to save the identity token")
   .addOption(configOpt())
   .addOption(logOpt())
   .action(async (o) => {
     const cfg = await buildConfig(o, o.tokenFile ? { auth: { tokenFile: o.tokenFile } } : {});
     const logger = createLogger(cfg.logLevel);
-    const client = new LibbyClient({
-      ...cfg.http,
-      logger,
-      ...(cfg.http.sentryBaseUrl ? { baseUrl: cfg.http.sentryBaseUrl } : {}),
-    });
-    const identity = await loginWithSetupCode(client, String(o.code).trim());
-    await writeTokenFile(cfg.auth.tokenFile, identity);
+    const opened = await openBrowserSession();
+    try {
+      await signInToLibby(opened, {
+        http: { ...cfg.http, logger },
+        tokenFile: cfg.auth.tokenFile,
+        log: (m) => logger.info(m),
+      });
+    } finally {
+      await opened.context.close().catch(() => {});
+    }
     logger.info(`Logged in. Token saved to ${cfg.auth.tokenFile} (mode 600).`);
   });
 

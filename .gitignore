@@ -17,6 +17,10 @@ captures/
 *.apk
 output-metadata.json
 
+# Local editor and agent settings
+.vscode/
+.codex/
+
 # IntelliJ
 *.iml
 .idea/

@@ -27,6 +27,8 @@ export interface FableBook {
 export interface FableList {
   id: string;
   name: string;
+  /** Set on Fable's built-in lists: `want_to_read`, `current_reading`, `finished`, `did_not_finish`. */
+  system_type?: string | null;
 }
 interface Page<T> {
   next: string | null;

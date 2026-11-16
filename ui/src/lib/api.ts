@@ -134,13 +134,7 @@ export const demoApi: LibraryApi = {
   },
   async search(book, config) {
     await wait(500);
-    const runner = createDemoRunner(config, [book]);
-    return (await runner.findCandidates(book, selectCards(CARDS, config))).map(({ card, match }) => ({
-      card,
-      media: match.media,
-      titleScore: match.titleScore,
-      ...(match.authorScore !== undefined && { authorScore: match.authorScore }),
-    }));
+    return createDemoRunner(config, [book]).searchMatches(book, selectCards(CARDS, config));
   },
   async run(books, config) {
     await wait(700);

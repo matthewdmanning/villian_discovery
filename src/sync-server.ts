@@ -8,23 +8,28 @@
  * because no provider write contract is verified.
  */
 import { execFile } from "node:child_process";
+import { statSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import type { Page, Request } from "playwright-core";
-import { identityFromLibbyStorage, readTokenFile, writeTokenFile } from "./auth.js";
-import { configFromEnv, mergeConfig, parseConfig } from "./config.js";
-import { type BrowserSession, LOGIN_PROMPT, LOGIN_TIMEOUT_MS, openBrowserSession } from "./discovery/browser.js";
+import { readTokenFile, signInToLibby } from "./auth.js";
+import { type ConfigInput, configFromEnv, mergeConfig, parseConfig } from "./config.js";
+import { type BrowserSession, openBrowserSession, openSite } from "./discovery/browser.js";
 import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discovery/export-lists.js";
+import { createClients } from "./index.js";
+import type { BookRequest } from "./input.js";
 import { LibbyClient } from "./libby-client.js";
 import { createLogger } from "./logger.js";
+import { Runner, selectCards } from "./runner.js";
 import { disconnectedAdapter, fableAdapter, libbyAdapter } from "./sync-adapters.js";
 import { resolveSyncSettings, SyncSettingsSchema } from "./sync-config.js";
 import { applySync, createMemoryJournal, previewSync, type SyncContext, type SyncPlan } from "./sync-plan.js";
 
 const PORT = Number(process.env.LIBBY_SHELF_PORT ?? 8787);
+// A rebuild rewrites this file, so its time stamp tells a running copy from a newer build.
+const BUILD = String(statSync(fileURLToPath(import.meta.url)).mtimeMs);
 const UI_DIR = fileURLToPath(new URL("../ui/dist/", import.meta.url));
 const TYPES: Record<string, string> = {
   ".html": "text/html",
@@ -44,14 +49,20 @@ const plans = new Map<string, SyncPlan>();
 let matches: Record<string, string> = {};
 let fable: Promise<FableGet> | undefined;
 let browser: Promise<BrowserSession> | undefined;
-// A first visit starts at Libby's Welcome screen; the root lets Libby route signed-in and new users itself.
-const LIBBY_URL = "https://libbyapp.com/";
+let libbySignIn: Promise<void> | undefined;
 
 /** Use this function to get a Libby client for the saved login; it throws when no one has signed in. */
 async function libby(): Promise<LibbyClient> {
   const identityToken = config.auth.identityToken ?? (await readTokenFile(config.auth.tokenFile));
   if (!identityToken) throw new Error("Connect Libby first");
   return new LibbyClient({ ...http, identityToken });
+}
+
+/** Use this function to build the CLI's runner from the UI's settings; the server's login and HTTP settings always replace the page's, so a page never picks where the token goes. */
+async function liveRunner(settings: unknown) {
+  const cfg = parseConfig(mergeConfig(settings as ConfigInput, { auth: config.auth, http: config.http }));
+  const clients = await createClients(cfg, { logger });
+  return { cfg, libby: clients.libby, runner: new Runner(cfg, clients) };
 }
 
 /** Use this function to open the saved browser profile once; Libby and Fable share it because the profile allows one window. */
@@ -69,47 +80,6 @@ function session(): Promise<BrowserSession> {
       throw error;
     });
   return browser;
-}
-
-/** Use this function to open a site in the shared browser, reusing the first blank tab. */
-async function openSite(opened: BrowserSession, url: string): Promise<Page> {
-  const page = opened.page.url() === "about:blank" ? opened.page : await opened.context.newPage();
-  await page.goto(url).catch(() => {});
-  return page;
-}
-
-/** Use this function to wait until the user signs in to libbyapp.com, then save the identity token of an account with cards. */
-async function signInToLibby(): Promise<void> {
-  const opened = await session();
-  // libbyapp.com sends its identity as a Bearer token to OverDrive's API; read it from those requests.
-  const tokens = new Set<string>();
-  const collect = (request: Request) => {
-    const authorization = request.headers().authorization;
-    if (authorization?.startsWith("Bearer ") && new URL(request.url()).hostname.endsWith(".overdrive.com"))
-      tokens.add(authorization.slice("Bearer ".length));
-  };
-  opened.context.on("request", collect);
-  try {
-    const page = await openSite(opened, LIBBY_URL);
-    logger.info(`Sign in to Libby in the browser window. ${LOGIN_PROMPT}`);
-    for (const deadline = Date.now() + LOGIN_TIMEOUT_MS; Date.now() < deadline; await sleep(3_000)) {
-      if (opened.isClosed() || page.isClosed()) throw new Error("The Libby window was closed before sign-in finished");
-      const stored = identityFromLibbyStorage(
-        await page.evaluate(() => localStorage.getItem("dewey.sentry.identity")).catch(() => null),
-      );
-      for (const identityToken of stored ? [...tokens, stored] : tokens) {
-        const state = await new LibbyClient({ ...http, identityToken }).sync().catch(() => undefined);
-        // Libby makes an anonymous identity before sign-in; only an identity with cards is signed in.
-        if (!state?.cards?.length) continue;
-        await writeTokenFile(config.auth.tokenFile, identityToken);
-        await page.close().catch(() => {});
-        return;
-      }
-    }
-    throw new Error("No Libby sign-in seen. Sign in to Libby in the browser window, then try again.");
-  } finally {
-    opened.context.off("request", collect);
-  }
 }
 
 /** Use this function to open Fable in the shared browser once and wait for the user's login. */
@@ -154,12 +124,29 @@ type Handler = (input: unknown) => Promise<unknown>;
 const routes: Record<string, Handler> = {
   "GET /api/status": async () => ({
     connected: !!(config.auth.identityToken ?? (await readTokenFile(config.auth.tokenFile))),
+    build: BUILD,
+    pid: process.pid,
   }),
   "POST /api/login": async () => {
-    await signInToLibby();
+    // Every open app tab asks to sign in; they all wait on one sign-in, so Libby sees one device.
+    libbySignIn ??= session()
+      .then((opened) => signInToLibby(opened, { http, tokenFile: config.auth.tokenFile, log: (m) => logger.info(m) }))
+      .finally(() => {
+        libbySignIn = undefined;
+      });
+    await libbySignIn;
     return {};
   },
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
+  "POST /api/search": async (input) => {
+    const { book, config: settings } = input as { book: BookRequest; config?: unknown };
+    const { runner, cfg, libby } = await liveRunner(settings);
+    return runner.searchMatches(book, selectCards((await libby.sync()).cards ?? [], cfg));
+  },
+  "POST /api/run": async (input) => {
+    const { books, config: settings } = input as { books: BookRequest[]; config?: unknown };
+    return (await liveRunner(settings)).runner.run(books);
+  },
   "GET /api/sync/settings": loadSettings,
   "PUT /api/sync/settings": async (input) =>
     journal.withLock(context, async () => {
@@ -213,6 +200,9 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
   const send = (status: number, value: unknown) =>
     response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(value));
   if (!route) return send(404, { error: "Not found" });
+  // Another website can post to 127.0.0.1 too; only the app's own page may borrow books or sign in.
+  const origin = request.headers.origin;
+  if (origin && origin !== `http://${request.headers.host}`) return send(403, { error: "Forbidden" });
   try {
     send(200, await route(await body(request)));
   } catch (error) {
@@ -229,12 +219,12 @@ function openInBrowser(url: string) {
   execFile(command!, args, () => {});
 }
 
-/** Use this function to tell whether libby-shelf already answers on a port. */
-async function isRunning(url: string): Promise<boolean> {
+/** Use this function to read the status of a libby-shelf that already answers on a port; another program gives undefined. */
+async function runningStatus(url: string): Promise<{ build?: unknown; pid?: unknown } | undefined> {
   const status = await fetch(`${url}/api/status`, { signal: AbortSignal.timeout(2_000) })
-    .then((response) => response.json() as Promise<{ connected?: unknown }>)
+    .then((response) => response.json() as Promise<{ connected?: unknown; build?: unknown; pid?: unknown }>)
     .catch(() => undefined);
-  return typeof status?.connected === "boolean";
+  return typeof status?.connected === "boolean" ? status : undefined;
 }
 
 const server = createServer(handle);
@@ -242,16 +232,27 @@ server.on("listening", () => {
   const address = server.address();
   const url = `http://127.0.0.1:${typeof address === "object" && address ? address.port : PORT}`;
   logger.info(`libby-shelf live app on ${url}`);
-  openInBrowser(url);
+  // A launcher restart keeps the open page, which reconnects on its own.
+  if (!process.env.LIBBY_SHELF_RESTART) openInBrowser(url);
 });
-// A second launch opens the app that is already running; another program on the port moves the app to a free port.
+// A second launch opens the copy that is already running, or replaces that copy when it runs an older build.
+// Another program on the port moves the app to a free port.
+let replacedOlderCopy = false;
 server.on("error", async (error: NodeJS.ErrnoException) => {
   if (error.code !== "EADDRINUSE") throw error;
   const url = `http://127.0.0.1:${PORT}`;
-  if (await isRunning(url)) {
+  const status = await runningStatus(url);
+  if (status?.build === BUILD || (status && replacedOlderCopy)) {
     logger.info(`libby-shelf is already running on ${url}`);
     openInBrowser(url);
     process.exit(0);
+  }
+  if (status && typeof status.pid === "number") {
+    logger.info(`Replacing an older libby-shelf on ${url}`);
+    replacedOlderCopy = true;
+    process.kill(status.pid);
+    await sleep(1_000);
+    return server.listen(PORT, "127.0.0.1");
   }
   server.listen(0, "127.0.0.1");
 });
