@@ -29,7 +29,7 @@
               "hint": "Enter this code on your existing Libby device: Menu → Copy To Another Device → Enter Setup Code"
             },
             { "type": "field", "input": "path", "label": "Token file", "binds": "auth.tokenFile", "advanced": true },
-            { "type": "button", "label": "Display setup code", "action": "login" }
+            { "type": "button", "label": "Sign in to Libby", "action": "login" }
           ]
         }
       ]
@@ -46,10 +46,14 @@
             {
               "type": "table",
               "label": "Cards",
-              "columns": ["use", "cardName", "advantageKey", "loans", "holds"],
+              "columns": ["use", "cardName", "priority", "loans", "holds"],
               "binds": "cards"
             },
-            { "type": "list", "label": "Library priority (drag to reorder)", "input": "ordered", "binds": "libraries" }
+            {
+              "type": "reorder",
+              "label": "Library priority (highest first; unchecked cards last and fixed)",
+              "binds": "libraries"
+            }
           ]
         }
       ]
@@ -225,6 +229,52 @@
           "components": [
             { "type": "button", "label": "Run for real", "action": "run", "primary": true, "confirm": true },
             { "type": "button", "label": "Export report", "action": "export", "binds": "output.reportFile" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sync",
+      "title": "Sync libraries",
+      "cli": "",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "rules",
+          "components": [
+            {
+              "type": "rule",
+              "label": "Libby determines reading progress, checked-out status, and finished books."
+            },
+            {
+              "type": "rule",
+              "label": "For other fields, the most recent edit wins. Missing or tied timestamps need review."
+            },
+            {
+              "type": "button",
+              "label": "Preview changes",
+              "action": "sync-preview",
+              "primary": true
+            },
+            { "type": "button", "label": "Apply selected changes", "action": "sync-apply", "confirm": true },
+            {
+              "type": "rule",
+              "label": "Finished wins. Otherwise Currently Reading requires a checked-out Libby book with progress above zero."
+            },
+            {
+              "type": "rule",
+              "label": "Removals default to off. Every removal needs explicit review."
+            }
+          ]
+        },
+        {
+          "id": "comparison",
+          "components": [
+            {
+              "type": "table",
+              "label": "Library",
+              "columns": ["book", "field", "libby", "fable", "value", "source"]
+            }
           ]
         }
       ]

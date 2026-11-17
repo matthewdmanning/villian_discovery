@@ -107,12 +107,12 @@ export function normalizeTitle(s: string, ignoreSubtitle: boolean): string {
   return t.replace(ARTICLES, "");
 }
 
-/** Order-insensitive name key, so "Weir, Andy" equals "Andy Weir". */
-export function normalizeName(s: string): string {
+/** Order-insensitive name key; retaining initials supports stricter work identity matching. */
+export function normalizeName(s: string, includeInitials = false): string {
   return fold(s)
     .replace(/[^\p{L} ]+/gu, " ")
     .split(/\s+/)
-    .filter((p) => p && !/^[a-z]$/.test(p)) // drop Latin initials; retain single-character names
+    .filter((p) => p && (includeInitials || !/^[a-z]$/.test(p))) // Latin initials only on request; keep single-character names
     .sort()
     .join(" ");
 }

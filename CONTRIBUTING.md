@@ -39,13 +39,11 @@ Install [gitleaks](https://github.com/gitleaks/gitleaks#installing). The pre-com
 
 ## Tooling
 
-| Task                                    | Command                           | Tool                      |
-| --------------------------------------- | --------------------------------- | ------------------------- |
-| format                                  | `npm run format` / `format:check` | Biome                     |
-| lint                                    | `npm run lint`                    | Biome (recommended rules) |
-| format + lint + organize imports, write | `npm run check`                   | Biome                     |
-| types                                   | `npm run typecheck`               | TypeScript 7              |
-| tests                                   | `npm test`                        | Vitest                    |
+| Task                                    | Command             | Tool         |
+| --------------------------------------- | ------------------- | ------------ |
+| format + lint + organize imports, write | `npm run check`     | Biome        |
+| types                                   | `npm run typecheck` | TypeScript 7 |
+| tests                                   | `npm test`          | Vitest       |
 
 Biome, not ESLint: typescript-eslint supports TypeScript `<6.1`; this repo uses TypeScript 7.
 `noNonNullAssertion` is off: `noUncheckedIndexedAccess` makes `!` the explicit, checked-by-review escape hatch.

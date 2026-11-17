@@ -58,3 +58,14 @@ export async function openBrowserSession(): Promise<BrowserSession> {
   const page = context.pages()[0] ?? (await context.newPage());
   return { context, page, closed, isClosed: () => isClosed };
 }
+
+/** Use this function to open a site in the session, reusing a tab already on that site, then the first blank tab. */
+export async function openSite(opened: BrowserSession, url: string): Promise<Page> {
+  const { origin } = new URL(url);
+  const open = opened.context.pages().find((p) => p.url().startsWith(origin));
+  // A second Libby tab is a second device to Libby; it breaks the setup-code copy (POST /chip/clone 403).
+  if (open) return open;
+  const page = opened.page.url() === "about:blank" ? opened.page : await opened.context.newPage();
+  await page.goto(url).catch(() => {});
+  return page;
+}

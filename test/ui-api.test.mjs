@@ -1,6 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseConfig } from "../src/config.ts";
 import { demoApi } from "../ui/src/lib/api.ts";
+import { call } from "../ui/src/lib/live-api.ts";
+
+describe("liveApi call", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+  const serverDownOnce = () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValue(new Response('{"connected":false}'));
+    vi.stubGlobal("fetch", fetch);
+    return fetch;
+  };
+
+  it("waits for a restarted server and sends a repeatable call again", async () => {
+    vi.useFakeTimers();
+    const fetch = serverDownOnce();
+    const status = call("GET", "status");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(await status).toEqual({ connected: false });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("never sends a borrow or apply call twice", async () => {
+    const fetch = serverDownOnce();
+    await expect(call("POST", "run", {}, false)).rejects.toThrow("Failed to fetch");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("demoApi.run", () => {
   it("keeps duplicate books with different media overrides independent", async () => {

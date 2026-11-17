@@ -99,7 +99,7 @@ try {
       output: { reportFile },
     }),
   );
-  const login = await execute(["login", "--config", configFile]);
+  const login = await execute(["login", "--device-code", "--config", configFile]);
   assert.equal(login.code, 0, login.stderr);
   assert.match(login.stderr, /existing Libby device/);
   assert.equal(JSON.parse(await readFile(tokenFile, "utf8")).identity, "linked-test");

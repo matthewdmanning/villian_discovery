@@ -11,17 +11,13 @@
     "test:libby": "node scripts/libby-smoke.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
     "start": "node dist/cli.js",
+    "live": "npm run build && npm run build --prefix ui -- --mode live && node dist/sync-server.js",
     "prepare": "husky && npm run build",
-    "lint": "biome lint .",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
     "check": "biome check --write .",
     "ci": "biome ci . && npm run typecheck && npm test && npm run build && npm run test:libby",
     "lint:commits": "commitlint --from origin/main --to HEAD --verbose",
     "lint:branch": "node scripts/branch-name.ts",
-    "test:sites": "node dist/discovery/site-check-cli.js examples/site-tests.json",
-    "discover:fable": "node dist/discovery/site-check-cli.js capture",
-    "export:fable": "node dist/discovery/site-check-cli.js export-lists"
+    "site-check": "npm run build && node dist/discovery/site-check-cli.js"
   },
   "repository": {
     "type": "git",

@@ -18,19 +18,19 @@ npm link        # optional: puts `libby-shelf` on PATH
 
 ## Authenticate (once)
 
-Option A — setup code (recommended):
+Option A — browser sign-in (recommended): run `libby-shelf login`. A Chrome or Edge window opens libbyapp.com. Follow Libby's own steps there ([Setting up Libby on another device](https://help.libbyapp.com/en-us/6070.htm)). The command ends when Libby shows your cards.
 
-1. Run `libby-shelf login`. This tool displays an 8-digit setup code.
+Option B — setup code, no browser:
+
+1. Run `libby-shelf login --device-code`. This tool displays an 8-digit setup code.
 2. On your existing Libby device, open Menu → _Copy To Another Device_ → _Enter Setup Code_, then enter the displayed code.
 3. Leave the command running until approval completes. It refreshes the linked identity before saving the token. Codes refresh automatically; login times out after five minutes, and Ctrl+C cancels it.
-
-This follows [Libby's official instructions for setting up another device](https://help.libbyapp.com/en-us/6070.htm). Libby recommends recovery passkeys for its own supported clients; this unofficial CLI supports setup codes.
 
 For an original device that explicitly offers a displayed code, `login --code <code>` remains an optional input-code flow. It also completes approval before saving.
 
 Token saved to `$XDG_CONFIG_HOME/libby-shelf/identity.json` (default `~/.config/...`), mode `600`. Override: `--token-file`, `auth.tokenFile`, or `LIBBY_TOKEN_FILE`.
 
-Option B — existing token: `export LIBBY_IDENTITY_TOKEN=...` (libbyapp.com → DevTools → Local Storage → `dewey.sentry.identity`).
+Option C — existing token: `export LIBBY_IDENTITY_TOKEN=...` (libbyapp.com → DevTools → Local Storage → `dewey:sentry.identity`).
 
 Never commit tokens. `.gitignore` excludes `.libby/`, `*.identity.json`, root `libby.config.json`.
 
@@ -141,19 +141,25 @@ Lower level: `LibbyClient`, `ThunderClient`, `Runner`, `planBook` (pure), `bestM
 cd ui && npm install && npm run dev
 ```
 
-Runs on built-in demo data (`demo` badge): nothing reaches Libby yet. Demo pairing displays a sample code and completes automatically. Real calls need a `LibbyApi` backend (`ui/src/lib/api.ts`). Its `login(tokenFile, options)` method displays codes through `options.onCode`, honors cancellation, and completes pairing before resolving. Its `cards(tokenFile)` method reads the selected account; login, token-file changes, and completed runs refresh card data. Card load failures offer retry; empty accounts have an explicit empty state. At least one card must stay selected because an empty CLI card filter means all cards.
+Runs on built-in demo data (`demo` badge): nothing reaches Libby. Demo pairing displays a sample code and completes automatically.
+
+To use your real accounts on Windows, double-click `Start libby-shelf.cmd`. It installs what is missing, starts a local server on <http://127.0.0.1:8787>, and opens it. On other systems, run `npm ci && npm ci --prefix ui && npm run live`. Connect Libby opens libbyapp.com for your sign-in on its own; "phone code" shows a setup code in the app instead. Sync compares on its own when it opens; the first comparison opens a browser window for your Fable login. Settings save as you change them. Live sync only reads: every write stays blocked until its contract is verified ([docs/sync-contracts.md](docs/sync-contracts.md)). Login, token-file changes, and completed runs refresh card data. At least one card must stay selected because an empty CLI card filter means all cards.
 
 Book drafts and per-row edits survive screen navigation for the current tab. Changing the input or its format clears row overrides. Invalid rules block runs until corrected. Demo plans use the library planner, including card limits, per-run limits, and lending periods.
+
+Library cards includes priority ordering in the card list, highest first. Unchecked cards stay at the bottom and cannot be reordered. At least one card must remain selected; cards from the same library share its priority.
 
 Build the UI with `npm run build --prefix ui`; CI checks both the library and UI. On Windows, tests skip the POSIX-only token permission assertion while still checking token file round-trips.
 
 With the UI dev server running and Chrome installed, `npm run test:ui` checks draft preservation, independent duplicate rows, invalid rules, and API error feedback. Set `UI_URL` for another server address, `BROWSER_CHANNEL=msedge` to use Edge, or `BROWSER_EXECUTABLE_PATH` for an installed Chromium executable.
 
+The **Sync libraries** tab uses Preview → Review → Apply. Libby controls reading state; Finished wins, otherwise Currently Reading requires a checked-out book with positive progress. Other shared metadata uses actual edit recency, with conflicts shown for review. Per-user settings override a shipped fallback file; removals default to off and always require explicit review. The demo only changes simulated accounts. Live writes remain unavailable until provider contracts are verified. See [sync behavior and settings](docs/sync.md) and [contract verification](docs/sync-contracts.md).
+
 ## Endpoints used
 
 | Purpose                 | Request                                                                                   |
 | ----------------------- | ----------------------------------------------------------------------------------------- |
-| new identity            | `POST sentry-read.svc.overdrive.com/chip?client=dewey`                                    |
+| new identity            | `POST sentry.libbyapp.com/chip?client=dewey`                                              |
 | setup-code display/poll | `GET /chip/clone/code` (`role=pointer`, optional `code`)                                  |
 | optional input code     | `POST /chip/clone/code` (form `code`, `role=pointer`)                                     |
 | complete pairing        | `POST /chip/clone` (form `blessing`), then authenticated `POST /chip` to refresh identity |

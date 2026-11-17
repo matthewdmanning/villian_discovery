@@ -27,6 +27,8 @@ export interface FableBook {
 export interface FableList {
   id: string;
   name: string;
+  /** Set on Fable's built-in lists: `want_to_read`, `current_reading`, `finished`, `did_not_finish`. */
+  system_type?: string | null;
 }
 interface Page<T> {
   next: string | null;
@@ -126,7 +128,7 @@ export async function writeLists(get: FableGet, outDir: string, log?: (message: 
 }
 
 /** `FableGet` over the browser's cookies. Errors never carry the cookie header. */
-function browserGet(context: BrowserContext, isClosed: () => boolean): FableGet {
+export function browserGet(context: BrowserContext, isClosed: () => boolean): FableGet {
   return async <T>(path: string, query: Query) => {
     const url = new URL(path, SITE);
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, String(v));

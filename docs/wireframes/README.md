@@ -22,7 +22,7 @@ Rules (checked by `test/wireframe.test.ts`):
 - Screen ids are unique; `defaultScreen` is an enabled screen.
 - Results columns ⊆ `BookResult` fields.
 
-Each screen maps 1:1 to a CLI command (`cli`), so a UI is a thin shell over the library API.
+Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliation preview and has no CLI command.
 
 ## Screens
 
@@ -42,10 +42,10 @@ Each screen maps 1:1 to a CLI command (`cli`), so a UI is a thin shell over the 
 
 ```
 ┌ Library cards ─────────────────────────────────────┐
-│ use │ card      │ library key │ loans  │ holds     │
-│ [x] │ Main      │ lib1        │ 3 / 10 │ 7 / 10    │
-│ [ ] │ Branch    │ lib2        │ 0 / 5  │ 5 / 5 (!) │
-│ Library priority:  ≡ lib1   ≡ lib2   (drag)         │
+│ use │ card      │ priority    │ loans  │ holds     │
+│ [x] │ Main      │ 2  ↑ ↓      │ 3 / 10 │ 7 / 10    │
+│ [x] │ Branch    │ 1  ↑ ↓      │ 0 / 5  │ 5 / 5 (!) │
+│ Highest priority first; unchecked cards last/fixed │
 └────────────────────────────────────────────────────┘
 ```
 

@@ -1,7 +1,8 @@
 import { HttpClient, type HttpOptions } from "./http.js";
 import type { ChipResponse, MediaType, SetupCodeResponse, SyncResponse } from "./types.js";
 
-export const DEFAULT_SENTRY_BASE_URL = "https://sentry-read.svc.overdrive.com/";
+// libbyapp.com calls this host; the older sentry-read.svc.overdrive.com fails its TLS certificate check.
+export const DEFAULT_SENTRY_BASE_URL = "https://sentry.libbyapp.com/";
 
 /**
  * Client for Libby's private "Sentry" API (the backend of libbyapp.com).

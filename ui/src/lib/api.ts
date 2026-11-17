@@ -4,9 +4,12 @@ import { LibbyClient } from "../../../src/libby-client.js";
 import { silentLogger } from "../../../src/logger.js";
 import type { BookResult, ResultStatus } from "../../../src/runner.js";
 import { Runner, selectCards } from "../../../src/runner.js";
+import type { SyncSettings } from "../../../src/sync-config.ts";
+import type { SyncApplyReport, SyncApprovals, SyncPlan, SyncPreviewOptions } from "../../../src/sync-plan.ts";
 import { ThunderClient } from "../../../src/thunder-client.js";
 import type { LibbyCard, ThunderMedia } from "../../../src/types.js";
 import type { Config } from "./config.ts";
+import { demoSyncApi } from "./sync-demo.ts";
 
 /** One `search` row: what a card's library would match. */
 export interface Match {
@@ -17,17 +20,24 @@ export interface Match {
 }
 
 /**
- * What the UI needs from libby-shelf. Each method mirrors one CLI command.
+ * What the UI needs from library operations and cross-service reconciliation.
  * A local server can implement this over the library; `demoApi` fakes it in the browser.
  */
-export interface LibbyApi {
+export interface LibraryApi {
   readonly demo: boolean;
   status(tokenFile: string): Promise<{ connected: boolean }>;
-  login(tokenFile: string, options: PairingOptions): Promise<void>;
+  /** Sign in to Libby: `browser` opens libbyapp.com; `device-code` shows a setup code through `onCode`. */
+  login(tokenFile: string, options: LoginOptions): Promise<void>;
   cards(tokenFile: string): Promise<LibbyCard[]>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
+  previewSync(options?: SyncPreviewOptions): Promise<SyncPlan>;
+  applySync(planId: string, approvals: SyncApprovals): Promise<SyncApplyReport>;
+  getSyncSettings(): Promise<SyncSettings>;
+  saveSyncSettings(input: unknown): Promise<SyncSettings>;
 }
+
+export type LoginOptions = PairingOptions & { method: "browser" | "device-code" };
 
 export type { BookRequest, BookResult, LibbyCard, ResultStatus };
 
@@ -122,14 +132,15 @@ function fakeMedia(book: BookRequest, card: LibbyCard, type: string): ThunderMed
   };
 }
 
-export const demoApi: LibbyApi = {
+export const demoApi: LibraryApi = {
   demo: true,
+  ...demoSyncApi,
   async status() {
     await wait(150);
     return { connected: sessionStorageGet("demo-connected") === "1" };
   },
   async login(_tokenFile, options) {
-    options.onCode("12345678", Date.now() + 60_000);
+    if (options.method === "device-code") options.onCode("12345678", Date.now() + 60_000);
     await wait(600, options.signal);
     sessionStorageSet("demo-connected", "1");
   },
@@ -139,13 +150,7 @@ export const demoApi: LibbyApi = {
   },
   async search(book, config) {
     await wait(500);
-    const runner = createDemoRunner(config, [book]);
-    return (await runner.findCandidates(book, selectCards(CARDS, config))).map(({ card, match }) => ({
-      card,
-      media: match.media,
-      titleScore: match.titleScore,
-      ...(match.authorScore !== undefined && { authorScore: match.authorScore }),
-    }));
+    return createDemoRunner(config, [book]).searchMatches(book, selectCards(CARDS, config));
   },
   async run(books, config) {
     await wait(700);
