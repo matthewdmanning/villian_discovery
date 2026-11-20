@@ -1,5 +1,7 @@
 import {
   BookmarkPlus,
+  Check,
+  ChevronDown,
   FastForward,
   Headphones,
   Minus,
@@ -12,11 +14,10 @@ import {
   Tag,
   X,
 } from "lucide-react";
-import type { ComponentType, KeyboardEvent } from "react";
-import { useEffect, useId, useReducer, useState } from "react";
+import type { ComponentType } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { Empty, Panel, Screen, sz } from "../components/ui.tsx";
 import {
-  allTags,
   type Bookmark,
   chapterAt,
   chapterEnd,
@@ -30,10 +31,12 @@ import {
   MAX_RATE,
   MAX_TAG_LENGTH,
   MIN_RATE,
+  normalizeTag,
   type PlayerAction,
   type PlayerState,
   playerReducer,
   restoreBookmarks,
+  restoreTagLibrary,
 } from "../lib/player.ts";
 import { labelForAction } from "../lib/spec.ts";
 
@@ -48,7 +51,8 @@ function load(): PlayerState {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<PlayerState> | null;
     if (!saved) return fresh;
     const bookmarks = restoreBookmarks(fresh.book, saved.bookmarks);
-    const state = { ...fresh, bookmarks, rate: clampRate(saved.rate) };
+    const tagLibrary = restoreTagLibrary(saved.tagLibrary, bookmarks);
+    const state = { ...fresh, bookmarks, tagLibrary, rate: clampRate(saved.rate) };
     return playerReducer(state, { type: "seek", position: Number(saved.position) || 0 });
   } catch {
     return fresh;
@@ -79,28 +83,157 @@ function Control(props: {
   );
 }
 
-/** One bookmark: jump to it, write a note, add or remove tags. Enter or comma adds the typed tag. */
-function BookmarkItem(props: {
-  mark: Bookmark;
-  chapter: string;
-  suggestions: string;
-  dispatch(a: PlayerAction): void;
-}) {
+/**
+ * Tag picker for one bookmark. Lists library tags (scrollable, checked when applied; click toggles).
+ * "New Tag" stays pinned last, outside the scroll area, and is the only way to create a tag.
+ */
+function TagMenu(props: { mark: Bookmark; library: string[]; dispatch(a: PlayerAction): void }) {
+  const { mark, library, dispatch } = props;
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const root = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+  const at = formatTime(mark.position);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setCreating(false);
+    setName("");
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => {
+      if (!root.current?.contains(e.target as Node)) close();
+    };
+    // Escape leaves "New Tag" entry first, then closes the menu.
+    const onEscape = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (creating) setCreating(false);
+      else close();
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [open, creating, close]);
+
+  const [up, setUp] = useState(false);
+  const [alignEnd, setAlignEnd] = useState(false);
+  // Opens upward when the space below (above the mobile dock, if shown) can't fit the menu, so "New Tag" stays visible.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measure when the menu grows, switches to name entry, or chips move the button.
+  useLayoutEffect(() => {
+    if (!open || !root.current || !menu.current) return;
+    const anchor = root.current.getBoundingClientRect();
+    const dock = document.querySelector("nav.dock")?.getBoundingClientRect();
+    const floor = dock && dock.height > 0 ? Math.min(dock.top, innerHeight) : innerHeight;
+    const need = menu.current.offsetHeight + 8;
+    const below = floor - anchor.bottom;
+    setUp(below < need && anchor.top > below);
+    // Right-align to the button when a left-aligned menu would cross the 16px page gutter.
+    setAlignEnd(anchor.left + menu.current.offsetWidth > document.documentElement.clientWidth - 16);
+  }, [open, creating, library.length, mark.tags.length]);
+
+  const create = () => {
+    if (!normalizeTag(name)) return;
+    dispatch({ type: "createTag", name, id: mark.id });
+    setCreating(false);
+    setName("");
+  };
+
+  return (
+    <div ref={root} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        aria-label={`Tags for bookmark at ${at}`}
+        className={`btn btn-ghost btn-sm gap-1 ${sz("btn")}`}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        <Tag className="size-4" />
+        Add tag
+        <ChevronDown className="size-4" />
+      </button>
+      {open && (
+        <div
+          id={menuId}
+          ref={menu}
+          role="menu"
+          aria-label={`Tags for bookmark at ${at}`}
+          className={`surface absolute z-30 flex w-60 flex-col p-1 ${alignEnd ? "end-0" : "start-0"} ${up ? "bottom-full mb-1" : "top-full mt-1"}`}
+        >
+          <ul className="max-h-48 overflow-y-auto overscroll-contain">
+            {library.length === 0 && <li className="px-3 py-2 text-sm opacity-70">No tags yet</li>}
+            {library.map((t) => {
+              const on = hasTag(mark, t);
+              return (
+                <li key={t}>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={on}
+                    className="flex min-h-10 w-full items-center gap-2 rounded-field px-3 text-start hover:bg-base-200"
+                    onClick={() => dispatch({ type: on ? "bookmarkUntag" : "bookmarkTag", id: mark.id, tag: t })}
+                  >
+                    <Check className={`size-4 shrink-0 ${on ? "" : "invisible"}`} />
+                    <span className="truncate">{t}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-1 border-t-2 border-base-200 pt-1">
+            {creating ? (
+              <form
+                className="flex gap-1 p-1"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  create();
+                }}
+              >
+                <input
+                  // biome-ignore lint/a11y/noAutofocus: the user just chose "New Tag"; typing is the next step.
+                  autoFocus
+                  type="text"
+                  aria-label="New tag name"
+                  placeholder="Tag name"
+                  autoComplete="off"
+                  className={`input input-sm min-w-0 flex-1`}
+                  maxLength={MAX_TAG_LENGTH}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+                <button type="submit" className="btn btn-primary btn-sm" disabled={!normalizeTag(name)}>
+                  Add
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                role="menuitem"
+                className="flex min-h-10 w-full items-center gap-2 rounded-field px-3 font-semibold text-start hover:bg-base-200"
+                onClick={() => setCreating(true)}
+              >
+                <Plus className="size-4" />
+                {labelForAction("player", "player-new-tag", "New Tag")}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One bookmark: jump to it, write a note, pick tags from the bookmark tag library. */
+function BookmarkItem(props: { mark: Bookmark; chapter: string; library: string[]; dispatch(a: PlayerAction): void }) {
   const { mark, dispatch } = props;
-  const [draft, setDraft] = useState("");
   const noteId = useId();
-  const addTag = () => {
-    for (const tag of draft.split(",")) dispatch({ type: "bookmarkTag", id: mark.id, tag });
-    setDraft("");
-  };
-  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      addTag();
-    } else if (e.key === "Backspace" && !draft && mark.tags.length) {
-      dispatch({ type: "bookmarkUntag", id: mark.id, tag: mark.tags.at(-1)! });
-    }
-  };
   return (
     <li className="space-y-2 py-3">
       <button
@@ -137,20 +270,7 @@ function BookmarkItem(props: {
             </button>
           </span>
         ))}
-        <label className={`input min-w-40 flex-1 ${sz("input")}`}>
-          <Tag className="size-4 opacity-60" />
-          <input
-            type="text"
-            aria-label={`Add tag to bookmark at ${formatTime(mark.position)}`}
-            placeholder="Add tag"
-            list={props.suggestions}
-            maxLength={MAX_TAG_LENGTH}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKey}
-            onBlur={addTag}
-          />
-        </label>
+        <TagMenu mark={mark} library={props.library} dispatch={dispatch} />
       </div>
     </li>
   );
@@ -163,12 +283,11 @@ export function Player() {
   const ci = chapterAt(book, s.position);
   const chapter = book.chapters[ci]!;
   const end = chapterEnd(book, ci);
-  const tags = allTags(s.bookmarks);
+  const tags = s.tagLibrary;
   const [picked, setFilter] = useState<string>();
   // A filter whose tag no longer exists shows everything.
   const filter = picked !== undefined && tags.includes(picked) ? picked : undefined;
   const shown = filter ? s.bookmarks.filter((b) => hasTag(b, filter)) : s.bookmarks;
-  const suggestions = useId();
 
   useEffect(() => {
     if (!s.playing) return;
@@ -178,11 +297,14 @@ export function Player() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ position: s.position, rate: s.rate, bookmarks: s.bookmarks }));
+      localStorage.setItem(
+        KEY,
+        JSON.stringify({ position: s.position, rate: s.rate, bookmarks: s.bookmarks, tagLibrary: s.tagLibrary }),
+      );
     } catch {
       /* storage blocked: state lasts for this visit only */
     }
-  }, [s.position, s.rate, s.bookmarks]);
+  }, [s.position, s.rate, s.bookmarks, s.tagLibrary]);
 
   const toggleLabel = s.playing ? "Pause" : "Play";
   return (
@@ -326,18 +448,13 @@ export function Player() {
                 ))}
               </fieldset>
             )}
-            <datalist id={suggestions}>
-              {tags.map((t) => (
-                <option key={t} value={t} />
-              ))}
-            </datalist>
             <ul className="divide-y-2 divide-base-200">
               {shown.map((b) => (
                 <BookmarkItem
                   key={b.id}
                   mark={b}
                   chapter={book.chapters[b.chapter]?.title ?? ""}
-                  suggestions={suggestions}
+                  library={tags}
                   dispatch={dispatch}
                 />
               ))}

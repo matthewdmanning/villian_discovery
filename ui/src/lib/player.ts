@@ -26,6 +26,8 @@ export interface PlayerState {
   playing: boolean;
   rate: number;
   bookmarks: Bookmark[];
+  /** Bookmark tag library, sorted. Separate from Libby/Fable book tags. Grows only through `createTag`. */
+  tagLibrary: string[];
 }
 
 /** Rewind / fast-forward jump. */
@@ -48,11 +50,24 @@ const sameTag = (a: string, b: string) => a.localeCompare(b, undefined, { sensit
 
 export const hasTag = (b: Bookmark, tag: string) => b.tags.some((t) => sameTag(t, tag));
 
-/** Every tag used on any bookmark, first spelling wins, sorted for suggestions. */
-export function allTags(bookmarks: readonly Bookmark[]): string[] {
+/** The library entry matching `tag` ignoring case, if any. */
+export const findTag = (library: readonly string[], tag: string) => library.find((t) => sameTag(t, tag));
+
+/** Merges tag lists into one library: normalized, unique ignoring case (first spelling wins), sorted. */
+export function mergeTags(...lists: readonly unknown[]): string[] {
   const out: string[] = [];
-  for (const b of bookmarks) for (const t of b.tags) if (!out.some((o) => sameTag(o, t))) out.push(t);
+  for (const list of lists)
+    for (const raw of Array.isArray(list) ? list : []) {
+      const t = typeof raw === "string" ? normalizeTag(raw) : undefined;
+      if (t && !findTag(out, t)) out.push(t);
+    }
   return out.sort((a, b) => a.localeCompare(b));
+}
+
+/** Rebuilds the tag library from saved data; tags already on bookmarks are always included. */
+export function restoreTagLibrary(saved: unknown, bookmarks: readonly Bookmark[]): string[] {
+  // Bookmark spellings first, so the library matches tags already applied.
+  return mergeTags(...bookmarks.map((b) => b.tags), saved);
 }
 
 /** Rebuilds bookmarks from untrusted saved data; drops invalid entries and fills fields added later. */
@@ -89,6 +104,7 @@ export type PlayerAction =
   | { type: "faster" }
   | { type: "bookmark"; now?: string }
   | { type: "bookmarkNote"; id: number; note: string }
+  | { type: "createTag"; name: string; id?: number }
   | { type: "bookmarkTag"; id: number; tag: string }
   | { type: "bookmarkUntag"; id: number; tag: string }
   | { type: "chapterStart" }
@@ -96,7 +112,7 @@ export type PlayerAction =
   | { type: "seek"; position: number };
 
 export function createPlayer(book: Audiobook): PlayerState {
-  return { book, position: 0, playing: false, rate: 1, bookmarks: [] };
+  return { book, position: 0, playing: false, rate: 1, bookmarks: [], tagLibrary: [] };
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -168,12 +184,19 @@ export function playerReducer(s: PlayerState, a: PlayerAction): PlayerState {
       const note = a.note.slice(0, MAX_NOTE_LENGTH);
       return editBookmark(s, a.id, (b) => (b.note === note ? b : { ...b, note }));
     }
+    case "createTag": {
+      const name = normalizeTag(a.name);
+      if (!name) return s;
+      // An existing tag keeps its spelling, so "music" joins "Music".
+      const existing = findTag(s.tagLibrary, name);
+      const next = existing ? s : { ...s, tagLibrary: mergeTags(s.tagLibrary, [name]) };
+      return a.id === undefined ? next : playerReducer(next, { type: "bookmarkTag", id: a.id, tag: existing ?? name });
+    }
     case "bookmarkTag": {
-      const typed = normalizeTag(a.tag);
-      if (!typed) return s;
-      // Reuse the spelling already used on another bookmark, so "music" joins "Music".
-      const tag = allTags(s.bookmarks).find((t) => sameTag(t, typed)) ?? typed;
-      return editBookmark(s, a.id, (b) => (b.tags.some((t) => sameTag(t, tag)) ? b : { ...b, tags: [...b.tags, tag] }));
+      // Only library tags can be applied; new tags come from `createTag`.
+      const tag = findTag(s.tagLibrary, a.tag);
+      if (!tag) return s;
+      return editBookmark(s, a.id, (b) => (hasTag(b, tag) ? b : { ...b, tags: [...b.tags, tag] }));
     }
     case "bookmarkUntag":
       return editBookmark(s, a.id, (b) => {

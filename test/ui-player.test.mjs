@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  allTags,
   chapterAt,
   createPlayer,
+  findTag,
   formatRate,
   formatTime,
   hasTag,
@@ -10,9 +10,11 @@ import {
   MAX_RATE,
   MAX_TAG_LENGTH,
   MIN_RATE,
+  mergeTags,
   normalizeTag,
   playerReducer,
   restoreBookmarks,
+  restoreTagLibrary,
   SKIP_SECONDS,
 } from "../ui/src/lib/player.ts";
 
@@ -105,35 +107,57 @@ describe("bookmark notes and tags", () => {
     );
   });
 
-  it("adds trimmed tags once ignoring case, and removes them", () => {
-    let s = act(marked(), { type: "bookmarkTag", tag: "  plot   twist " });
-    s = act(s, { type: "bookmarkTag", tag: "Plot Twist" });
-    s = act(s, { type: "bookmarkTag", tag: "quote" });
-    expect(act(s, { type: "bookmarkTag", tag: "   " })).toBe(s);
-    expect(act(s, { type: "bookmarkTag", tag: "x".repeat(MAX_TAG_LENGTH + 1) })).toBe(s);
-    expect(s.bookmarks[0].tags).toEqual(["plot twist", "quote"]);
-    expect(hasTag(s.bookmarks[0], "QUOTE")).toBe(true);
-    s = act(s, { type: "bookmarkUntag", tag: "PLOT TWIST" });
-    expect(s.bookmarks[0].tags).toEqual(["quote"]);
+  it("applies only library tags; bookmarkTag never creates one", () => {
+    const s = marked();
+    expect(act(s, { type: "bookmarkTag", tag: "quote" })).toBe(s);
+    expect(s.tagLibrary).toEqual([]);
+  });
+
+  it("creates tags only through createTag, applying them to the bookmark", () => {
+    let s = act(marked(), { type: "createTag", name: "  plot   twist " });
+    s = act(s, { type: "createTag", name: "Plot Twist" });
+    s = playerReducer(s, { type: "createTag", name: "quote" });
+    expect(s.tagLibrary).toEqual(["plot twist", "quote"]);
+    expect(s.bookmarks[0].tags).toEqual(["plot twist"]);
+    expect(act(s, { type: "createTag", name: "   " })).toBe(s);
+    expect(act(s, { type: "createTag", name: "x".repeat(MAX_TAG_LENGTH + 1) })).toBe(s);
+  });
+
+  it("toggles library tags on a bookmark ignoring case", () => {
+    let s = playerReducer(marked(), { type: "createTag", name: "Music" });
+    s = act(s, { type: "bookmarkTag", tag: "music" });
+    expect(s.bookmarks[0].tags).toEqual(["Music"]);
+    expect(act(s, { type: "bookmarkTag", tag: "MUSIC" })).toBe(s);
+    expect(hasTag(s.bookmarks[0], "MUSIC")).toBe(true);
+    s = act(s, { type: "bookmarkUntag", tag: "MUSIC" });
+    expect(s.bookmarks[0].tags).toEqual([]);
+    expect(s.tagLibrary).toEqual(["Music"]);
     expect(act(s, { type: "bookmarkUntag", tag: "missing" })).toBe(s);
   });
 
-  it("reuses a tag's existing spelling from other bookmarks", () => {
-    let s = act(marked(), { type: "bookmarkTag", tag: "Music" });
+  it("reuses an existing tag's spelling when New Tag repeats it", () => {
+    let s = act(marked(), { type: "createTag", name: "Music" });
     s = playerReducer({ ...s, position: 20 }, { type: "bookmark", now: "t" });
-    s = playerReducer(s, { type: "bookmarkTag", id: 2, tag: "music" });
+    s = playerReducer(s, { type: "createTag", id: 2, name: "music" });
+    expect(s.tagLibrary).toEqual(["Music"]);
     expect(s.bookmarks.map((b) => b.tags)).toEqual([["Music"], ["Music"]]);
   });
 
   it("ignores edits to unknown bookmarks", () => {
-    const s = marked();
+    const s = playerReducer(marked(), { type: "createTag", name: "x" });
     expect(playerReducer(s, { type: "bookmarkTag", id: 99, tag: "x" })).toBe(s);
   });
 
-  it("lists every tag once, sorted", () => {
-    const marks = [{ tags: ["quote", "Zed"] }, { tags: ["Quote", "alpha"] }];
-    expect(allTags(marks)).toEqual(["alpha", "quote", "Zed"]);
+  it("merges tag lists into a sorted library", () => {
+    expect(mergeTags(["quote", "Zed"], ["Quote", "alpha", 5, " "])).toEqual(["alpha", "quote", "Zed"]);
+    expect(findTag(["Music"], "MUSIC")).toBe("Music");
     expect(normalizeTag(" a  b ")).toBe("a b");
+  });
+
+  it("restores the tag library, including tags found on bookmarks", () => {
+    const marks = restoreBookmarks(book, [{ id: 1, position: 5, tags: ["Kept"] }]);
+    expect(restoreTagLibrary(["saved", "KEPT"], marks)).toEqual(["Kept", "saved"]);
+    expect(restoreTagLibrary("junk", [])).toEqual([]);
   });
 
   it("restores saved bookmarks, filling fields that older saves lack", () => {

@@ -116,8 +116,15 @@ Mobile layout: same screens stacked; tables collapse to cards (title + status + 
 │ (All) (favorite) (Music)          ← tag filter  │
 │ Chapter 1: The Keeper                    1:15   │
 │ [Note…                                       ]  │
-│ [Music ×] [favorite ×] [🏷 Add tag          ]   │
+│ [Music ×] [favorite ×] [🏷 Add tag ▾]            │
+│                        ┌──────────────┐ ← tag   │
+│                        │ ✓ favorite   │   menu  │
+│                        │ ✓ Music      │ scrolls │
+│                        │   quote      │         │
+│                        ├──────────────┤         │
+│                        │ + New Tag    │ pinned  │
+│                        └──────────────┘         │
 └─────────────────────────────────────────────────┘
 ```
 
-|◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks · tag: Enter or comma adds, Backspace on empty removes last.
+|◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks · tag menu: click toggles a tag; **New Tag** (pinned last) is the only way to create one. Bookmark tags are separate from book tags.

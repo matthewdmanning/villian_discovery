@@ -315,6 +315,12 @@
           "components": [
             { "type": "button", "label": "Add bookmark", "action": "player-bookmark" },
             { "type": "filter", "label": "Filter by tag" },
+            {
+              "type": "menu",
+              "label": "Add tag",
+              "hint": "Bookmark tags only. Scrolls. New Tag is always last and is the only way to create a tag."
+            },
+            { "type": "button", "label": "New Tag", "action": "player-new-tag" },
             { "type": "table", "label": "Bookmarks", "columns": ["position", "chapter", "note", "tags"] }
           ]
         }
