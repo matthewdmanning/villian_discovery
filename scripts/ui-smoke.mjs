@@ -306,9 +306,33 @@ try {
   await page.locator("nav.dock").getByRole("button", { name: "Sync", exact: true }).click();
   await page.getByRole("heading", { name: "Sync libraries", exact: true }).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+
+  // Phone audiobook bookmarks: full-screen sheet, draft until Save, back asks before discarding.
+  await page.locator("nav.dock").getByRole("button", { name: "Player", exact: true }).click();
+  const openSheet = () => page.getByRole("button", { name: /^Bookmarks \(/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Bookmarks", exact: true });
+  const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });
+  await openSheet();
+  await sheet.getByRole("button", { name: "Add bookmark", exact: true }).click();
+  await sheet.getByPlaceholder("Add a note…").fill("Draft note");
+  await page.goBack();
+  await discard.waitFor();
+  await discard.getByRole("button", { name: "Discard", exact: true }).click();
+  await sheet.waitFor({ state: "detached" });
+  assert.equal(await page.getByRole("button", { name: "Bookmarks (0)", exact: true }).count(), 1);
+  await openSheet();
+  await sheet.getByRole("button", { name: "Add bookmark", exact: true }).click();
+  await sheet.getByPlaceholder("Add a note…").fill("Saved note");
+  await sheet.getByRole("button", { name: "Save", exact: true }).click();
+  await sheet.waitFor({ state: "detached" });
+  assert.equal(await page.getByRole("button", { name: "Bookmarks (1)", exact: true }).count(), 1);
+  await openSheet();
+  assert.equal(await sheet.getByPlaceholder("Add a note…").inputValue(), "Saved note");
+  await sheet.getByRole("button", { name: "Back to player", exact: true }).click();
+  await sheet.waitFor({ state: "detached" });
   assert.deepEqual(errors, [], "browser errors or duplicate React keys");
   console.log(
-    "UI regression checks passed: card priority, drafts, run/status errors, sync precedence, conflicts, and mobile navigation.",
+    "UI regression checks passed: card priority, drafts, run/status errors, sync precedence, conflicts, mobile navigation, and phone bookmark sheet.",
   );
 } finally {
   await browser.close();

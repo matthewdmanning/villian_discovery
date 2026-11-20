@@ -22,7 +22,7 @@ Rules (checked by `test/wireframe.test.ts`):
 - Screen ids are unique; `defaultScreen` is an enabled screen.
 - Results columns ⊆ `BookResult` fields.
 
-Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliation preview and has no CLI command.
+Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliation preview and has no CLI command. Player is a browser-only audiobook control panel (demo title) and has no CLI command.
 
 ## Screens
 
@@ -101,3 +101,47 @@ Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliat
 ```
 
 Mobile layout: same screens stacked; tables collapse to cards (title + status + one detail line).
+
+### player — no CLI
+
+```
+┌ Audiobook player ───────────────────────────────┐
+│ [♫] The Lighthouse Ledger            (demo)     │
+│     Chapter 1: The Keeper                       │
+│ ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│ 1:16        Chapter 0:31 / 37:15     −4:10:43   │
+│        |◁   ◁◁   [ ▶ / ❚❚ ]   ▷▷   ▷|           │
+│              (−)   1.05×   (+)                  │
+├ Bookmarks ─────────────────── [ Add bookmark ] ─┤
+│ (All) (favorite) (Music)          ← tag filter  │
+│ Chapter 1: The Keeper                    1:15   │
+│ [Note…                                       ]  │
+│ [Music ×] [favorite ×] [🏷 Add tag ▾]            │
+│                        ┌──────────────┐ ← tag   │
+│                        │ ✓ favorite   │   menu  │
+│                        │ ✓ Music      │ scrolls │
+│                        │   quote      │         │
+│                        ├──────────────┤         │
+│                        │ + New Tag    │ pinned  │
+│                        └──────────────┘         │
+└─────────────────────────────────────────────────┘
+```
+
+Layout (desktop, `lg`+): player and bookmarks side by side when the content area is ≥48rem (container query, sidebar-aware), each twice the player's natural height; stacked below.
+
+Phone (below `lg`): bookmarks hidden. The bookmark icon (with count) opens them full screen:
+
+```
+┌ ← Bookmarks ──────── [ Add bookmark ] ┐
+│ Opening Credits                 0:00  │
+│ [Note…                             ]  │
+│ [Music ×] [🏷 Add tag ▾]               │
+│                                       │
+├───────────────────────────────────────┤
+│             [   Save   ]              │
+└───────────────────────────────────────┘
+```
+
+Edits are a draft until Save. ← or the system back gesture asks "Discard changes? Unsaved notes and tags will be lost." (Keep editing / Discard). Save and Discard return to the player.
+
+|◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks · tag menu: click toggles a tag; **New Tag** (pinned last) is the only way to create one. Bookmark tags are separate from book tags.

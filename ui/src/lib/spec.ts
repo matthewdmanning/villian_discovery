@@ -1,7 +1,7 @@
 import raw from "../../../docs/wireframes/libby-ui.wireframe.json";
 
 /** Typed view of docs/wireframes/libby-ui.wireframe.json. The UI follows its options and screen list. */
-export type ScreenId = "connect" | "cards" | "books" | "settings" | "search" | "results" | "sync";
+export type ScreenId = "connect" | "cards" | "books" | "settings" | "search" | "results" | "sync" | "player";
 
 export interface SpecComponent {
   type: string;
@@ -9,6 +9,7 @@ export interface SpecComponent {
   binds?: string;
   advanced?: boolean;
   hint?: string;
+  action?: string;
   options?: string[];
   values?: string[];
   columns?: string[];
@@ -47,5 +48,13 @@ export function labelFor(id: ScreenId, binds: string, fallback: string): string 
   const c = screen(id)
     ?.regions.flatMap((r) => r.components)
     .find((x) => x.binds === binds);
+  return c?.label ?? fallback;
+}
+
+/** Label of the component with `action` on a screen, so button copy stays in the spec. */
+export function labelForAction(id: ScreenId, action: string, fallback: string): string {
+  const c = screen(id)
+    ?.regions.flatMap((r) => r.components)
+    .find((x) => x.action === action);
   return c?.label ?? fallback;
 }
