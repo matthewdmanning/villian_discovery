@@ -9,11 +9,15 @@ import {
   Rewind,
   SkipBack,
   SkipForward,
+  Tag,
+  X,
 } from "lucide-react";
-import type { ComponentType } from "react";
-import { useEffect, useReducer } from "react";
+import type { ComponentType, KeyboardEvent } from "react";
+import { useEffect, useId, useReducer, useState } from "react";
 import { Empty, Panel, Screen, sz } from "../components/ui.tsx";
 import {
+  allTags,
+  type Bookmark,
   chapterAt,
   chapterEnd,
   clampRate,
@@ -21,11 +25,15 @@ import {
   DEMO_AUDIOBOOK,
   formatRate,
   formatTime,
+  hasTag,
+  MAX_NOTE_LENGTH,
   MAX_RATE,
+  MAX_TAG_LENGTH,
   MIN_RATE,
   type PlayerAction,
   type PlayerState,
   playerReducer,
+  restoreBookmarks,
 } from "../lib/player.ts";
 import { labelForAction } from "../lib/spec.ts";
 
@@ -39,7 +47,7 @@ function load(): PlayerState {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<PlayerState> | null;
     if (!saved) return fresh;
-    const bookmarks = Array.isArray(saved.bookmarks) ? saved.bookmarks : [];
+    const bookmarks = restoreBookmarks(fresh.book, saved.bookmarks);
     const state = { ...fresh, bookmarks, rate: clampRate(saved.rate) };
     return playerReducer(state, { type: "seek", position: Number(saved.position) || 0 });
   } catch {
@@ -71,6 +79,83 @@ function Control(props: {
   );
 }
 
+/** One bookmark: jump to it, write a note, add or remove tags. Enter or comma adds the typed tag. */
+function BookmarkItem(props: {
+  mark: Bookmark;
+  chapter: string;
+  suggestions: string;
+  dispatch(a: PlayerAction): void;
+}) {
+  const { mark, dispatch } = props;
+  const [draft, setDraft] = useState("");
+  const noteId = useId();
+  const addTag = () => {
+    for (const tag of draft.split(",")) dispatch({ type: "bookmarkTag", id: mark.id, tag });
+    setDraft("");
+  };
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTag();
+    } else if (e.key === "Backspace" && !draft && mark.tags.length) {
+      dispatch({ type: "bookmarkUntag", id: mark.id, tag: mark.tags.at(-1)! });
+    }
+  };
+  return (
+    <li className="space-y-2 py-3">
+      <button
+        type="button"
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-field px-2 text-start hover:bg-base-200"
+        onClick={() => dispatch({ type: "seek", position: mark.position })}
+      >
+        <span className="truncate font-semibold">{props.chapter}</span>
+        <span className="tabular-nums opacity-80">{formatTime(mark.position)}</span>
+      </button>
+      <label htmlFor={noteId} className="sr-only">
+        Note for bookmark at {formatTime(mark.position)}
+      </label>
+      <textarea
+        id={noteId}
+        className={`textarea w-full ${sz("textarea")}`}
+        rows={2}
+        placeholder="Add a note…"
+        maxLength={MAX_NOTE_LENGTH}
+        value={mark.note}
+        onChange={(e) => dispatch({ type: "bookmarkNote", id: mark.id, note: e.target.value })}
+      />
+      <div className="flex flex-wrap items-center gap-2">
+        {mark.tags.map((t) => (
+          <span key={t} className="badge badge-secondary gap-1 font-semibold">
+            {t}
+            <button
+              type="button"
+              aria-label={`Remove tag ${t} from bookmark at ${formatTime(mark.position)}`}
+              className="cursor-pointer"
+              onClick={() => dispatch({ type: "bookmarkUntag", id: mark.id, tag: t })}
+            >
+              <X className="size-3" />
+            </button>
+          </span>
+        ))}
+        <label className={`input min-w-40 flex-1 ${sz("input")}`}>
+          <Tag className="size-4 opacity-60" />
+          <input
+            type="text"
+            aria-label={`Add tag to bookmark at ${formatTime(mark.position)}`}
+            placeholder="Add tag"
+            list={props.suggestions}
+            maxLength={MAX_TAG_LENGTH}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={onKey}
+            onBlur={addTag}
+          />
+        </label>
+      </div>
+    </li>
+  );
+}
+
 /** Use this screen to operate the audiobook control panel against the demo title. */
 export function Player() {
   const [s, dispatch] = useReducer(playerReducer, undefined, load);
@@ -78,6 +163,12 @@ export function Player() {
   const ci = chapterAt(book, s.position);
   const chapter = book.chapters[ci]!;
   const end = chapterEnd(book, ci);
+  const tags = allTags(s.bookmarks);
+  const [picked, setFilter] = useState<string>();
+  // A filter whose tag no longer exists shows everything.
+  const filter = picked !== undefined && tags.includes(picked) ? picked : undefined;
+  const shown = filter ? s.bookmarks.filter((b) => hasTag(b, filter)) : s.bookmarks;
+  const suggestions = useId();
 
   useEffect(() => {
     if (!s.playing) return;
@@ -218,20 +309,40 @@ export function Player() {
         {s.bookmarks.length === 0 ? (
           <Empty icon={<BookmarkPlus className="size-6" />} title="No bookmarks yet" />
         ) : (
-          <ul className="divide-y-2 divide-base-200">
-            {s.bookmarks.map((b) => (
-              <li key={b.id}>
-                <button
-                  type="button"
-                  className="flex min-h-11 w-full items-center justify-between gap-3 py-2 text-start hover:bg-base-200"
-                  onClick={() => dispatch({ type: "seek", position: b.position })}
-                >
-                  <span className="truncate">{book.chapters[b.chapter]?.title}</span>
-                  <span className="tabular-nums opacity-80">{formatTime(b.position)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            {tags.length > 0 && (
+              <fieldset className="mb-2 flex flex-wrap items-center gap-2">
+                <legend className="sr-only">Filter by tag</legend>
+                {[undefined, ...tags].map((t) => (
+                  <button
+                    key={t ?? ""}
+                    type="button"
+                    aria-pressed={filter === t}
+                    className={`btn btn-xs rounded-full ${filter === t ? "btn-primary" : "btn-ghost"}`}
+                    onClick={() => setFilter(t)}
+                  >
+                    {t ?? "All"}
+                  </button>
+                ))}
+              </fieldset>
+            )}
+            <datalist id={suggestions}>
+              {tags.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
+            <ul className="divide-y-2 divide-base-200">
+              {shown.map((b) => (
+                <BookmarkItem
+                  key={b.id}
+                  mark={b}
+                  chapter={book.chapters[b.chapter]?.title ?? ""}
+                  suggestions={suggestions}
+                  dispatch={dispatch}
+                />
+              ))}
+            </ul>
+          </>
         )}
       </Panel>
     </Screen>

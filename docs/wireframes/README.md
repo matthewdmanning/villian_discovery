@@ -113,8 +113,11 @@ Mobile layout: same screens stacked; tables collapse to cards (title + status + 
 │        |◁   ◁◁   [ ▶ / ❚❚ ]   ▷▷   ▷|           │
 │              (−)   1.05×   (+)                  │
 ├ Bookmarks ─────────────────── [ Add bookmark ] ─┤
+│ (All) (favorite) (Music)          ← tag filter  │
 │ Chapter 1: The Keeper                    1:15   │
+│ [Note…                                       ]  │
+│ [Music ×] [favorite ×] [🏷 Add tag          ]   │
 └─────────────────────────────────────────────────┘
 ```
 
-|◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks.
+|◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks · tag: Enter or comma adds, Backspace on empty removes last.

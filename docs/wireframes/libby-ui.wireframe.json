@@ -314,7 +314,8 @@
           "id": "bookmarks",
           "components": [
             { "type": "button", "label": "Add bookmark", "action": "player-bookmark" },
-            { "type": "table", "label": "Bookmarks", "columns": ["position", "chapter"] }
+            { "type": "filter", "label": "Filter by tag" },
+            { "type": "table", "label": "Bookmarks", "columns": ["position", "chapter", "note", "tags"] }
           ]
         }
       ]

@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  allTags,
   chapterAt,
   createPlayer,
   formatRate,
   formatTime,
+  hasTag,
+  MAX_NOTE_LENGTH,
   MAX_RATE,
+  MAX_TAG_LENGTH,
   MIN_RATE,
+  normalizeTag,
   playerReducer,
+  restoreBookmarks,
   SKIP_SECONDS,
 } from "../ui/src/lib/player.ts";
 
@@ -59,8 +65,8 @@ describe("audiobook player", () => {
     s = playerReducer({ ...s, position: 20 }, { type: "bookmark", now: "t2" });
     s = playerReducer({ ...s, position: 450.2 }, { type: "bookmark", now: "t3" });
     expect(s.bookmarks).toEqual([
-      { id: 2, position: 20, chapter: 0, createdAt: "t2" },
-      { id: 1, position: 450, chapter: 1, createdAt: "t1" },
+      { id: 2, position: 20, chapter: 0, createdAt: "t2", note: "", tags: [] },
+      { id: 1, position: 450, chapter: 1, createdAt: "t1", note: "", tags: [] },
     ]);
   });
 
@@ -79,5 +85,69 @@ describe("audiobook player", () => {
   it("formats times", () => {
     expect(formatTime(65)).toBe("1:05");
     expect(formatTime(3725)).toBe("1:02:05");
+  });
+});
+
+describe("bookmark notes and tags", () => {
+  const marked = () => playerReducer(at(450), { type: "bookmark", now: "t" });
+  const act = (s, a) => playerReducer(s, { id: 1, ...a });
+
+  it("starts with an empty note and no tags", () => {
+    expect(marked().bookmarks[0]).toMatchObject({ note: "", tags: [] });
+  });
+
+  it("sets notes, capped, and keeps state identity when unchanged", () => {
+    const s = act(marked(), { type: "bookmarkNote", note: "Great line" });
+    expect(s.bookmarks[0].note).toBe("Great line");
+    expect(act(s, { type: "bookmarkNote", note: "Great line" })).toBe(s);
+    expect(act(s, { type: "bookmarkNote", note: "x".repeat(MAX_NOTE_LENGTH + 5) }).bookmarks[0].note).toHaveLength(
+      MAX_NOTE_LENGTH,
+    );
+  });
+
+  it("adds trimmed tags once ignoring case, and removes them", () => {
+    let s = act(marked(), { type: "bookmarkTag", tag: "  plot   twist " });
+    s = act(s, { type: "bookmarkTag", tag: "Plot Twist" });
+    s = act(s, { type: "bookmarkTag", tag: "quote" });
+    expect(act(s, { type: "bookmarkTag", tag: "   " })).toBe(s);
+    expect(act(s, { type: "bookmarkTag", tag: "x".repeat(MAX_TAG_LENGTH + 1) })).toBe(s);
+    expect(s.bookmarks[0].tags).toEqual(["plot twist", "quote"]);
+    expect(hasTag(s.bookmarks[0], "QUOTE")).toBe(true);
+    s = act(s, { type: "bookmarkUntag", tag: "PLOT TWIST" });
+    expect(s.bookmarks[0].tags).toEqual(["quote"]);
+    expect(act(s, { type: "bookmarkUntag", tag: "missing" })).toBe(s);
+  });
+
+  it("reuses a tag's existing spelling from other bookmarks", () => {
+    let s = act(marked(), { type: "bookmarkTag", tag: "Music" });
+    s = playerReducer({ ...s, position: 20 }, { type: "bookmark", now: "t" });
+    s = playerReducer(s, { type: "bookmarkTag", id: 2, tag: "music" });
+    expect(s.bookmarks.map((b) => b.tags)).toEqual([["Music"], ["Music"]]);
+  });
+
+  it("ignores edits to unknown bookmarks", () => {
+    const s = marked();
+    expect(playerReducer(s, { type: "bookmarkTag", id: 99, tag: "x" })).toBe(s);
+  });
+
+  it("lists every tag once, sorted", () => {
+    const marks = [{ tags: ["quote", "Zed"] }, { tags: ["Quote", "alpha"] }];
+    expect(allTags(marks)).toEqual(["alpha", "quote", "Zed"]);
+    expect(normalizeTag(" a  b ")).toBe("a b");
+  });
+
+  it("restores saved bookmarks, filling fields that older saves lack", () => {
+    const restored = restoreBookmarks(book, [
+      { id: 2, position: 800.9, chapter: 0, createdAt: "t" },
+      { id: 1, position: 20, note: "n", tags: ["a", "A", " ", 5] },
+      { id: 1, position: 30 },
+      { position: 40 },
+      null,
+    ]);
+    expect(restored).toEqual([
+      { id: 1, position: 20, chapter: 0, createdAt: "", note: "n", tags: ["a"] },
+      { id: 2, position: 800, chapter: 2, createdAt: "t", note: "", tags: [] },
+    ]);
+    expect(restoreBookmarks(book, "junk")).toEqual([]);
   });
 });

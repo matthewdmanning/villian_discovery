@@ -10,6 +10,9 @@ export interface Bookmark {
   position: number;
   chapter: number;
   createdAt: string;
+  note: string;
+  /** Custom labels; unique ignoring case, in the order added. */
+  tags: string[];
 }
 export interface Audiobook {
   title: string;
@@ -33,6 +36,49 @@ export const MIN_RATE = 0.5;
 export const MAX_RATE = 3;
 /** "Beginning of chapter" within this many seconds of the start goes to the previous chapter instead. */
 export const RESTART_GRACE = 3;
+export const MAX_NOTE_LENGTH = 2000;
+export const MAX_TAG_LENGTH = 32;
+
+/** Trims and collapses inner whitespace; empty or over-long input returns undefined. */
+export function normalizeTag(tag: string): string | undefined {
+  const t = tag.trim().replace(/\s+/g, " ");
+  return t && t.length <= MAX_TAG_LENGTH ? t : undefined;
+}
+const sameTag = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
+
+export const hasTag = (b: Bookmark, tag: string) => b.tags.some((t) => sameTag(t, tag));
+
+/** Every tag used on any bookmark, first spelling wins, sorted for suggestions. */
+export function allTags(bookmarks: readonly Bookmark[]): string[] {
+  const out: string[] = [];
+  for (const b of bookmarks) for (const t of b.tags) if (!out.some((o) => sameTag(o, t))) out.push(t);
+  return out.sort((a, b) => a.localeCompare(b));
+}
+
+/** Rebuilds bookmarks from untrusted saved data; drops invalid entries and fills fields added later. */
+export function restoreBookmarks(book: Audiobook, saved: unknown): Bookmark[] {
+  if (!Array.isArray(saved)) return [];
+  const out: Bookmark[] = [];
+  for (const raw of saved as Partial<Bookmark>[]) {
+    if (!raw || typeof raw.id !== "number" || typeof raw.position !== "number") continue;
+    if (out.some((b) => b.id === raw.id || b.position === raw.position)) continue;
+    const position = clamp(Math.floor(raw.position), 0, book.duration);
+    const tags: string[] = [];
+    for (const t of Array.isArray(raw.tags) ? raw.tags : []) {
+      const n = typeof t === "string" ? normalizeTag(t) : undefined;
+      if (n && !tags.some((x) => sameTag(x, n))) tags.push(n);
+    }
+    out.push({
+      id: raw.id,
+      position,
+      chapter: chapterAt(book, position),
+      createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
+      note: typeof raw.note === "string" ? raw.note.slice(0, MAX_NOTE_LENGTH) : "",
+      tags,
+    });
+  }
+  return out.sort((x, y) => x.position - y.position);
+}
 
 export type PlayerAction =
   | { type: "toggle" }
@@ -42,6 +88,9 @@ export type PlayerAction =
   | { type: "slower" }
   | { type: "faster" }
   | { type: "bookmark"; now?: string }
+  | { type: "bookmarkNote"; id: number; note: string }
+  | { type: "bookmarkTag"; id: number; tag: string }
+  | { type: "bookmarkUntag"; id: number; tag: string }
   | { type: "chapterStart" }
   | { type: "chapterEnd" }
   | { type: "seek"; position: number };
@@ -73,6 +122,18 @@ function seek(s: PlayerState, position: number): PlayerState {
   return { ...s, position: p, playing: s.playing && p < s.book.duration };
 }
 
+/** Applies `edit` to bookmark `id`. `edit` returns `b` itself when nothing changes, so `s` is kept and React skips renders. */
+function editBookmark(s: PlayerState, id: number, edit: (b: Bookmark) => Bookmark): PlayerState {
+  let changed = false;
+  const bookmarks = s.bookmarks.map((b) => {
+    if (b.id !== id) return b;
+    const next = edit(b);
+    if (next !== b) changed = true;
+    return next;
+  });
+  return changed ? { ...s, bookmarks } : s;
+}
+
 export function playerReducer(s: PlayerState, a: PlayerAction): PlayerState {
   switch (a.type) {
     case "toggle":
@@ -93,9 +154,32 @@ export function playerReducer(s: PlayerState, a: PlayerAction): PlayerState {
       const position = Math.floor(s.position);
       if (s.bookmarks.some((b) => b.position === position)) return s;
       const id = s.bookmarks.reduce((m, b) => Math.max(m, b.id), 0) + 1;
-      const mark = { id, position, chapter: chapterAt(s.book, position), createdAt: a.now ?? new Date().toISOString() };
+      const mark: Bookmark = {
+        id,
+        position,
+        chapter: chapterAt(s.book, position),
+        createdAt: a.now ?? new Date().toISOString(),
+        note: "",
+        tags: [],
+      };
       return { ...s, bookmarks: [...s.bookmarks, mark].sort((x, y) => x.position - y.position) };
     }
+    case "bookmarkNote": {
+      const note = a.note.slice(0, MAX_NOTE_LENGTH);
+      return editBookmark(s, a.id, (b) => (b.note === note ? b : { ...b, note }));
+    }
+    case "bookmarkTag": {
+      const typed = normalizeTag(a.tag);
+      if (!typed) return s;
+      // Reuse the spelling already used on another bookmark, so "music" joins "Music".
+      const tag = allTags(s.bookmarks).find((t) => sameTag(t, typed)) ?? typed;
+      return editBookmark(s, a.id, (b) => (b.tags.some((t) => sameTag(t, tag)) ? b : { ...b, tags: [...b.tags, tag] }));
+    }
+    case "bookmarkUntag":
+      return editBookmark(s, a.id, (b) => {
+        const tags = b.tags.filter((t) => !sameTag(t, a.tag));
+        return tags.length === b.tags.length ? b : { ...b, tags };
+      });
     case "chapterStart": {
       const i = chapterAt(s.book, s.position);
       const start = s.book.chapters[i]?.start ?? 0;
