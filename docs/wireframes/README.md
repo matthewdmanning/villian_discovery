@@ -127,6 +127,21 @@ Mobile layout: same screens stacked; tables collapse to cards (title + status + 
 └─────────────────────────────────────────────────┘
 ```
 
-Layout: player and bookmarks side by side when the content area is ≥48rem (container query, sidebar-aware); stacked below.
+Layout (desktop, `lg`+): player and bookmarks side by side when the content area is ≥48rem (container query, sidebar-aware), each twice the player's natural height; stacked below.
+
+Phone (below `lg`): bookmarks hidden. The bookmark icon (with count) opens them full screen:
+
+```
+┌ ← Bookmarks ──────── [ Add bookmark ] ┐
+│ Opening Credits                 0:00  │
+│ [Note…                             ]  │
+│ [Music ×] [🏷 Add tag ▾]               │
+│                                       │
+├───────────────────────────────────────┤
+│             [   Save   ]              │
+└───────────────────────────────────────┘
+```
+
+Edits are a draft until Save. ← or the system back gesture asks "Discard changes? Unsaved notes and tags will be lost." (Keep editing / Discard). Save and Discard return to the player.
 
 |◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks · tag menu: click toggles a tag; **New Tag** (pinned last) is the only way to create one. Bookmark tags are separate from book tags.

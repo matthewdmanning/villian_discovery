@@ -16,6 +16,7 @@ import {
   restoreBookmarks,
   restoreTagLibrary,
   SKIP_SECONDS,
+  sameBookmarkData,
 } from "../ui/src/lib/player.ts";
 
 const book = {
@@ -173,5 +174,44 @@ describe("bookmark notes and tags", () => {
       { id: 2, position: 800, chapter: 2, createdAt: "t", note: "", tags: [] },
     ]);
     expect(restoreBookmarks(book, "junk")).toEqual([]);
+  });
+});
+
+describe("bookmark drafts (phone sheet)", () => {
+  const base = () => {
+    const s = playerReducer(at(450), { type: "bookmark", now: "t" });
+    return playerReducer(s, { type: "createTag", id: 1, name: "Music" });
+  };
+
+  it("compares bookmark data by value", () => {
+    const s = base();
+    expect(sameBookmarkData(s, s)).toBe(true);
+    const edited = playerReducer(s, { type: "bookmarkNote", id: 1, note: "x" });
+    expect(sameBookmarkData(s, edited)).toBe(false);
+    const reverted = playerReducer(edited, { type: "bookmarkNote", id: 1, note: "" });
+    expect(sameBookmarkData(s, reverted)).toBe(true);
+  });
+
+  it("commits a draft with setBookmarks, keeping playback state", () => {
+    const live = { ...base(), playing: true, rate: 1.5 };
+    const draft = playerReducer(live, { type: "bookmarkNote", id: 1, note: "saved" });
+    const next = playerReducer(live, {
+      type: "setBookmarks",
+      bookmarks: draft.bookmarks,
+      tagLibrary: draft.tagLibrary,
+    });
+    expect(next.bookmarks[0].note).toBe("saved");
+    expect(next.tagLibrary).toEqual(["Music"]);
+    expect(next).toMatchObject({ playing: true, rate: 1.5, position: 450 });
+  });
+
+  it("re-validates committed drafts", () => {
+    const next = playerReducer(base(), {
+      type: "setBookmarks",
+      bookmarks: [{ id: 1, position: 5, tags: ["New"] }, { position: 9 }],
+      tagLibrary: [],
+    });
+    expect(next.bookmarks).toEqual([{ id: 1, position: 5, chapter: 0, createdAt: "", note: "", tags: ["New"] }]);
+    expect(next.tagLibrary).toEqual(["New"]);
   });
 });

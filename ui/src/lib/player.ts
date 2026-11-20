@@ -64,6 +64,15 @@ export function mergeTags(...lists: readonly unknown[]): string[] {
   return out.sort((a, b) => a.localeCompare(b));
 }
 
+/** True when two states hold the same bookmarks and tag library, by value. */
+export function sameBookmarkData(
+  a: Pick<PlayerState, "bookmarks" | "tagLibrary">,
+  b: Pick<PlayerState, "bookmarks" | "tagLibrary">,
+): boolean {
+  if (a.bookmarks === b.bookmarks && a.tagLibrary === b.tagLibrary) return true;
+  return JSON.stringify([a.bookmarks, a.tagLibrary]) === JSON.stringify([b.bookmarks, b.tagLibrary]);
+}
+
 /** Rebuilds the tag library from saved data; tags already on bookmarks are always included. */
 export function restoreTagLibrary(saved: unknown, bookmarks: readonly Bookmark[]): string[] {
   // Bookmark spellings first, so the library matches tags already applied.
@@ -105,6 +114,7 @@ export type PlayerAction =
   | { type: "bookmark"; now?: string }
   | { type: "bookmarkNote"; id: number; note: string }
   | { type: "createTag"; name: string; id?: number }
+  | { type: "setBookmarks"; bookmarks: Bookmark[]; tagLibrary: string[] }
   | { type: "bookmarkTag"; id: number; tag: string }
   | { type: "bookmarkUntag"; id: number; tag: string }
   | { type: "chapterStart" }
@@ -184,6 +194,11 @@ export function playerReducer(s: PlayerState, a: PlayerAction): PlayerState {
       const note = a.note.slice(0, MAX_NOTE_LENGTH);
       return editBookmark(s, a.id, (b) => (b.note === note ? b : { ...b, note }));
     }
+    case "setBookmarks": // Commits a draft (mobile bookmark sheet). Re-validated so a draft can't break invariants.
+      {
+        const bookmarks = restoreBookmarks(s.book, a.bookmarks);
+        return { ...s, bookmarks, tagLibrary: restoreTagLibrary(a.tagLibrary, bookmarks) };
+      }
     case "createTag": {
       const name = normalizeTag(a.name);
       if (!name) return s;

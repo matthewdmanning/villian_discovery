@@ -313,7 +313,21 @@
         {
           "id": "bookmarks",
           "components": [
+            {
+              "type": "button",
+              "label": "Bookmarks",
+              "action": "player-open-bookmarks",
+              "hint": "Phone only: opens bookmarks full screen."
+            },
             { "type": "button", "label": "Add bookmark", "action": "player-bookmark" },
+            {
+              "type": "button",
+              "label": "Save",
+              "action": "player-save-bookmarks",
+              "primary": true,
+              "hint": "Phone sheet: commits draft edits and returns to the player."
+            },
+            { "type": "confirm", "label": "Discard changes?", "hint": "Unsaved notes and tags will be lost." },
             { "type": "filter", "label": "Filter by tag" },
             {
               "type": "menu",

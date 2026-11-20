@@ -1,4 +1,6 @@
 import {
+  ArrowLeft,
+  Bookmark as BookmarkIcon,
   BookmarkPlus,
   Check,
   ChevronDown,
@@ -9,6 +11,7 @@ import {
   Play,
   Plus,
   Rewind,
+  Save,
   SkipBack,
   SkipForward,
   Tag,
@@ -17,6 +20,7 @@ import {
 import type { ComponentType } from "react";
 import { useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { Empty, Panel, Screen, sz } from "../components/ui.tsx";
+import { useIsPhone } from "../lib/layout.ts";
 import {
   type Bookmark,
   chapterAt,
@@ -37,6 +41,7 @@ import {
   playerReducer,
   restoreBookmarks,
   restoreTagLibrary,
+  sameBookmarkData,
 } from "../lib/player.ts";
 import { labelForAction } from "../lib/spec.ts";
 
@@ -276,6 +281,189 @@ function BookmarkItem(props: { mark: Bookmark; chapter: string; library: string[
   );
 }
 
+function AddBookmark({ onClick }: { onClick(): void }) {
+  return (
+    <button type="button" className={`btn btn-pop btn-secondary ${sz("btn")}`} onClick={onClick}>
+      <BookmarkPlus className="size-4" />
+      {labelForAction("player", "player-bookmark", "Add bookmark")}
+    </button>
+  );
+}
+
+/** Tag filter and bookmark rows. `dispatch` is the live player on desktop, a draft on the phone sheet. */
+function BookmarkList({ state, dispatch }: { state: PlayerState; dispatch(a: PlayerAction): void }) {
+  const tags = state.tagLibrary;
+  const [picked, setFilter] = useState<string>();
+  // A filter whose tag no longer exists shows everything.
+  const filter = picked !== undefined && tags.includes(picked) ? picked : undefined;
+  const shown = filter ? state.bookmarks.filter((b) => hasTag(b, filter)) : state.bookmarks;
+  if (state.bookmarks.length === 0)
+    return <Empty icon={<BookmarkPlus className="size-6" />} title="No bookmarks yet" />;
+  return (
+    <>
+      {tags.length > 0 && (
+        <fieldset className="mb-2 flex flex-wrap items-center gap-2">
+          <legend className="sr-only">Filter by tag</legend>
+          {[undefined, ...tags].map((t) => (
+            <button
+              key={t ?? ""}
+              type="button"
+              aria-pressed={filter === t}
+              className={`btn btn-xs rounded-full ${filter === t ? "btn-primary" : "btn-ghost"}`}
+              onClick={() => setFilter(t)}
+            >
+              {t ?? "All"}
+            </button>
+          ))}
+        </fieldset>
+      )}
+      <ul className="divide-y-2 divide-base-200">
+        {shown.map((b) => (
+          <BookmarkItem
+            key={b.id}
+            mark={b}
+            chapter={state.book.chapters[b.chapter]?.title ?? ""}
+            library={tags}
+            dispatch={dispatch}
+          />
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * Phone: bookmarks open full screen over the player. Edits are a draft until Save.
+ * Back (header arrow or the system back gesture) asks before discarding unsaved edits.
+ * Save and Discard both return to the player. Seeking from a row acts on the live player.
+ */
+function BookmarkSheet(props: { live: PlayerState; liveDispatch(a: PlayerAction): void; onClose(): void }) {
+  const { live, liveDispatch, onClose } = props;
+  const [draft, draftDispatch] = useReducer(playerReducer, live);
+  const dirty = !sameBookmarkData(draft, live);
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const closing = useRef(false);
+  const confirm = useRef<HTMLDialogElement>(null);
+  const back = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
+  const confirmId = useId();
+
+  const dispatch = (a: PlayerAction) => {
+    if (a.type === "seek") liveDispatch(a);
+    // New bookmarks use the live position; the draft's copy went stale when the sheet opened.
+    else if (a.type === "bookmark") {
+      draftDispatch({ type: "seek", position: live.position });
+      draftDispatch(a);
+    } else draftDispatch(a);
+  };
+
+  // The sheet owns one history entry, so the system back gesture comes here instead of leaving the app.
+  useEffect(() => {
+    history.pushState({ playerSheet: true }, "");
+    const onPop = () => {
+      if (closing.current || !dirtyRef.current) {
+        onClose();
+        return;
+      }
+      // Unsaved edits: restore the entry and ask.
+      history.pushState({ playerSheet: true }, "");
+      if (!confirm.current?.open) confirm.current?.showModal();
+    };
+    const onUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current) e.preventDefault();
+    };
+    addEventListener("popstate", onPop);
+    addEventListener("beforeunload", onUnload);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    back.current?.focus();
+    return () => {
+      removeEventListener("popstate", onPop);
+      removeEventListener("beforeunload", onUnload);
+      document.body.style.overflow = overflow;
+    };
+  }, [onClose]);
+
+  /** Leaves through history so the sheet's entry is consumed; `onPop` then closes. */
+  const leave = () => {
+    closing.current = true;
+    history.back();
+  };
+  const requestBack = () => {
+    if (dirty) confirm.current?.showModal();
+    else leave();
+  };
+  const save = () => {
+    if (dirty) liveDispatch({ type: "setBookmarks", bookmarks: draft.bookmarks, tagLibrary: draft.tagLibrary });
+    leave();
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-50 flex flex-col bg-base-100"
+    >
+      <header className="flex items-center gap-2 border-b-2 border-pop pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 px-safe">
+        <button
+          ref={back}
+          type="button"
+          aria-label="Back to player"
+          className="btn btn-ghost btn-circle"
+          onClick={requestBack}
+        >
+          <ArrowLeft className="size-5" />
+        </button>
+        <h2 id={titleId} className="flex-1 font-display text-xl font-semibold">
+          Bookmarks
+        </h2>
+        <AddBookmark onClick={() => dispatch({ type: "bookmark" })} />
+      </header>
+      <div className="flex-1 overflow-y-auto px-safe py-4">
+        <BookmarkList state={draft} dispatch={dispatch} />
+      </div>
+      <footer className="border-t-2 border-pop bg-base-100 pt-3 px-safe pb-safe">
+        <button type="button" className="btn btn-primary btn-pop btn-block" onClick={save}>
+          <Save className="size-4" />
+          {labelForAction("player", "player-save-bookmarks", "Save")}
+        </button>
+      </footer>
+      <dialog ref={confirm} aria-labelledby={confirmId} className="modal modal-bottom sm:modal-middle">
+        <div className="modal-box border-2 border-pop pb-safe shadow-pop">
+          <h3 id={confirmId} className="text-xl font-semibold">
+            Discard changes?
+          </h3>
+          <p className="py-3 opacity-80">Unsaved notes and tags will be lost.</p>
+          <div className="modal-action">
+            <form method="dialog">
+              <button type="submit" className="btn btn-ghost">
+                Keep editing
+              </button>
+            </form>
+            <button
+              type="button"
+              className="btn btn-error btn-pop"
+              onClick={() => {
+                confirm.current?.close();
+                leave();
+              }}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+        <form method="dialog" className="modal-backdrop">
+          <button type="submit" aria-label="Close">
+            close
+          </button>
+        </form>
+      </dialog>
+    </div>
+  );
+}
+
 /** Use this screen to operate the audiobook control panel against the demo title. */
 export function Player() {
   const [s, dispatch] = useReducer(playerReducer, undefined, load);
@@ -283,11 +471,9 @@ export function Player() {
   const ci = chapterAt(book, s.position);
   const chapter = book.chapters[ci]!;
   const end = chapterEnd(book, ci);
-  const tags = s.tagLibrary;
-  const [picked, setFilter] = useState<string>();
-  // A filter whose tag no longer exists shows everything.
-  const filter = picked !== undefined && tags.includes(picked) ? picked : undefined;
-  const shown = filter ? s.bookmarks.filter((b) => hasTag(b, filter)) : s.bookmarks;
+  const phone = useIsPhone();
+  // Once open, the sheet stays until saved or discarded, even if the window widens.
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     if (!s.playing) return;
@@ -312,7 +498,8 @@ export function Player() {
       {/* Side by side when the content area is ≥48rem (sidebar-aware); stacked otherwise. */}
       <div className="@container">
         <div className="grid grid-cols-1 items-start gap-6 @3xl:grid-cols-2">
-          <Panel>
+          {/* Side by side, both panels are twice the player's natural height (~16.5rem); controls spread to fill. */}
+          <Panel className="@3xl:flex @3xl:min-h-[33rem] @3xl:flex-col @3xl:justify-between">
             <div className="flex items-center gap-4">
               <div className="grid size-16 shrink-0 place-items-center rounded-box border-2 border-pop bg-primary text-primary-content shadow-pop-sm">
                 <Headphones className="size-8" />
@@ -324,7 +511,25 @@ export function Player() {
                   {chapter.title}
                 </p>
               </div>
-              <span className="badge badge-accent badge-sm ms-auto self-start font-semibold">demo</span>
+              <div className="ms-auto flex flex-col items-end gap-2 self-start">
+                <span className="badge badge-accent badge-sm font-semibold">demo</span>
+                {phone && (
+                  <button
+                    type="button"
+                    aria-haspopup="dialog"
+                    aria-label={`${labelForAction("player", "player-open-bookmarks", "Bookmarks")} (${s.bookmarks.length})`}
+                    className="btn btn-pop btn-circle btn-secondary indicator"
+                    onClick={() => setSheetOpen(true)}
+                  >
+                    <BookmarkIcon className="size-5" />
+                    {s.bookmarks.length > 0 && (
+                      <span className="indicator-item badge badge-primary badge-xs tabular-nums">
+                        {s.bookmarks.length}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="mt-5 space-y-1">
@@ -416,57 +621,22 @@ export function Player() {
             </div>
           </Panel>
 
-          <Panel
-            title={
-              <span className="flex items-center justify-between gap-3">
-                Bookmarks
-                <button
-                  type="button"
-                  className={`btn btn-pop btn-secondary ${sz("btn")}`}
-                  onClick={() => dispatch({ type: "bookmark" })}
-                >
-                  <BookmarkPlus className="size-4" />
-                  {labelForAction("player", "player-bookmark", "Add bookmark")}
-                </button>
-              </span>
-            }
-          >
-            {s.bookmarks.length === 0 ? (
-              <Empty icon={<BookmarkPlus className="size-6" />} title="No bookmarks yet" />
-            ) : (
-              <>
-                {tags.length > 0 && (
-                  <fieldset className="mb-2 flex flex-wrap items-center gap-2">
-                    <legend className="sr-only">Filter by tag</legend>
-                    {[undefined, ...tags].map((t) => (
-                      <button
-                        key={t ?? ""}
-                        type="button"
-                        aria-pressed={filter === t}
-                        className={`btn btn-xs rounded-full ${filter === t ? "btn-primary" : "btn-ghost"}`}
-                        onClick={() => setFilter(t)}
-                      >
-                        {t ?? "All"}
-                      </button>
-                    ))}
-                  </fieldset>
-                )}
-                <ul className="divide-y-2 divide-base-200">
-                  {shown.map((b) => (
-                    <BookmarkItem
-                      key={b.id}
-                      mark={b}
-                      chapter={book.chapters[b.chapter]?.title ?? ""}
-                      library={tags}
-                      dispatch={dispatch}
-                    />
-                  ))}
-                </ul>
-              </>
-            )}
-          </Panel>
+          {!phone && (
+            <Panel
+              className="@3xl:min-h-[33rem]"
+              title={
+                <span className="flex items-center justify-between gap-3">
+                  Bookmarks
+                  <AddBookmark onClick={() => dispatch({ type: "bookmark" })} />
+                </span>
+              }
+            >
+              <BookmarkList state={s} dispatch={dispatch} />
+            </Panel>
+          )}
         </div>
       </div>
+      {sheetOpen && <BookmarkSheet live={s} liveDispatch={dispatch} onClose={() => setSheetOpen(false)} />}
     </Screen>
   );
 }
