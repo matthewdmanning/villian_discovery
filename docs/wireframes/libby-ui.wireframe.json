@@ -278,6 +278,46 @@
           ]
         }
       ]
+    },
+    {
+      "id": "player",
+      "title": "Audiobook player",
+      "cli": "",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "now-playing",
+          "components": [
+            { "type": "output", "label": "Now playing", "hint": "Demo title. Libby audio is not streamed." },
+            { "type": "slider", "label": "Position" }
+          ]
+        },
+        {
+          "id": "transport",
+          "components": [
+            { "type": "button", "label": "Beginning of chapter", "action": "player-chapter-start" },
+            { "type": "button", "label": "Rewind 30 seconds", "action": "player-rewind" },
+            { "type": "button", "label": "Play / pause", "action": "player-toggle", "primary": true },
+            { "type": "button", "label": "Fast forward 30 seconds", "action": "player-forward" },
+            { "type": "button", "label": "End of chapter", "action": "player-chapter-end" }
+          ]
+        },
+        {
+          "id": "speed",
+          "components": [
+            { "type": "button", "label": "Slower (−5%)", "action": "player-slower" },
+            { "type": "output", "label": "Playback speed" },
+            { "type": "button", "label": "Faster (+5%)", "action": "player-faster" }
+          ]
+        },
+        {
+          "id": "bookmarks",
+          "components": [
+            { "type": "button", "label": "Add bookmark", "action": "player-bookmark" },
+            { "type": "table", "label": "Bookmarks", "columns": ["position", "chapter"] }
+          ]
+        }
+      ]
     }
   ]
 }

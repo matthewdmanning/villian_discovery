@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Headphones,
   ListChecks,
   Moon,
   Plug,
@@ -19,6 +20,7 @@ import { useTheme } from "./lib/theme.ts";
 import { Books } from "./screens/Books.tsx";
 import { Cards } from "./screens/Cards.tsx";
 import { Connect } from "./screens/Connect.tsx";
+import { Player } from "./screens/Player.tsx";
 import { Results } from "./screens/Results.tsx";
 import { SearchScreen } from "./screens/Search.tsx";
 import { Settings } from "./screens/Settings.tsx";
@@ -32,6 +34,7 @@ const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; sho
   search: { icon: Search, short: "Search", view: SearchScreen },
   results: { icon: ListChecks, short: "Results", view: Results },
   sync: { icon: RefreshCw, short: "Sync", view: SyncScreen },
+  player: { icon: Headphones, short: "Player", view: Player },
 };
 
 const mobileOnly = options.layout === "mobile";

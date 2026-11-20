@@ -22,7 +22,7 @@ Rules (checked by `test/wireframe.test.ts`):
 - Screen ids are unique; `defaultScreen` is an enabled screen.
 - Results columns ⊆ `BookResult` fields.
 
-Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliation preview and has no CLI command.
+Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliation preview and has no CLI command. Player is a browser-only audiobook control panel (demo title) and has no CLI command.
 
 ## Screens
 
@@ -101,3 +101,20 @@ Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliat
 ```
 
 Mobile layout: same screens stacked; tables collapse to cards (title + status + one detail line).
+
+### player — no CLI
+
+```
+┌ Audiobook player ───────────────────────────────┐
+│ [♫] The Lighthouse Ledger            (demo)     │
+│     Chapter 1: The Keeper                       │
+│ ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│ 1:16        Chapter 0:31 / 37:15     −4:10:43   │
+│        |◁   ◁◁   [ ▶ / ❚❚ ]   ▷▷   ▷|           │
+│              (−)   1.05×   (+)                  │
+├ Bookmarks ─────────────────── [ Add bookmark ] ─┤
+│ Chapter 1: The Keeper                    1:15   │
+└─────────────────────────────────────────────────┘
+```
+
+|◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks.
