@@ -127,4 +127,6 @@ Mobile layout: same screens stacked; tables collapse to cards (title + status + 
 └─────────────────────────────────────────────────┘
 ```
 
+Layout: player and bookmarks side by side when the content area is ≥48rem (container query, sidebar-aware); stacked below.
+
 |◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks · tag menu: click toggles a tag; **New Tag** (pinned last) is the only way to create one. Bookmark tags are separate from book tags.

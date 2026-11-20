@@ -309,159 +309,164 @@ export function Player() {
   const toggleLabel = s.playing ? "Pause" : "Play";
   return (
     <Screen id="player">
-      <Panel>
-        <div className="flex items-center gap-4">
-          <div className="grid size-16 shrink-0 place-items-center rounded-box border-2 border-pop bg-primary text-primary-content shadow-pop-sm">
-            <Headphones className="size-8" />
-          </div>
-          <div className="min-w-0">
-            <p className="truncate font-display text-xl font-semibold">{book.title}</p>
-            <p className="text-sm opacity-70">{book.author}</p>
-            <p className="truncate font-semibold" aria-live="polite">
-              {chapter.title}
-            </p>
-          </div>
-          <span className="badge badge-accent badge-sm ms-auto self-start font-semibold">demo</span>
-        </div>
+      {/* Side by side when the content area is ≥48rem (sidebar-aware); stacked otherwise. */}
+      <div className="@container">
+        <div className="grid grid-cols-1 items-start gap-6 @3xl:grid-cols-2">
+          <Panel>
+            <div className="flex items-center gap-4">
+              <div className="grid size-16 shrink-0 place-items-center rounded-box border-2 border-pop bg-primary text-primary-content shadow-pop-sm">
+                <Headphones className="size-8" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate font-display text-xl font-semibold">{book.title}</p>
+                <p className="text-sm opacity-70">{book.author}</p>
+                <p className="truncate font-semibold" aria-live="polite">
+                  {chapter.title}
+                </p>
+              </div>
+              <span className="badge badge-accent badge-sm ms-auto self-start font-semibold">demo</span>
+            </div>
 
-        <div className="mt-5 space-y-1">
-          <input
-            type="range"
-            aria-label="Position"
-            className="range range-primary range-sm w-full"
-            min={0}
-            max={book.duration}
-            step={1}
-            value={Math.floor(s.position)}
-            onChange={(e) => dispatch({ type: "seek", position: Number(e.target.value) })}
-          />
-          <div className="flex justify-between text-sm tabular-nums opacity-80">
-            <span>{formatTime(s.position)}</span>
-            <span>
-              Chapter {formatTime(s.position - chapter.start)} / {formatTime(end - chapter.start)}
-            </span>
-            <span>−{formatTime(book.duration - s.position)}</span>
-          </div>
-        </div>
+            <div className="mt-5 space-y-1">
+              <input
+                type="range"
+                aria-label="Position"
+                className="range range-primary range-sm w-full"
+                min={0}
+                max={book.duration}
+                step={1}
+                value={Math.floor(s.position)}
+                onChange={(e) => dispatch({ type: "seek", position: Number(e.target.value) })}
+              />
+              <div className="flex justify-between text-sm tabular-nums opacity-80">
+                <span>{formatTime(s.position)}</span>
+                <span>
+                  Chapter {formatTime(s.position - chapter.start)} / {formatTime(end - chapter.start)}
+                </span>
+                <span>−{formatTime(book.duration - s.position)}</span>
+              </div>
+            </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-          <Control
-            action="chapterStart"
-            spec="player-chapter-start"
-            fallback="Beginning of chapter"
-            icon={SkipBack}
-            dispatch={dispatch}
-          />
-          <Control
-            action="rewind"
-            spec="player-rewind"
-            fallback="Rewind 30 seconds"
-            icon={Rewind}
-            disabled={s.position <= 0}
-            dispatch={dispatch}
-          />
-          <button
-            type="button"
-            aria-label={toggleLabel}
-            title={toggleLabel}
-            className="btn btn-pop btn-circle btn-primary btn-lg size-16"
-            onClick={() => dispatch({ type: "toggle" })}
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+              <Control
+                action="chapterStart"
+                spec="player-chapter-start"
+                fallback="Beginning of chapter"
+                icon={SkipBack}
+                dispatch={dispatch}
+              />
+              <Control
+                action="rewind"
+                spec="player-rewind"
+                fallback="Rewind 30 seconds"
+                icon={Rewind}
+                disabled={s.position <= 0}
+                dispatch={dispatch}
+              />
+              <button
+                type="button"
+                aria-label={toggleLabel}
+                title={toggleLabel}
+                className="btn btn-pop btn-circle btn-primary btn-lg size-16"
+                onClick={() => dispatch({ type: "toggle" })}
+              >
+                {s.playing ? <Pause className="size-7" /> : <Play className="size-7" />}
+              </button>
+              <Control
+                action="forward"
+                spec="player-forward"
+                fallback="Fast forward 30 seconds"
+                icon={FastForward}
+                disabled={s.position >= book.duration}
+                dispatch={dispatch}
+              />
+              <Control
+                action="chapterEnd"
+                spec="player-chapter-end"
+                fallback="End of chapter"
+                icon={SkipForward}
+                disabled={s.position >= book.duration}
+                dispatch={dispatch}
+              />
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <Control
+                action="slower"
+                spec="player-slower"
+                fallback="Slower (−5%)"
+                icon={Minus}
+                disabled={s.rate <= MIN_RATE}
+                dispatch={dispatch}
+              />
+              <output
+                aria-label="Playback speed"
+                className="min-w-20 text-center font-display text-xl font-semibold tabular-nums"
+              >
+                {formatRate(s.rate)}
+              </output>
+              <Control
+                action="faster"
+                spec="player-faster"
+                fallback="Faster (+5%)"
+                icon={Plus}
+                disabled={s.rate >= MAX_RATE}
+                dispatch={dispatch}
+              />
+            </div>
+          </Panel>
+
+          <Panel
+            title={
+              <span className="flex items-center justify-between gap-3">
+                Bookmarks
+                <button
+                  type="button"
+                  className={`btn btn-pop btn-secondary ${sz("btn")}`}
+                  onClick={() => dispatch({ type: "bookmark" })}
+                >
+                  <BookmarkPlus className="size-4" />
+                  {labelForAction("player", "player-bookmark", "Add bookmark")}
+                </button>
+              </span>
+            }
           >
-            {s.playing ? <Pause className="size-7" /> : <Play className="size-7" />}
-          </button>
-          <Control
-            action="forward"
-            spec="player-forward"
-            fallback="Fast forward 30 seconds"
-            icon={FastForward}
-            disabled={s.position >= book.duration}
-            dispatch={dispatch}
-          />
-          <Control
-            action="chapterEnd"
-            spec="player-chapter-end"
-            fallback="End of chapter"
-            icon={SkipForward}
-            disabled={s.position >= book.duration}
-            dispatch={dispatch}
-          />
-        </div>
-
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <Control
-            action="slower"
-            spec="player-slower"
-            fallback="Slower (−5%)"
-            icon={Minus}
-            disabled={s.rate <= MIN_RATE}
-            dispatch={dispatch}
-          />
-          <output
-            aria-label="Playback speed"
-            className="min-w-20 text-center font-display text-xl font-semibold tabular-nums"
-          >
-            {formatRate(s.rate)}
-          </output>
-          <Control
-            action="faster"
-            spec="player-faster"
-            fallback="Faster (+5%)"
-            icon={Plus}
-            disabled={s.rate >= MAX_RATE}
-            dispatch={dispatch}
-          />
-        </div>
-      </Panel>
-
-      <Panel
-        title={
-          <span className="flex items-center justify-between gap-3">
-            Bookmarks
-            <button
-              type="button"
-              className={`btn btn-pop btn-secondary ${sz("btn")}`}
-              onClick={() => dispatch({ type: "bookmark" })}
-            >
-              <BookmarkPlus className="size-4" />
-              {labelForAction("player", "player-bookmark", "Add bookmark")}
-            </button>
-          </span>
-        }
-      >
-        {s.bookmarks.length === 0 ? (
-          <Empty icon={<BookmarkPlus className="size-6" />} title="No bookmarks yet" />
-        ) : (
-          <>
-            {tags.length > 0 && (
-              <fieldset className="mb-2 flex flex-wrap items-center gap-2">
-                <legend className="sr-only">Filter by tag</legend>
-                {[undefined, ...tags].map((t) => (
-                  <button
-                    key={t ?? ""}
-                    type="button"
-                    aria-pressed={filter === t}
-                    className={`btn btn-xs rounded-full ${filter === t ? "btn-primary" : "btn-ghost"}`}
-                    onClick={() => setFilter(t)}
-                  >
-                    {t ?? "All"}
-                  </button>
-                ))}
-              </fieldset>
+            {s.bookmarks.length === 0 ? (
+              <Empty icon={<BookmarkPlus className="size-6" />} title="No bookmarks yet" />
+            ) : (
+              <>
+                {tags.length > 0 && (
+                  <fieldset className="mb-2 flex flex-wrap items-center gap-2">
+                    <legend className="sr-only">Filter by tag</legend>
+                    {[undefined, ...tags].map((t) => (
+                      <button
+                        key={t ?? ""}
+                        type="button"
+                        aria-pressed={filter === t}
+                        className={`btn btn-xs rounded-full ${filter === t ? "btn-primary" : "btn-ghost"}`}
+                        onClick={() => setFilter(t)}
+                      >
+                        {t ?? "All"}
+                      </button>
+                    ))}
+                  </fieldset>
+                )}
+                <ul className="divide-y-2 divide-base-200">
+                  {shown.map((b) => (
+                    <BookmarkItem
+                      key={b.id}
+                      mark={b}
+                      chapter={book.chapters[b.chapter]?.title ?? ""}
+                      library={tags}
+                      dispatch={dispatch}
+                    />
+                  ))}
+                </ul>
+              </>
             )}
-            <ul className="divide-y-2 divide-base-200">
-              {shown.map((b) => (
-                <BookmarkItem
-                  key={b.id}
-                  mark={b}
-                  chapter={book.chapters[b.chapter]?.title ?? ""}
-                  library={tags}
-                  dispatch={dispatch}
-                />
-              ))}
-            </ul>
-          </>
-        )}
-      </Panel>
+          </Panel>
+        </div>
+      </div>
     </Screen>
   );
 }
