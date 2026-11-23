@@ -29,9 +29,9 @@
   },
   "homepage": "https://github.com/matthewdmanning/villian_discovery#readme",
   "dependencies": {
-    "commander": "^15.0.0",
+    "commander": "^15.1.0",
     "csv-parse": "^7.0.3",
-    "playwright-core": "1.64.1",
+    "playwright-core": "1.65.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
