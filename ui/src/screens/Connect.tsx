@@ -28,26 +28,28 @@ const codeField = screen("connect")
 export function Connect() {
   const { api, config, set, go, login } = useStore();
   const tokenFile = config.auth.tokenFile;
-  const [connected, setConnected] = useState<boolean>();
+  const [connection, setConnection] = useState<"checking" | "connected" | "disconnected" | "check-error">("checking");
+  const [checkRevision, setCheckRevision] = useState(0);
   const [code, setCode] = useState("");
   const controller = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [method, setMethod] = useState<SignInMethod>("library card");
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retrying explicitly rechecks the connection.
   useEffect(() => {
     let cancelled = false;
-    setConnected(undefined);
+    setConnection("checking");
     setError(undefined);
     setBusy(false);
     setCode("");
     api.status(tokenFile).then(
       (s) => {
-        if (!cancelled) setConnected(s.connected);
+        if (!cancelled) setConnection(s.connected ? "connected" : "disconnected");
       },
       (err) => {
         if (cancelled) return;
-        setConnected(false);
+        setConnection("check-error");
         setError((err as Error).message);
       },
     );
@@ -55,17 +57,11 @@ export function Connect() {
       cancelled = true;
       controller.current?.abort();
     };
-  }, [api, tokenFile]);
-
-  // Start sign-in as soon as the app knows it is not connected.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: start once per "not connected" result.
-  useEffect(() => {
-    if (connected === false && !error) void signIn();
-  }, [connected]);
+  }, [api, tokenFile, checkRevision]);
 
   async function signIn(e?: FormEvent) {
     e?.preventDefault();
-    if (busy) return;
+    if (busy || connection !== "disconnected") return;
     setBusy(true);
     setError(undefined);
     const attempt = new AbortController();
@@ -74,10 +70,12 @@ export function Connect() {
       await login({
         method: method === "phone code" ? "device-code" : "browser",
         signal: attempt.signal,
-        onCode: (next) => setCode(next),
+        onCode: (next) => {
+          if (!attempt.signal.aborted) setCode(next);
+        },
       });
       if (!attempt.signal.aborted) {
-        setConnected(true);
+        setConnection("connected");
         setCode("");
       }
     } catch (err) {
@@ -90,48 +88,70 @@ export function Connect() {
     }
   }
 
-  function cancel() {
-    controller.current?.abort();
-    setBusy(false);
-    setCode("");
-  }
-
-  /** Use this function to switch sign-in methods; a running attempt stops so the new method can start. */
-  function choose(next: SignInMethod) {
-    cancel();
-    setMethod(next);
-  }
-
   return (
     <Screen id="connect">
       <div
         role="status"
-        className={`alert border-2 border-pop shadow-pop-sm ${connected ? "alert-success" : "alert-info"}`}
+        className={`alert border-2 border-pop shadow-pop-sm ${connection === "connected" ? "alert-success" : connection === "check-error" ? "alert-error" : "alert-info"}`}
       >
-        {connected ? <CircleCheck className="size-5" /> : <CircleDashed className="size-5" />}
+        {connection === "connected" ? <CircleCheck className="size-5" /> : <CircleDashed className="size-5" />}
         <span className="font-semibold">
-          {connected === undefined ? "Checking…" : connected ? "Connected" : "Not connected"}
+          {connection === "checking"
+            ? "Checking connection to Libby…"
+            : connection === "connected"
+              ? "Connected to Libby"
+              : connection === "check-error"
+                ? "Could not check connection"
+                : busy
+                  ? method === "phone code"
+                    ? code
+                      ? "Waiting for the setup code to be accepted"
+                      : "Getting a setup code…"
+                    : "Waiting for you to sign in to Libby"
+                  : "Not connected to Libby"}
         </span>
-        {connected && (
+        {connection === "connected" && (
           <button type="button" className="btn btn-sm btn-pop btn-neutral" onClick={() => go("books")}>
             Add books
           </button>
         )}
       </div>
 
-      {connected === false && (
+      {connection === "check-error" && (
+        <Panel className="max-w-xl">
+          <p role="alert" className="text-error">
+            {error}
+          </p>
+          <p className="mt-2">Your connection status is unknown. Try checking again.</p>
+          <button type="button" className="btn btn-primary btn-pop mt-4" onClick={() => setCheckRevision((n) => n + 1)}>
+            Retry connection check
+          </button>
+        </Panel>
+      )}
+
+      {connection === "disconnected" && (
         <Panel className="max-w-xl">
           <form onSubmit={signIn} className="space-y-2">
-            <Segmented<SignInMethod> label="Sign in with" value={method} choices={SIGN_IN_METHODS} onChange={choose} />
+            <fieldset disabled={busy}>
+              <Segmented<SignInMethod>
+                label="Sign in with"
+                value={method}
+                choices={SIGN_IN_METHODS}
+                onChange={setMethod}
+              />
+            </fieldset>
             <p className="text-sm opacity-70">
               {method === "phone code"
-                ? "This page shows a setup code. It continues on its own after your phone accepts it."
-                : "A Libby window opens. This page continues on its own after you finish there."}
+                ? "Get a setup code to enter in Libby on your phone. This page updates when the code is accepted."
+                : "Open a Libby window to sign in. This page updates when sign-in is complete."}
             </p>
             {method === "phone code" && (
               <Field label={codeField?.label ?? "Setup code"} hint={codeField?.hint}>
-                <output className="block font-mono text-2xl tracking-[0.3em] tabular-nums" aria-live="polite">
-                  {code || "Generate a code to connect this device"}
+                <output
+                  className={code ? "block font-mono text-2xl tracking-[0.3em] tabular-nums" : "block text-base"}
+                  aria-live="polite"
+                >
+                  {code || (busy ? "Getting code…" : "No code yet")}
                 </output>
                 {api.demo && <p className="text-sm opacity-70">Demo pairing completes automatically.</p>}
               </Field>
@@ -141,17 +161,21 @@ export function Connect() {
                 <li key={step}>{step}</li>
               ))}
             </ol>
-            {error && <p className="text-sm text-error">{error}</p>}
+            {error && (
+              <p role="alert" className="text-sm text-error">
+                Sign-in failed: {error}
+              </p>
+            )}
+            {busy && !api.demo && (
+              <p className="text-sm opacity-70">Sign-in continues even if you leave this screen.</p>
+            )}
             <div className="flex justify-end gap-2 pt-2">
-              {busy && (
-                <button type="button" className="btn btn-ghost" onClick={cancel}>
-                  Cancel
-                </button>
-              )}
               <button type="submit" className={`btn btn-primary btn-pop ${sz("btn")}`} disabled={busy}>
                 {busy ? <span className="loading loading-spinner loading-sm" /> : <Plug className="size-4" />}
                 {busy
-                  ? "Waiting…"
+                  ? method === "phone code"
+                    ? "Waiting for phone…"
+                    : "Waiting for Libby…"
                   : error
                     ? "Try again"
                     : method === "phone code"
