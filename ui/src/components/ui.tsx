@@ -10,18 +10,28 @@ export const heading = "text-lg font-semibold";
 export const sz = (kind: "btn" | "input" | "select" | "toggle" | "checkbox" | "textarea" | "table" | "badge") =>
   compact ? `${kind}-sm` : "";
 
-export function Screen({ id, actions, children }: { id: ScreenId; actions?: ReactNode; children: ReactNode }) {
+export function Screen({
+  id,
+  actions,
+  children,
+  nested = false,
+}: {
+  id: ScreenId;
+  actions?: ReactNode;
+  children: ReactNode;
+  nested?: boolean;
+}) {
   const s = screen(id);
+  const Title = nested ? "h2" : "h1";
   return (
     <section
       aria-labelledby={`${id}-title`}
       className={`mx-auto w-full max-w-5xl ${compact ? "space-y-4" : "space-y-6"}`}
     >
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 id={`${id}-title`} className="text-2xl font-semibold sm:text-3xl">
+        <Title id={`${id}-title`} className="text-2xl font-semibold sm:text-3xl">
           {s?.title}
-        </h1>
-        {s?.cli && <kbd className="kbd kbd-sm font-mono opacity-70">libby-shelf {s.cli}</kbd>}
+        </Title>
       </header>
       {children}
       {actions && <div className="flex flex-wrap items-center justify-end gap-3">{actions}</div>}
@@ -227,7 +237,9 @@ const STATUS_TONE: Record<ResultStatus, string> = {
 
 export function StatusBadge({ status }: { status: ResultStatus }) {
   return (
-    <span className={`badge whitespace-nowrap font-semibold ${STATUS_TONE[status]} ${sz("badge")}`}>{status}</span>
+    <span className={`badge whitespace-nowrap font-semibold ${STATUS_TONE[status]} ${sz("badge")}`}>
+      {status.replaceAll("-", " ")}
+    </span>
   );
 }
 

@@ -5,6 +5,7 @@ import { dash, Empty, Panel, Screen, sz } from "../components/ui.tsx";
 import type { Match } from "../lib/api.ts";
 import { screen } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
+import { Results } from "./Results.tsx";
 
 const queryLabel = screen("search")
   ?.regions.flatMap((r) => r.components)
@@ -16,14 +17,14 @@ const waitD = (m: Match) => (m.media.estimatedWaitDays ? `${m.media.estimatedWai
 
 function Avail({ m }: { m: Match }) {
   return m.media.isAvailable ? (
-    <span className="badge badge-success badge-sm font-semibold">now</span>
+    <span className="badge badge-success badge-sm font-semibold">Available</span>
   ) : (
-    <span className="badge badge-ghost badge-sm">wait</span>
+    <span className="badge badge-ghost badge-sm">Waitlist</span>
   );
 }
 
 export function SearchScreen() {
-  const { api, config } = useStore();
+  const { api, config, results } = useStore();
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -33,6 +34,7 @@ export function SearchScreen() {
     e.preventDefault();
     setBusy(true);
     setError(undefined);
+    setMatches(undefined);
     try {
       setMatches(await api.search(parseBookLine(q), config));
     } catch (err) {
@@ -44,6 +46,8 @@ export function SearchScreen() {
 
   return (
     <Screen id="search">
+      {results && <Results />}
+      <h2 className="text-xl font-semibold">Search the catalog</h2>
       <form onSubmit={submit} className="flex flex-col gap-3 sm:flex-row">
         <label className={`input input-lg w-full grow border-2 border-pop shadow-pop-sm ${error ? "input-error" : ""}`}>
           <Search aria-hidden className="size-5 opacity-60" />
@@ -71,11 +75,11 @@ export function SearchScreen() {
                   <tr>
                     <th>Card</th>
                     <th>Title</th>
-                    <th>Creator</th>
-                    <th>Type</th>
-                    <th className="text-end">Score t/a</th>
-                    <th>Avail</th>
-                    <th className="text-end">Copies</th>
+                    <th>Author</th>
+                    <th>Format</th>
+                    <th className="text-end">Match score</th>
+                    <th>Availability</th>
+                    <th className="text-end">Available / total</th>
                     <th className="text-end">Holds</th>
                     <th className="text-end">Wait</th>
                   </tr>
@@ -107,14 +111,24 @@ export function SearchScreen() {
                     <Avail m={m} />
                   </div>
                   <p className="text-sm opacity-70">
-                    {m.card.cardName} · {m.media.type?.id} · {copies(m)} copies · {waitD(m)}
+                    {[
+                      m.media.firstCreatorName,
+                      m.card.cardName ?? m.card.advantageKey,
+                      m.media.type?.id,
+                      `${copies(m)} copies available`,
+                      m.media.estimatedWaitDays !== undefined
+                        ? `${m.media.estimatedWaitDays} days estimated wait`
+                        : undefined,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                 </li>
               ))}
             </ul>
           </Panel>
         ) : (
-          <Empty icon={<Search className="size-7" />} title="No match" />
+          <Empty icon={<Search className="size-7" />} title="No matches found" />
         ))}
     </Screen>
   );

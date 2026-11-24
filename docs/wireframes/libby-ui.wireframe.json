@@ -151,7 +151,7 @@
     },
     {
       "id": "search",
-      "title": "Search preview",
+      "title": "Search & Results",
       "cli": "search <query>",
       "enabled": true,
       "regions": [

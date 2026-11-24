@@ -6,7 +6,7 @@ import { stripUndefined } from "../../../src/util.ts";
 import { ConfirmRun, dash, Empty, Panel, Screen, sz } from "../components/ui.tsx";
 import type { BookRequest } from "../lib/api.ts";
 import { parseBookDraft } from "../lib/books.ts";
-import { labelFor, screen } from "../lib/spec.ts";
+import { screen } from "../lib/spec.ts";
 import { type BookDraftEdit, useStore } from "../lib/store.tsx";
 
 const parts = screen("books")?.regions.flatMap((r) => r.components) ?? [];
@@ -75,7 +75,7 @@ export function Books() {
   ) => (
     <select
       aria-label={label}
-      className="select select-sm select-ghost w-full min-w-28"
+      className="select select-sm w-full min-w-0"
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value || undefined)}
     >
@@ -118,7 +118,10 @@ export function Books() {
               checked={config.dryRun}
               onChange={(e) => set("dryRun", e.target.checked)}
             />
-            {labelFor("books", "dryRun", "Dry run")}
+            <span>
+              Preview only{" "}
+              <span className="block text-sm font-normal opacity-70">No loans or holds will be placed</span>
+            </span>
           </label>
           <button
             type="button"
@@ -133,7 +136,7 @@ export function Books() {
             ) : (
               <Play className="size-5" />
             )}
-            {config.dryRun ? "Plan" : "Run"}
+            {config.dryRun ? "Preview results" : "Borrow or place holds"}
           </button>
         </>
       }
@@ -149,7 +152,7 @@ export function Books() {
         </div>
       )}
       <div className="grid gap-4 md:grid-cols-[1fr_14rem]">
-        <Panel className="flex flex-col gap-2">
+        <Panel className="flex flex-col gap-3">
           <label htmlFor="books-text" className="text-sm font-semibold">
             {textareaLabel}
           </label>
@@ -162,7 +165,12 @@ export function Books() {
               setDraft({ text: e.target.value, fileName: undefined });
             }}
           />
-          {parsed.error && <p className="text-sm text-error">{parsed.error}</p>}
+          <p className="text-sm opacity-70">Enter one title per line, or upload a list.</p>
+          {parsed.error && (
+            <p role="alert" className="text-sm text-error">
+              {parsed.error}
+            </p>
+          )}
           {!draft.text && (
             <button
               type="button"
@@ -186,6 +194,7 @@ export function Books() {
           >
             <FileUp className="size-8" />
             <span className="text-sm font-semibold">{draft.fileName ?? dropLabel}</span>
+            <span className="text-sm opacity-70">Choose a file or drag it here</span>
             <input
               type="file"
               className="sr-only"
@@ -256,7 +265,7 @@ export function Books() {
                   <li key={key} className="rounded-field border-2 border-base-300 p-3">
                     <p className="font-semibold">{dash(b.title ?? b.isbn ?? b.titleId)}</p>
                     <p className="text-sm opacity-70">{dash(b.author)}</p>
-                    <div className="mt-2 grid grid-cols-3 gap-2">
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
                       {c.format}
                       {c.action}
                       {c.libs}

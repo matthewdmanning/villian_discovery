@@ -31,7 +31,7 @@ export function Results() {
 
   if (!results)
     return (
-      <Screen id="results">
+      <Screen id="results" nested>
         {configError && (
           <div role="alert" className="alert alert-error border-2 border-pop">
             <p>{configError}</p>
@@ -64,7 +64,6 @@ export function Results() {
     if (configError) return;
     setBusy(true);
     setRunError(undefined);
-    setResults(undefined);
     try {
       setResults({ rows: await api.run(books, { ...config, dryRun: false }), dryRun: false });
       refreshCards();
@@ -78,6 +77,7 @@ export function Results() {
   return (
     <Screen
       id="results"
+      nested
       actions={
         <>
           <button
@@ -114,7 +114,7 @@ export function Results() {
       <dl className="surface grid grid-cols-3 gap-px overflow-hidden bg-base-300 p-0 sm:grid-cols-6">
         {STATS.map((s) => (
           <div key={s} className="bg-base-100 px-4 py-3">
-            <dt className="truncate text-xs opacity-70">{s}</dt>
+            <dt className="text-sm capitalize opacity-70">{s.replaceAll("-", " ")}</dt>
             <dd
               className={`font-display text-2xl font-semibold tabular-nums sm:text-3xl ${count(s) && s === "error" ? "text-error" : ""}`}
             >
@@ -141,7 +141,7 @@ export function Results() {
 
       <Panel>
         {!rows.length ? (
-          <p className="py-6 text-center opacity-70">Nothing here</p>
+          <p className="py-6 text-center opacity-70">No results in this category</p>
         ) : (
           <>
             <div className="hidden overflow-x-auto md:block">
