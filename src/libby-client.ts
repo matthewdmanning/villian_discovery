@@ -10,11 +10,15 @@ export const DEFAULT_SENTRY_BASE_URL = "https://sentry.libbyapp.com/";
  */
 export class LibbyClient {
   private readonly http: HttpClient;
+  private readonly tagsHttp: HttpClient;
   identityToken: string | undefined;
 
   constructor(opts: HttpOptions & { baseUrl?: string; identityToken?: string }) {
     this.identityToken = opts.identityToken;
     this.http = new HttpClient(opts.baseUrl ?? DEFAULT_SENTRY_BASE_URL, opts, () =>
+      this.identityToken ? { Authorization: `Bearer ${this.identityToken}` } : {},
+    );
+    this.tagsHttp = new HttpClient("https://vandal.libbyapp.com/", opts, () =>
       this.identityToken ? { Authorization: `Bearer ${this.identityToken}` } : {},
     );
   }
@@ -66,6 +70,11 @@ export class LibbyClient {
   /** Full account state: cards, loans, holds. */
   sync(signal?: AbortSignal): Promise<SyncResponse> {
     return this.http.request<SyncResponse>("chip/sync", { signal });
+  }
+
+  /** Read the experimental tags endpoint. Its response shape has not been verified. */
+  tags(signal?: AbortSignal): Promise<unknown> {
+    return this.tagsHttp.request("tags", { signal });
   }
 
   borrow(args: {

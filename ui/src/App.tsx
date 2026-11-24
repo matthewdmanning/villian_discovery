@@ -11,6 +11,7 @@ import {
   Search,
   SlidersHorizontal,
   Sun,
+  Tags,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { compact } from "./components/ui.tsx";
@@ -25,6 +26,7 @@ import { Results } from "./screens/Results.tsx";
 import { SearchScreen } from "./screens/Search.tsx";
 import { Settings } from "./screens/Settings.tsx";
 import { SyncScreen } from "./screens/Sync.tsx";
+import { TagsScreen } from "./screens/Tags.tsx";
 
 const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; short: string; view: () => ReactNode }> = {
   connect: { icon: Plug, short: "Connect", view: Connect },
@@ -35,6 +37,7 @@ const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; sho
   results: { icon: ListChecks, short: "Results", view: Results },
   sync: { icon: RefreshCw, short: "Sync", view: SyncScreen },
   player: { icon: Headphones, short: "Player", view: Player },
+  tags: { icon: Tags, short: "Tags", view: TagsScreen },
 };
 
 const navigationScreens = screens.filter((s) => s.id !== "results");

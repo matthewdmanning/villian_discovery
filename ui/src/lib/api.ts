@@ -29,6 +29,7 @@ export interface LibraryApi {
   /** Sign in to Libby: `browser` opens libbyapp.com; `device-code` shows a setup code through `onCode`. */
   login(tokenFile: string, options: LoginOptions): Promise<void>;
   cards(tokenFile: string): Promise<LibbyCard[]>;
+  tags(): Promise<unknown>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
   previewSync(options?: SyncPreviewOptions): Promise<SyncPlan>;
@@ -143,6 +144,10 @@ export const demoApi: LibraryApi = {
     if (options.method === "device-code") options.onCode("12345678", Date.now() + 60_000);
     await wait(600, options.signal);
     sessionStorageSet("demo-connected", "1");
+  },
+  async tags() {
+    await wait(250);
+    return { tags: [{ name: "Want to read" }, { name: "Favorites" }] };
   },
   async cards() {
     await wait(250);

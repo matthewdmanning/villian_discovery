@@ -155,6 +155,7 @@ const routes: Record<string, Handler> = {
     return {};
   },
   "GET /api/login/device-code": async () => ({ code: deviceCode }),
+  "GET /api/tags": async () => (await libby()).tags(),
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };

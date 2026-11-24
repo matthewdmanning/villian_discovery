@@ -280,6 +280,13 @@
       ]
     },
     {
+      "id": "tags",
+      "title": "Libby tags (experimental)",
+      "cli": "",
+      "enabled": true,
+      "regions": [{ "id": "tags", "components": [{ "type": "button", "label": "Load tags", "action": "load-tags" }] }]
+    },
+    {
       "id": "player",
       "title": "Audiobook player",
       "cli": "",

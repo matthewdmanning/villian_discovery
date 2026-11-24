@@ -51,6 +51,7 @@ export const liveApi: LibraryApi = {
     await pairing;
   },
   cards: () => call("GET", "cards"),
+  tags: () => call("GET", "tags"),
   search: (book, config) => call("POST", "search", { book, config }),
   run: (books, config) => call("POST", "run", { books, config }, false),
   previewSync: (options) => call("POST", "sync/preview", options ?? {}),
