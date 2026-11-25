@@ -6,6 +6,9 @@ import { type BrowserSession, LOGIN_PROMPT, LOGIN_TIMEOUT_MS, openSite } from ".
 import { AuthError } from "./errors.js";
 import type { HttpOptions } from "./http.js";
 import { LibbyClient } from "./libby-client.js";
+import { identityFromLibbyStorage, LIBBY_IDENTITY_KEY } from "./libby-storage.js";
+
+export { identityFromLibbyStorage };
 
 interface TokenFile {
   identity: string;
@@ -24,17 +27,6 @@ export async function resolveIdentityToken(auth: {
     `No Libby identity token. Run \`libby-shelf login\`, ` +
       `or set LIBBY_IDENTITY_TOKEN (libbyapp.com localStorage key "dewey:sentry.identity").`,
   );
-}
-
-/** Use this function to read the identity token from libbyapp.com's `dewey:sentry.identity` storage value, which may be raw or JSON-quoted. */
-export function identityFromLibbyStorage(raw: string | null | undefined): string | undefined {
-  if (!raw) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === "string" && parsed ? parsed : undefined;
-  } catch {
-    return raw;
-  }
 }
 
 export async function readTokenFile(path: string): Promise<string | undefined> {
@@ -65,7 +57,7 @@ const LIBBY_URL = "https://libbyapp.com/";
 /** Use this function to read the identity token that libbyapp.com stored in the page. */
 async function storedLibbyIdentity(page: Page): Promise<string | undefined> {
   return identityFromLibbyStorage(
-    await page.evaluate(() => localStorage.getItem("dewey:sentry.identity")).catch(() => null),
+    await page.evaluate((key) => localStorage.getItem(key), LIBBY_IDENTITY_KEY).catch(() => null),
   );
 }
 

@@ -2,6 +2,8 @@
 
 Sync follows **Preview → Review conflicts → Apply**. The browser demo uses simulated accounts; it never reads or changes real Libby or Fable data. Live writes remain unavailable until the specific provider contracts and authenticated runtime connection have been verified. [Current contract evidence](sync-contracts.md).
 
+The web app and Chrome extension share sync preview, apply, and settings coordination. Each keeps its own sign-in and settings storage; saving settings invalidates previous previews.
+
 ## User settings and fallback file
 
 The application ships `src/sync.fallbacks.json` (copied into `dist/` when built). Each user's saved overrides are validated and merged over this file, one field at a time. There is no repository, current-directory, project-config, or hidden schema-default dependency.

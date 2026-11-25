@@ -11,6 +11,7 @@ import {
   Search,
   SlidersHorizontal,
   Sun,
+  Tags as TagsIcon,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { compact } from "./components/ui.tsx";
@@ -24,12 +25,16 @@ import { Player } from "./screens/Player.tsx";
 import { Results } from "./screens/Results.tsx";
 import { SearchScreen } from "./screens/Search.tsx";
 import { Settings } from "./screens/Settings.tsx";
+import { Shelf } from "./screens/Shelf.tsx";
 import { SyncScreen } from "./screens/Sync.tsx";
+import { TagsScreen } from "./screens/Tags.tsx";
 
 const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; short: string; view: () => ReactNode }> = {
   connect: { icon: Plug, short: "Connect", view: Connect },
   cards: { icon: CreditCard, short: "Cards", view: Cards },
   books: { icon: BookOpen, short: "Books", view: Books },
+  shelf: { icon: BookOpen, short: "Shelf", view: Shelf },
+  tags: { icon: TagsIcon, short: "Tags", view: TagsScreen },
   settings: { icon: SlidersHorizontal, short: "Rules", view: Settings },
   search: { icon: Search, short: "Search", view: SearchScreen },
   results: { icon: ListChecks, short: "Results", view: Results },
@@ -37,16 +42,19 @@ const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; sho
   player: { icon: Headphones, short: "Player", view: Player },
 };
 
+const navigationScreens = screens.filter((s) => s.id !== "results");
+
 const mobileOnly = options.layout === "mobile";
 /** Breakpoint classes: desktop chrome from `lg` up, unless the spec forces the mobile layout. */
 const desk = mobileOnly ? "hidden" : "hidden lg:flex";
 const phone = mobileOnly ? "" : "lg:hidden";
 
-export function App() {
+export function App({ tagsView }: { tagsView?: () => ReactNode } = {}) {
   const { screen, go, api } = useStore();
   const [theme, toggleTheme] = useTheme();
-  const View = VIEWS[screen].view;
-  const idx = screens.findIndex((s) => s.id === screen);
+  const activeScreen = screen === "results" ? "search" : screen;
+  const View = activeScreen === "tags" && tagsView ? tagsView : VIEWS[activeScreen].view;
+  const idx = navigationScreens.findIndex((s) => s.id === activeScreen);
 
   const brand = (
     <div className="flex items-center gap-2">
@@ -70,14 +78,14 @@ export function App() {
           {brand}
           <nav aria-label="Screens">
             <ul className="menu w-full gap-1 p-0">
-              {screens.map((s) => {
+              {navigationScreens.map((s) => {
                 const Icon = VIEWS[s.id].icon;
                 return (
                   <li key={s.id}>
                     <button
                       type="button"
-                      aria-current={s.id === screen ? "page" : undefined}
-                      className={`gap-3 rounded-field py-2.5 font-display text-base ${s.id === screen ? "menu-active border-2 border-pop bg-primary text-primary-content shadow-pop-sm" : ""}`}
+                      aria-current={s.id === activeScreen ? "page" : undefined}
+                      className={`gap-3 rounded-field py-2.5 font-display text-base ${s.id === activeScreen ? "menu-active border-2 border-pop bg-primary text-primary-content shadow-pop-sm" : ""}`}
                       onClick={() => go(s.id)}
                     >
                       <Icon className="size-5" />
@@ -99,12 +107,12 @@ export function App() {
           {brand}
           {options.navigation === "tabs" && (
             <nav aria-label="Screens" className={`${desk} tabs tabs-box gap-1 bg-base-200`}>
-              {screens.map((s) => (
+              {navigationScreens.map((s) => (
                 <button
                   key={s.id}
                   type="button"
-                  aria-current={s.id === screen ? "page" : undefined}
-                  className={`tab font-display ${s.id === screen ? "tab-active" : ""}`}
+                  aria-current={s.id === activeScreen ? "page" : undefined}
+                  className={`tab font-display ${s.id === activeScreen ? "tab-active" : ""}`}
                   onClick={() => go(s.id)}
                 >
                   {s.title}
@@ -117,7 +125,7 @@ export function App() {
 
         {options.navigation === "wizard" && (
           <ul className={`${desk} steps steps-horizontal w-full px-safe pt-6`}>
-            {screens.map((s, i) => (
+            {navigationScreens.map((s, i) => (
               <li key={s.id} className={`step ${i <= idx ? "step-primary" : ""}`}>
                 <button type="button" className="font-display text-sm" onClick={() => go(s.id)}>
                   {s.title}
@@ -137,15 +145,15 @@ export function App() {
                 type="button"
                 className="btn btn-ghost"
                 disabled={idx <= 0}
-                onClick={() => go(screens[idx - 1]!.id)}
+                onClick={() => go(navigationScreens[idx - 1]!.id)}
               >
                 <ChevronLeft className="size-4" /> Back
               </button>
               <button
                 type="button"
                 className="btn btn-ghost"
-                disabled={idx >= screens.length - 1}
-                onClick={() => go(screens[idx + 1]!.id)}
+                disabled={idx >= navigationScreens.length - 1}
+                onClick={() => go(navigationScreens[idx + 1]!.id)}
               >
                 Next <ChevronRight className="size-4" />
               </button>
@@ -156,20 +164,20 @@ export function App() {
 
       <nav
         aria-label="Screens"
-        className={`dock z-30 border-t-2 border-pop bg-base-100 pb-[env(safe-area-inset-bottom)] ${phone}`}
+        className={`fixed inset-x-0 bottom-0 z-30 flex overflow-x-auto border-t-2 border-pop bg-base-100 pb-[env(safe-area-inset-bottom)] ${phone}`}
       >
-        {screens.map((s) => {
+        {navigationScreens.map((s) => {
           const Icon = VIEWS[s.id].icon;
           return (
             <button
               key={s.id}
               type="button"
-              aria-current={s.id === screen ? "page" : undefined}
-              className={s.id === screen ? "dock-active font-semibold" : ""}
+              aria-current={s.id === activeScreen ? "page" : undefined}
+              className={`flex min-h-16 min-w-20 flex-1 flex-col items-center justify-center gap-1 px-2 text-xs ${s.id === activeScreen ? "bg-primary/20 font-bold text-base-content" : "text-base-content/75"}`}
               onClick={() => go(s.id)}
             >
               <Icon className="size-5" />
-              <span className="dock-label font-display">{VIEWS[s.id].short}</span>
+              <span className="font-display">{VIEWS[s.id].short}</span>
             </button>
           );
         })}

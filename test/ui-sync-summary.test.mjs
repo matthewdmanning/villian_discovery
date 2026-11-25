@@ -1,0 +1,33 @@
+import { expect, it } from "vitest";
+import { summarizeSyncResult } from "../ui/src/screens/Sync.tsx";
+
+const plan = (operations) => ({ operations });
+const operation = (id, blocked) => ({ id, title: `Book ${id}`, ...(blocked ? { blocked } : {}) });
+
+it("summarizes previews without exposing provider values", () => {
+  expect(summarizeSyncResult(plan([operation("one"), operation("two", "Needs review")]))).toEqual({
+    status: "Success",
+    summary: "1 change found. Review before applying.",
+  });
+});
+
+it("reports apply failures as a plain status", () => {
+  expect(
+    summarizeSyncResult(plan([operation("one"), operation("two")]), {
+      outcomes: [
+        { operationId: "one", status: "success", message: "raw provider detail" },
+        { operationId: "two", status: "failed", message: "raw provider detail" },
+      ],
+    }),
+  ).toEqual({
+    status: "Fail",
+    summary: "Applied 1 change; 1 change could not be confirmed. Review the changes and try again.",
+  });
+});
+
+it("keeps blocked preview changes visible as requiring review", () => {
+  expect(summarizeSyncResult(plan([operation("one", "Needs review")]))).toEqual({
+    status: "Success",
+    summary: "1 change require review before applying.",
+  });
+});
