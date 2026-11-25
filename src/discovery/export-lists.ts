@@ -11,10 +11,13 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { BrowserContext } from "playwright-core";
 import { HttpError } from "../errors.js";
+import { fetchAllPages, type Page, type Query } from "../pagination.js";
 import { stripUndefined } from "../util.js";
 import { LOGIN_PROMPT, LOGIN_TIMEOUT_MS, openBrowserSession } from "./browser.js";
 
 const SITE = "https://fable.co";
+
+export { fetchAllPages };
 export const LIBRARY_URL = `${SITE}/library`;
 const PAGE_SIZE = 50;
 
@@ -30,11 +33,6 @@ export interface FableList {
   /** Set on Fable's built-in lists: `want_to_read`, `current_reading`, `finished`, `did_not_finish`. */
   system_type?: string | null;
 }
-interface Page<T> {
-  next: string | null;
-  results: T[];
-}
-type Query = Record<string, string | number>;
 /** GET a fable.co JSON endpoint. Throws `HttpError` on a non-2xx status. */
 export type FableGet = <T>(path: string, query: Query) => Promise<T>;
 
@@ -66,22 +64,6 @@ export function listFileNames(lists: FableList[]): Map<string, string> {
     names.set(id, `${file}.json`);
   }
   return names;
-}
-
-/**
- * All results of a DRF-paginated endpoint: follows `next` until null.
- * fable.co's `next` links point at api.fable.co, which needs a token, so only their
- * query (`limit`, `offset`, …) is taken and sent back to the same fable.co path.
- */
-export async function fetchAllPages<T>(first: Query, get: (query: Query) => Promise<Page<T>>): Promise<T[]> {
-  const all: T[] = [];
-  for (let query: Query | undefined = first; query; ) {
-    const page: Page<T> = await get(query);
-    all.push(...page.results);
-    // An empty page ends the loop too, so a bad `next` cannot loop forever.
-    query = page.next && page.results.length ? Object.fromEntries(new URL(page.next).searchParams) : undefined;
-  }
-  return all;
 }
 
 const listsPage = (get: FableGet) => (query: Query) => get<Page<FableList>>("/api/me/book-lists", query);

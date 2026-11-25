@@ -19,7 +19,15 @@ A read-only check on 2026-11-16 found:
 - libbyapp.com calls `sentry.libbyapp.com` (`POST /chip`, `GET /chip/sync`) and `vandal.libbyapp.com` (`GET /tags`) with a Bearer token. `sentry-read.svc.overdrive.com` fails its TLS certificate check.
 - The stored `dewey:sentry.identity` value can be older than the token Libby sends, because `POST /chip` refreshes it.
 
-No live metadata write operation is verified. The demo uses simulated providers and must never be presented as account synchronization.
+The Chrome extension's **Load tags** action reads `GET /tags` using its Libby session, validates the tag names and IDs, and caches the results for the connected account. The experimental web Tags screen reads the same endpoint through the local server and displays the raw response.
+
+A live check on 2026-11-19 (a signed-in Chrome profile, with the user adding books by hand) found:
+
+- Libby `GET /card/{cardId}/{type}/data/{titleId}` returns `position.percentageOfBook`, a fraction from 0 to 1. It matched the reader for two audiobooks. Ebooks are unchecked. `chip/sync` loans carry no progress. The `/tags` response lists tags, not progress.
+- Fable `GET /api/search?q=<text>&type=book` returns `{ books: [{ id, title, subtitle, isbn, … }] }`.
+- Fable `POST /api/me/book-lists/picker` with `{ book_id, book_list_ids, exclude_from }` returns `{ "applied": true }`. It adds a book to the listed lists and removes it from the `exclude_from` lists.
+
+The only verified write is adding a Libby loan that Fable lacks to Currently Reading (`createFields` in `fableAdapter`). Every other live write stays unverified. The demo uses simulated providers and must never be presented as account synchronization.
 
 ## Verifying a capability
 

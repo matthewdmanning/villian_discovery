@@ -69,7 +69,7 @@ function load(): ConfigInput {
 export function StoreProvider({ children, api = demoApi }: { children: ReactNode; api?: LibraryApi }) {
   const first = screens.some((s) => s.id === options.defaultScreen)
     ? options.defaultScreen
-    : (screens[0]?.id ?? "books");
+    : (screens[0]?.id ?? "shelf");
   const [screen, go] = useState<ScreenId>(first);
   const [resolved, setResolved] = useState(() => {
     const overrides = load();

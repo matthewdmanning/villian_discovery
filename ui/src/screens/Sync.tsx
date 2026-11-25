@@ -1,8 +1,14 @@
-import { Ban, CircleCheck, RefreshCw } from "lucide-react";
+import { Ban, CircleCheck, CircleX, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { SyncField, SyncProvider } from "../../../src/sync.ts";
 import { SYNC_FALLBACKS, type SyncSettings } from "../../../src/sync-config.ts";
-import { type SyncApprovals, type SyncPreviewOptions, syncDecisionKey } from "../../../src/sync-plan.ts";
+import {
+  type SyncApplyReport,
+  type SyncApprovals,
+  type SyncPlan,
+  type SyncPreviewOptions,
+  syncDecisionKey,
+} from "../../../src/sync-plan.ts";
 import {
   BookLine,
   BookSections,
@@ -18,6 +24,36 @@ import { useStore } from "../lib/store.tsx";
 import { displaySyncValue as displayValue, SYNC_FIELD_LABELS as labels } from "../lib/sync-format.ts";
 
 const TABS = ["Changes", "Library", "Settings"] as const;
+
+/** Use plan counts, not provider payloads, to describe a completed preview or apply in plain language. */
+export function summarizeSyncResult(
+  plan: Pick<SyncPlan, "operations">,
+  report?: Pick<SyncApplyReport, "outcomes">,
+): { status: "Success" | "Fail"; summary: string } {
+  if (report) {
+    const applied = report.outcomes.filter((outcome) => outcome.status === "success").length;
+    const failed = report.outcomes.length - applied;
+    if (failed > 0)
+      return {
+        status: "Fail",
+        summary: `${applied ? `Applied ${applied} change${applied === 1 ? "" : "s"}; ` : ""}${failed} change${failed === 1 ? "" : "s"} could not be confirmed. Review the changes and try again.`,
+      };
+    return {
+      status: "Success",
+      summary: applied ? `Applied ${applied} change${applied === 1 ? "" : "s"}.` : "No changes were applied.",
+    };
+  }
+
+  const reviewable = plan.operations.filter((operation) => !operation.blocked).length;
+  return {
+    status: "Success",
+    summary: reviewable
+      ? `${reviewable} change${reviewable === 1 ? "" : "s"} found. Review before applying.`
+      : plan.operations.length
+        ? `${plan.operations.length} change${plan.operations.length === 1 ? "" : "s"} require review before applying.`
+        : "No changes needed.",
+  };
+}
 
 /** Use this screen to compare Libby and Fable through the store's API and retain the last successful reconciliation in the store. */
 export function SyncScreen() {
@@ -138,7 +174,7 @@ export function SyncScreen() {
     ) ?? [];
   const operations = syncResult?.plan.operations ?? [];
   const visibleOperations = operations
-    .filter((operation) => settings?.showNonConflicting === "yes" || isAppConflict(operation))
+    .filter((operation) => settings?.showNonConflicting === "yes" || isAppConflict(operation) || operation.create)
     .sort((left, right) => Number(right.removal) - Number(left.removal));
   const missingApproval = remaining.some(
     (operation) => operation.blocked || (operation.removal && !review.removals.includes(operation.id)),
@@ -212,6 +248,7 @@ export function SyncScreen() {
   }
 
   const outcomeOf = (id: string) => syncResult?.report?.outcomes.find((outcome) => outcome.operationId === id)?.status;
+  const resultSummary = syncResult && summarizeSyncResult(syncResult.plan, syncResult.report);
 
   return (
     <Screen
@@ -259,13 +296,33 @@ export function SyncScreen() {
           </p>
         )}
       </div>
-      {error && (
+      {busy ? (
+        <p role="status" className="alert alert-info border-2 border-pop">
+          Fetching library changes…
+        </p>
+      ) : error ? (
         <div role="alert" className="alert alert-error border-2 border-pop">
           <span>
-            Sync failed: {error}
+            <strong>Fail</strong> — {error}
             {syncResult ? ". The previous comparison is shown below." : ""}
           </span>
         </div>
+      ) : (
+        resultSummary && (
+          <p
+            role={resultSummary.status === "Success" ? "status" : "alert"}
+            className={`alert border-2 border-pop ${resultSummary.status === "Success" ? "alert-success" : "alert-error"}`}
+          >
+            {resultSummary.status === "Success" ? (
+              <CircleCheck className="size-5" aria-hidden="true" />
+            ) : (
+              <CircleX className="size-5" aria-hidden="true" />
+            )}
+            <span>
+              <strong>{resultSummary.status}</strong> — {resultSummary.summary}
+            </span>
+          </p>
+        )
       )}
       {tab === "Settings" ? (
         <div role="tabpanel" aria-label="Settings" className="contents">
@@ -276,6 +333,12 @@ export function SyncScreen() {
             onReset={() => saveSettings({})}
           />
         </div>
+      ) : busy ? (
+        <Empty icon={<RefreshCw className="size-7" />} title="Fetching library changes">
+          <p className="max-w-sm text-center text-sm opacity-70">
+            Your previous comparison will return when fetching finishes.
+          </p>
+        </Empty>
       ) : syncResult && tab === "Library" ? (
         <div role="tabpanel" aria-label="Library" className="contents">
           <Panel title="Library">
@@ -497,18 +560,6 @@ export function SyncScreen() {
                   );
                 }}
               />
-            )}
-            {syncResult.report && (
-              <section className="mt-4 rounded-field border-2 border-base-300 p-3 text-sm" aria-label="Apply results">
-                <strong>Apply results</strong>
-                <ul>
-                  {syncResult.report.outcomes.map((outcome) => (
-                    <li key={outcome.operationId}>
-                      {outcome.status}: {outcome.message}
-                    </li>
-                  ))}
-                </ul>
-              </section>
             )}
           </Panel>
         </div>

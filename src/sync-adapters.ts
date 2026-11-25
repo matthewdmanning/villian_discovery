@@ -5,10 +5,12 @@
  * operation is verified yet (see docs/sync-contracts.md), so both adapters report
  * `verified: false`, expose no writable fields, and refuse every write.
  */
-import { type FableBook, type FableGet, type FableList, fetchAllPages } from "./discovery/export-lists.js";
+import type { FableBook, FableGet, FableList } from "./discovery/export-lists.js";
 import type { LibbyClient } from "./libby-client.js";
+import { normalizeName, normalizeTitle } from "./matcher.js";
+import { fetchAllPages } from "./pagination.js";
 import type { BookSnapshot, SnapshotField } from "./sync.js";
-import type { SyncAdapter } from "./sync-plan.js";
+import type { SyncAdapter, SyncOperation } from "./sync-plan.js";
 import type { ShelfItem, SyncResponse } from "./types.js";
 
 /** One Fable list entry: the book with the user's reading data, plus the entry's note. */
@@ -21,7 +23,18 @@ export interface FableEntry {
   note?: string | null;
 }
 
-const LIBBY_FIELDS = ["checkedOut"] as const;
+/** POST a JSON body to a fable.co endpoint. Throws `HttpError` on a non-2xx status. */
+export type FablePost = <T>(path: string, body: unknown) => Promise<T>;
+
+/** One book in Fable's catalog search. */
+interface FableSearchBook {
+  id: string;
+  title: string;
+  isbn?: string;
+  authors?: { name?: string }[];
+}
+
+const LIBBY_FIELDS = ["checkedOut", "readingProgress"] as const;
 const FABLE_FIELDS = ["readingProgress", "readingStatus", "rating", "notes", "shelves"] as const;
 const PAGE = { limit: 50, offset: 0 };
 // Fable keeps `reading_progress.status` at "unread" for books on its Currently Reading list; the built-in list is the status.
@@ -49,20 +62,21 @@ function loanIsbn(loan: ShelfItem): string | undefined {
   return formats.flatMap((format) => format.identifiers ?? []).find((id) => id.type === "ISBN")?.value;
 }
 
-/** Use this function to convert Libby's account state into snapshots: every current loan is a checked-out book. */
-export function libbySnapshots(state: SyncResponse): BookSnapshot[] {
+/** Use this function to convert Libby's account state into snapshots: every current loan is a checked-out book. `progress` maps a loan ID to its percent read; a loan without an entry has unknown progress. */
+export function libbySnapshots(state: SyncResponse, progress: ReadonlyMap<string, number> = new Map()): BookSnapshot[] {
   const books = new Map<string, BookSnapshot>();
   for (const loan of state.loans ?? []) {
     if (!loan.title || books.has(loan.id)) continue;
     const author = typeof loan.firstCreatorName === "string" ? loan.firstCreatorName : undefined;
     const isbn = loanIsbn(loan);
+    const percent = progress.get(loan.id);
     books.set(loan.id, {
       bookId: `libby:${loan.id}`,
       title: loan.title,
       ...(author ? { author } : {}),
       ...(isbn ? { isbn } : {}),
       providerId: loan.id,
-      fields: { checkedOut: { value: true } },
+      fields: { checkedOut: { value: true }, ...present({ readingProgress: field(percent) }) },
     });
   }
   return [...books.values()];
@@ -117,6 +131,26 @@ async function unverifiedWrite(): Promise<void> {
   throw new Error("Live writes are not verified for this app");
 }
 
+/** Use this function to find the one Fable catalog book for a Libby book: an ISBN match, else an exact title (and author) match. Throws when none or several fit, so no wrong book is ever added. */
+async function findFableBook(get: FableGet, book: NonNullable<SyncOperation["create"]>): Promise<string> {
+  const search = async (q: string) =>
+    (await get<{ books?: FableSearchBook[] }>("/api/search", { q, type: "book" })).books ?? [];
+  if (book.isbn) {
+    const byIsbn = (await search(book.isbn)).filter((candidate) => candidate.isbn === book.isbn);
+    if (byIsbn.length === 1) return byIsbn[0]!.id;
+  }
+  const title = normalizeTitle(book.title, true);
+  let candidates = (await search(book.title)).filter((candidate) => normalizeTitle(candidate.title, true) === title);
+  if (candidates.length > 1 && book.author) {
+    const author = normalizeName(book.author, true);
+    candidates = candidates.filter((candidate) =>
+      candidate.authors?.some((entry) => entry.name && normalizeName(entry.name, true) === author),
+    );
+  }
+  if (candidates.length !== 1) throw new Error(`No single Fable book matches "${book.title}"`);
+  return candidates[0]!.id;
+}
+
 /** Use this function to stand in for an app with no login: its schema is empty, so it reads nothing and receives nothing. */
 export function disconnectedAdapter(): SyncAdapter {
   return { verified: false, fields: [], writableFields: [], read: async () => [], write: unverifiedWrite };
@@ -125,20 +159,38 @@ export function disconnectedAdapter(): SyncAdapter {
 /** Use this function to read the signed-in Libby account's loans as a read-only sync adapter. */
 export function libbyAdapter(client: LibbyClient): SyncAdapter {
   return {
-    verified: false,
+    // Reads of loans and audiobook progress were checked against a live account on 2026-11-19; Libby is never written.
+    verified: true,
     fields: LIBBY_FIELDS,
     writableFields: [],
-    read: async () => libbySnapshots(await client.sync()),
+    async read() {
+      const state = await client.sync();
+      const progress = new Map<string, number>();
+      // A loan whose position cannot be read keeps unknown progress; it never reads as 0.
+      await Promise.all(
+        (state.loans ?? []).map(async (loan) => {
+          const percent = await client
+            .loanProgress({ cardId: loan.cardId, titleId: loan.id, mediaType: loan.type?.id ?? "" })
+            .catch(() => undefined);
+          if (percent !== undefined) progress.set(loan.id, percent);
+        }),
+      );
+      return libbySnapshots(state, progress);
+    },
     write: unverifiedWrite,
   };
 }
 
-/** Use this function to read every Fable list and its books as a read-only sync adapter. */
-export function fableAdapter(get: FableGet): SyncAdapter {
+/**
+ * Use this function to read every Fable list and its books. With `post`, it can also add a Libby book that Fable lacks
+ * to Currently Reading (verified 2026-11-19 from fable.co's own search and list picker calls); no other write is verified.
+ */
+export function fableAdapter(get: FableGet, post?: FablePost): SyncAdapter {
   return {
-    verified: false,
+    verified: !!post,
     fields: FABLE_FIELDS,
     writableFields: [],
+    ...(post ? { createFields: ["readingStatus"] } : {}),
     async read() {
       const lists = await fetchAllPages({ ...PAGE, media_type: "" }, (query) =>
         get<{ next: string | null; results: FableList[] }>("/api/me/book-lists", query),
@@ -153,6 +205,17 @@ export function fableAdapter(get: FableGet): SyncAdapter {
       }
       return fableSnapshots(withEntries);
     },
-    write: unverifiedWrite,
+    async write(_context, operation, assertCurrent) {
+      if (!post || !operation.create || operation.field !== "readingStatus" || operation.after !== "currently-reading")
+        return unverifiedWrite();
+      await assertCurrent();
+      const lists = await fetchAllPages({ ...PAGE, media_type: "" }, (query) =>
+        get<{ next: string | null; results: FableList[] }>("/api/me/book-lists", query),
+      );
+      const current = lists.find((list) => list.system_type === "current_reading");
+      if (!current) throw new Error("Fable has no Currently Reading list");
+      const bookId = await findFableBook(get, operation.create);
+      await post("/api/me/book-lists/picker", { book_id: bookId, book_list_ids: [current.id], exclude_from: [] });
+    },
   };
 }

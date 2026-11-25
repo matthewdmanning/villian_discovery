@@ -24,12 +24,16 @@ export type SyncOperation = {
   after: SnapshotValue;
   removal: boolean;
   blocked?: string;
+  /** Set when the target app has no record of this book yet: the book to find or create there. */
+  create?: { title: string; author?: string; isbn?: string };
 };
 export interface SyncAdapter {
   readonly verified: boolean;
   /** The app's schema: shared field names its converter produces. Fields outside it do not exist in this app and are never synced to it. */
   readonly fields: readonly string[];
   readonly writableFields: readonly string[];
+  /** Fields the app can set while adding a book it does not hold yet. */
+  readonly createFields?: readonly string[];
   /** Convert the app's native records into shared-schema snapshots that use only `fields`. */
   read(context: SyncContext): Promise<BookSnapshot[]>;
   /** Verified adapters must call assertCurrent immediately before submitting a conditional before-value/version write. */
@@ -104,6 +108,7 @@ function capabilities(adapters: SyncAdapters): string {
           verified: adapters[provider].verified,
           schema: [...adapters[provider].fields].sort(),
           fields: [...adapters[provider].writableFields].sort(),
+          create: [...(adapters[provider].createFields ?? [])].sort(),
         },
       ]),
     ),
@@ -137,6 +142,35 @@ function isRemoval(before: SnapshotField | undefined, after: SnapshotValue): boo
 /** Use this function to create a deterministic field decision key shared by preview requests and the UI. */
 export function syncDecisionKey(row: Pick<SyncField, "bookId" | "field">): string {
   return JSON.stringify([row.bookId, row.field]);
+}
+
+/** Use this function to propose adding a Libby book that Fable lacks: a checked-out book with progress above 0 is Currently Reading. */
+function proposeCreate(libby: BookSnapshot[], adapters: SyncAdapters, planId: string): SyncOperation | undefined {
+  const source = libby[0]!;
+  const checkedOut = libby.some((book) => book.fields.checkedOut?.value === true);
+  const progress = Math.max(0, ...libby.map((book) => Number(book.fields.readingProgress?.value) || 0));
+  if (!checkedOut || progress <= 0 || !adapters.fable.fields.includes("readingStatus")) return undefined;
+  const operation: SyncOperation = {
+    id: JSON.stringify([planId, "fable", source.bookId, "readingStatus"]),
+    bookId: source.bookId,
+    groupId: source.bookId,
+    title: source.title,
+    field: "readingStatus",
+    target: "fable",
+    source: "libby",
+    before: undefined,
+    after: "currently-reading",
+    removal: false,
+    create: {
+      title: source.title,
+      ...(source.author ? { author: source.author } : {}),
+      ...(source.isbn ? { isbn: source.isbn } : {}),
+    },
+  };
+  if (!adapters.fable.verified || !adapters.libby.verified) operation.blocked = "Provider contracts are not verified";
+  else if (!adapters.fable.createFields?.includes("readingStatus"))
+    operation.blocked = "Adding books to this app is not verified";
+  return operation;
 }
 
 /** Use this function to build reviewed operations from validated snapshots and trusted adapter capabilities. */
@@ -227,13 +261,17 @@ function buildPlan(
       operations.push(operation);
     }
   }
-  const unmatched = result.groups
-    .filter((group) => group.libby.length && !group.fable.length)
-    .map((group) => ({
-      message: `No matched destination for ${group.title}; creating provider book records is not verified`,
-      libbyBookIds: group.libby.map((book) => book.bookId),
-      fableBookIds: group.fable.map((book) => book.bookId),
-    }));
+  const unmatched = [];
+  for (const group of result.groups.filter((candidate) => candidate.libby.length && !candidate.fable.length)) {
+    const create = proposeCreate(group.libby, adapters, id);
+    if (create) operations.push(create);
+    else
+      unmatched.push({
+        message: `No matched destination for ${group.title}; it is not checked out with progress, so no Fable book is added`,
+        libbyBookIds: group.libby.map((book) => book.bookId),
+        fableBookIds: [],
+      });
+  }
   return {
     id,
     context: structuredClone(context),
@@ -275,10 +313,29 @@ function snapshotKey(snapshots: Record<SyncProvider, BookSnapshot[]>): string {
   });
 }
 
-/** Use this function to verify a proposed value against a fresh destination read. */
-function appliedValue(operation: SyncOperation, snapshots: Record<SyncProvider, BookSnapshot[]>): boolean {
-  const field = snapshots[operation.target].find((book) => book.bookId === operation.bookId)?.fields[operation.field];
-  return !!field && sameValue(field.value, operation.after);
+/** Use this function to find the destination books that now match a created book's source. */
+function createdBooks(
+  operation: SyncOperation,
+  snapshots: Record<SyncProvider, BookSnapshot[]>,
+  matching: SyncSettings["matching"],
+): BookSnapshot[] {
+  const { groups } = matchSnapshotGroups(snapshots.libby, snapshots.fable, matching);
+  return groups.find((group) => group.libby.some((book) => book.bookId === operation.bookId))?.fable ?? [];
+}
+
+/** Use this function to verify a proposed value against a fresh destination read; a created book is found by matching it to its source. */
+function appliedValue(
+  operation: SyncOperation,
+  snapshots: Record<SyncProvider, BookSnapshot[]>,
+  matching: SyncSettings["matching"],
+): boolean {
+  const books = operation.create
+    ? createdBooks(operation, snapshots, matching)
+    : snapshots[operation.target].filter((book) => book.bookId === operation.bookId);
+  return books.some((book) => {
+    const field = book.fields[operation.field];
+    return !!field && sameValue(field.value, operation.after);
+  });
 }
 
 /** Use this function to apply a trusted preview with user-scoped locking, fresh reads, mandatory approvals, and verified per-operation outcomes. */
@@ -306,6 +363,12 @@ export async function applySync(input: {
       (await input.journal.read(context, input.plan.id)).map((outcome) => [outcome.operationId, outcome]),
     );
     const expected = structuredClone(input.plan.snapshots);
+    /** A created book joins the expected snapshots, so later checks do not read it as outside change. */
+    const adoptCreated = (operation: SyncOperation, fresh: Record<SyncProvider, BookSnapshot[]>) => {
+      if (!operation.create) return;
+      for (const book of createdBooks(operation, fresh, settings.matching))
+        if (!expected.fable.some((known) => known.bookId === book.bookId)) expected.fable.push(structuredClone(book));
+    };
     const persist = async (outcome: SyncOutcome) => {
       outcomes.set(outcome.operationId, outcome);
       await input.journal.write(context, input.plan.id, [...outcomes.values()]);
@@ -325,9 +388,10 @@ export async function applySync(input: {
       fresh.libby = parsed.libby;
       fresh.fable = parsed.fable;
       for (const operation of input.plan.operations) {
-        if (outcomes.get(operation.id)?.status === "success" && !appliedValue(operation, fresh))
+        if (outcomes.get(operation.id)?.status === "success" && !appliedValue(operation, fresh, settings.matching))
           throw new Error("A previously applied value changed; create a new preview");
-        if (outcomes.has(operation.id) && appliedValue(operation, fresh)) {
+        if (outcomes.has(operation.id) && appliedValue(operation, fresh, settings.matching)) {
+          adoptCreated(operation, fresh);
           const book = expected[operation.target].find((candidate) => candidate.bookId === operation.bookId);
           const actual = fresh[operation.target].find((candidate) => candidate.bookId === operation.bookId)?.fields[
             operation.field
@@ -386,11 +450,13 @@ export async function applySync(input: {
       }
       try {
         const fresh = await readBoth(input.adapters, context);
-        if (appliedValue(operation, fresh)) {
-          const target = expected[operation.target].find((book) => book.bookId === operation.bookId)!;
-          target.fields[operation.field] = structuredClone(
-            fresh[operation.target].find((book) => book.bookId === operation.bookId)!.fields[operation.field]!,
-          );
+        if (appliedValue(operation, fresh, settings.matching)) {
+          adoptCreated(operation, fresh);
+          const target = expected[operation.target].find((book) => book.bookId === operation.bookId);
+          const written = fresh[operation.target].find((book) => book.bookId === operation.bookId)?.fields[
+            operation.field
+          ];
+          if (target && written) target.fields[operation.field] = structuredClone(written);
           await persist({ operationId: operation.id, status: "success", message: "Destination value verified" });
         } else {
           const actual = fresh[operation.target].find((book) => book.bookId === operation.bookId)?.fields[

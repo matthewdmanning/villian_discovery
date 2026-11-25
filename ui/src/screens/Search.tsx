@@ -6,6 +6,7 @@ import type { Match } from "../lib/api.ts";
 import { filterSearchGroups, groupSearchResults, type SearchFilters } from "../lib/search-results.ts";
 import { screen } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
+import { Results } from "./Results.tsx";
 
 const queryLabel = screen("search")
   ?.regions.flatMap((r) => r.components)
@@ -41,14 +42,14 @@ function Metric({ label, value, children }: { label: string; value: string; chil
 
 function Avail({ m }: { m: Match }) {
   return m.media.isAvailable === true ? (
-    <span className="badge badge-success badge-sm font-semibold">now</span>
+    <span className="badge badge-success badge-sm font-semibold">Available</span>
   ) : (
-    <span className="badge badge-ghost badge-sm">{m.media.isAvailable === false ? "wait" : "unknown"}</span>
+    <span className="badge badge-ghost badge-sm">{m.media.isAvailable === false ? "Waitlist" : "Unknown"}</span>
   );
 }
 
 export function SearchScreen() {
-  const { api, config } = useStore();
+  const { api, config, results } = useStore();
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -79,6 +80,7 @@ export function SearchScreen() {
     e.preventDefault();
     setBusy(true);
     setError(undefined);
+    setMatches(undefined);
     try {
       setMatches(await api.search(parseBookLine(q), config));
       setFilters({ availability: "all", format: "", library: "", sort: "" });
@@ -91,6 +93,7 @@ export function SearchScreen() {
 
   return (
     <Screen id="search">
+      {results && <Results />}
       <form onSubmit={submit} className="flex flex-col gap-3 sm:flex-row">
         <label className={`input input-lg w-full grow border-2 border-pop shadow-pop-sm ${error ? "input-error" : ""}`}>
           <Search aria-hidden className="size-5 opacity-60" />

@@ -1,6 +1,7 @@
 import type { PairingOptions } from "../../../src/auth.js";
 import type { BookRequest } from "../../../src/input.js";
 import { LibbyClient } from "../../../src/libby-client.js";
+import { type ShelfData, unavailableShelf } from "../../../src/libby-shelf.ts";
 import { silentLogger } from "../../../src/logger.js";
 import type { BookResult, ResultStatus } from "../../../src/runner.js";
 import { Runner, selectCards } from "../../../src/runner.js";
@@ -29,6 +30,8 @@ export interface LibraryApi {
   /** Sign in to Libby: `browser` opens libbyapp.com; `device-code` shows a setup code through `onCode`. */
   login(tokenFile: string, options: LoginOptions): Promise<void>;
   cards(tokenFile: string): Promise<LibbyCard[]>;
+  shelf(): Promise<ShelfData>;
+  tags(): Promise<unknown>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
   previewSync(options?: SyncPreviewOptions): Promise<SyncPlan>;
@@ -39,6 +42,7 @@ export interface LibraryApi {
 
 export type LoginOptions = PairingOptions & { method: "browser" | "device-code" };
 
+export type { ShelfData, ShelfEntry, ShelfTab } from "../../../src/libby-shelf.ts";
 export type { BookRequest, BookResult, LibbyCard, ResultStatus };
 
 const wait = (ms: number, signal?: AbortSignal) =>
@@ -147,6 +151,14 @@ export const demoApi: LibraryApi = {
   async cards() {
     await wait(250);
     return CARDS;
+  },
+  async shelf() {
+    await wait(250);
+    return unavailableShelf("Shelf data is unavailable in demo mode; connect a real Libby account.");
+  },
+  async tags() {
+    await wait(250);
+    return { tags: [{ name: "Want to read" }, { name: "Favorites" }] };
   },
   async search(book, config) {
     await wait(500);

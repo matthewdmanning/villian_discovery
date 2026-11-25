@@ -204,3 +204,21 @@ describe("Libby audit regressions", () => {
     expect(calls.some((call) => call.url.pathname.includes("/hold/"))).toBe(false);
   });
 });
+
+describe("LibbyClient.loanProgress", () => {
+  const client = (body: unknown) => {
+    const transport = fakeFetch([{ match: /\/card\/1\/audiobook\/data\/11$/, respond: () => ({ body }) }]);
+    const http = { ...parseConfig({}).http, retryBaseMs: 1, fetch: transport.fetch, logger: silentLogger };
+    return new LibbyClient({ ...http, identityToken: "test" });
+  };
+  const args = { cardId: "1", titleId: "11", mediaType: "audiobook" };
+
+  it("returns percentageOfBook as a percent", async () => {
+    expect(await client({ position: { percentageOfBook: 0.018220361 } }).loanProgress(args)).toBe(1.82);
+  });
+
+  it("returns undefined when Libby has no usable position", async () => {
+    expect(await client({}).loanProgress(args)).toBeUndefined();
+    expect(await client({ position: { percentageOfBook: 7 } }).loanProgress(args)).toBeUndefined();
+  });
+});
