@@ -62,14 +62,42 @@ export function titleSimilarity(wanted: string, media: ThunderMedia, ignoreSubti
   return Math.max(...candidates.map((c) => dice(w, normalizeTitle(c, ignoreSubtitle))));
 }
 
+/** Use this function to obtain author names from a media record while excluding narrators and other identified contributors. */
+export function mediaAuthors(media: Pick<ThunderMedia, "firstCreatorName" | "creators">): string[] {
+  const creators = (Array.isArray(media.creators) ? media.creators : []).flatMap((creator) => {
+    const name = typeof creator?.name === "string" ? creator.name.trim() : "";
+    const role = typeof creator?.role === "string" ? creator.role.trim().toLowerCase() : "";
+    return name ? [{ name, role }] : [];
+  });
+  const fallback = typeof media.firstCreatorName === "string" ? media.firstCreatorName.trim() : "";
+  const authors = creators.filter(({ role }) => role === "author" || role === "writer").map(({ name }) => name);
+  if (authors.length) return [...new Set(authors)];
+  if (!creators.some(({ role }) => role)) {
+    return [...new Set([fallback, ...creators.map(({ name }) => name)].filter(Boolean))];
+  }
+  const nonAuthors = new Set(
+    creators
+      .filter(({ role }) => role)
+      .map(({ name }) => normalizeName(name, true))
+      .filter(Boolean),
+  );
+  return fallback && !nonAuthors.has(normalizeName(fallback, true)) ? [fallback] : [];
+}
+
+/** Use this function to read explicitly credited narrator names from catalog or shelf creator records, in credit order. */
+export function mediaNarrators(media: Pick<ThunderMedia, "creators">): string[] {
+  const names = new Map<string, string>();
+  for (const creator of Array.isArray(media.creators) ? media.creators : []) {
+    if (typeof creator?.role !== "string" || creator.role.trim().toLowerCase() !== "narrator") continue;
+    const name = typeof creator.name === "string" ? creator.name.trim() : "";
+    const key = name.toLowerCase();
+    if (name && !names.has(key)) names.set(key, name);
+  }
+  return [...names.values()];
+}
+
 export function authorSimilarity(wanted: string, media: ThunderMedia): number {
-  const creators = media.creators ?? [];
-  const hasRoles = creators.some((c) => c.role);
-  const names = (
-    hasRoles
-      ? creators.filter((c) => /^(author|writer)$/i.test(c.role ?? "")).map((c) => c.name)
-      : [media.firstCreatorName, ...creators.map((c) => c.name)]
-  ).filter((n): n is string => !!n);
+  const names = mediaAuthors(media);
   if (!names.length) return 0;
   const w = normalizeName(wanted);
   return Math.max(...names.map((n) => dice(w, normalizeName(n))));

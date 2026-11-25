@@ -24,6 +24,7 @@ export interface ShelfItem {
   cardId: string;
   title?: string;
   type?: { id: string };
+  creators?: MediaCreator[];
   isAvailable?: boolean;
   holdListPosition?: number;
   [k: string]: unknown;
@@ -47,13 +48,18 @@ export interface MediaFormat {
   identifiers?: { type: string; value: string }[];
 }
 
+interface MediaCreator {
+  name: string;
+  role?: string;
+}
+
 /** A title as returned by Thunder `libraries/{key}/media`. Availability fields are library-scoped. */
 export interface ThunderMedia {
   id: string;
   title: string;
   subtitle?: string;
   firstCreatorName?: string;
-  creators?: { name: string; role?: string }[];
+  creators?: MediaCreator[];
   type?: { id: string; name?: string };
   formats?: MediaFormat[];
   isAvailable?: boolean;

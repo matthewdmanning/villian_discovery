@@ -141,6 +141,98 @@ describe("Runner", () => {
     expect(qs[0]!.get("identifier")).toBe("9780441013593");
     expect(qs[1]!.get("query")).toBe("Dune");
   });
+
+  it.each([false, true])(
+    "previews other editions at every selected library (audiobook only: %s)",
+    async (audioOnly) => {
+      const isbn = "9780593135204";
+      const exact = media({ creators: [{ name: "Andy Weir", role: "Author" }], firstCreatorName: "Ray Porter" });
+      const alternative = media({
+        id: "222",
+        type: { id: "audiobook" },
+        formats: [{ id: "audiobook-overdrive", identifiers: [{ type: "ISBN", value: "9780593395579" }] }],
+      });
+      const { runner, calls } = setup([
+        {
+          match: /thunder/,
+          respond: (url) => {
+            const first = url.pathname.endsWith("lib1/media");
+            if (url.searchParams.has("identifier")) return { body: { items: first ? [exact] : [] } };
+            const wrongAuthor = media({ id: "333", firstCreatorName: "Jane Austen", formats: [] });
+            const wrongTitle = media({ ...alternative, id: "444", title: "Project Hail Mary: The Study Guide" });
+            return { body: { items: first ? [exact, alternative] : [alternative, wrongAuthor, wrongTitle] } };
+          },
+        },
+      ]);
+      const cards = [card(), card({ cardId: "200", advantageKey: "lib2" })];
+
+      const matches = await runner.searchMatches(
+        { raw: isbn, isbn, ...(audioOnly && { mediaTypes: ["audiobook"] }) },
+        cards,
+      );
+
+      expect(matches.map(({ card, media }) => [card.advantageKey, media.id])).toEqual([
+        ...(audioOnly ? [] : [["lib1", "111"]]),
+        ["lib1", "222"],
+        ["lib2", "222"],
+      ]);
+      expect(calls.map(({ url }) => url.searchParams.get("identifier") ?? url.searchParams.get("query"))).toEqual([
+        isbn,
+        isbn,
+        "Project Hail Mary Andy Weir",
+        "Project Hail Mary Andy Weir",
+      ]);
+      expect(calls.every(({ method, url }) => method === "GET" && url.hostname === "thunder.api.overdrive.com")).toBe(
+        true,
+      );
+      if (audioOnly) {
+        expect(calls[0]?.url.searchParams.get("mediaTypes")).toContain("ebook");
+        expect(calls[2]?.url.searchParams.get("mediaTypes")).toBe("audiobook");
+      }
+    },
+  );
+
+  it("keeps an unresolved bare ISBN search empty and uses an explicitly supplied title if present", async () => {
+    const isbn = "9780593135204";
+    const { runner, calls } = setup([
+      {
+        match: /thunder/,
+        respond: (url) => ({ body: { items: url.searchParams.has("query") ? [media({ formats: [] })] : [] } }),
+      },
+    ]);
+    expect(await runner.searchMatches({ raw: isbn, isbn }, [card()])).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(await runner.searchMatches({ raw: isbn, isbn, title: "Project Hail Mary" }, [card()])).toHaveLength(1);
+  });
+
+  it("keeps exact ISBN results and checks later libraries when alternate lookup fails", async () => {
+    const isbn = "9780593135204";
+    const { runner } = setup([
+      {
+        match: /thunder/,
+        respond: (url) => {
+          if (url.searchParams.has("identifier")) {
+            return { body: { items: url.pathname.endsWith("lib1/media") ? [media()] : [] } };
+          }
+          if (url.pathname.endsWith("lib2/media")) return { status: 503, body: { message: "Catalog unavailable" } };
+          return { body: { items: [media({ id: "222", formats: [] })] } };
+        },
+      },
+    ]);
+    const cards = [
+      card(),
+      card({ cardId: "200", advantageKey: "lib2" }),
+      card({ cardId: "300", advantageKey: "lib3" }),
+    ];
+
+    const matches = await runner.searchMatches({ raw: isbn, isbn }, cards);
+    expect(matches.filter((match) => match.isbnMatch).map(({ media }) => media.id)).toEqual(["111"]);
+    expect(matches.map(({ card, media }) => [card.advantageKey, media.id])).toEqual([
+      ["lib1", "111"],
+      ["lib1", "222"],
+      ["lib3", "222"],
+    ]);
+  });
 });
 
 describe("auth", () => {

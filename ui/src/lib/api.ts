@@ -18,6 +18,7 @@ export interface Match {
   media: ThunderMedia;
   titleScore: number;
   authorScore?: number;
+  isbnMatch?: boolean;
 }
 
 /**

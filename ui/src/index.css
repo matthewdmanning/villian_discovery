@@ -7,7 +7,8 @@
  * Design tokens. Components use only these semantic names:
  * daisyUI colors (base-*, primary, secondary, accent, neutral, info, success, warning, error and their -content),
  * plus `pop` (outline + offset shadow ink), the app text colors `libby` and `fable`, the reading status colors
- * `status-unopened`, `status-progress`, `status-dnf`, `status-finished`, the rating color `star`, and the font roles below.
+ * `status-unopened`, `status-progress`, `status-dnf`, `status-finished`, format colors `format-ebook` and
+ * `format-audiobook`, the rating color `star`, and the font roles below.
  * No raw palette classes in components.
  */
 
@@ -128,6 +129,8 @@
   --color-status-dnf: var(--status-dnf);
   --color-status-finished: var(--status-finished);
   --color-star: var(--rating-star);
+  --color-format-ebook: var(--color-info);
+  --color-format-audiobook: var(--color-accent);
   --shadow-pop: 4px 4px 0 0 var(--pop-ink);
   --shadow-pop-sm: 2px 2px 0 0 var(--pop-ink);
 }

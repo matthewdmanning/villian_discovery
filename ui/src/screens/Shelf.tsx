@@ -25,6 +25,9 @@ function ShelfRows({ items, kind }: { items: ShelfEntry[]; kind: "checkedOut" | 
           <div className="min-w-0">
             <p className="font-semibold">{item.title}</p>
             {item.author && <p className="text-sm opacity-70">{item.author}</p>}
+            {item.narrators?.length ? (
+              <p className="text-sm opacity-70">Narrated by {item.narrators.join(", ")}</p>
+            ) : null}
           </div>
           <div className="flex shrink-0 gap-3 text-sm opacity-70">
             <span>{item.cardName ?? item.cardId}</span>
