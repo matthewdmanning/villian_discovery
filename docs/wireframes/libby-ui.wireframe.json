@@ -66,7 +66,14 @@
       "regions": [
         {
           "id": "shelf",
-          "components": [{ "type": "tabs", "label": "Shelf", "options": ["Checked out", "Holds", "Returned"] }]
+          "components": [
+            { "type": "tabs", "label": "Shelf", "options": ["Checked out", "Holds", "Returned"] },
+            {
+              "type": "list",
+              "label": "Shelf entries",
+              "columns": ["title", "author", "narrators", "cardName", "mediaType", "holdListPosition"]
+            }
+          ]
         }
       ]
     },
@@ -151,15 +158,14 @@
           "id": "matches",
           "components": [
             {
-              "type": "table",
-              "label": "Matches per library",
+              "type": "list",
+              "label": "Matches grouped by title and author",
               "columns": [
                 "card",
                 "title",
-                "firstCreatorName",
+                "author",
                 "type",
-                "titleScore",
-                "authorScore",
+                "narrators",
                 "isAvailable",
                 "availableCopies",
                 "ownedCopies",

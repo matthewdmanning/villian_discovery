@@ -51,6 +51,84 @@ it("groups search editions by title and author and orders availability before pr
   ]);
 });
 
+it("uses normalized authors, ignores ISBN editions, and keeps distinct authors apart", async () => {
+  const { groupSearchResults } = await import("../ui/src/lib/search-results.ts");
+  const match = (id, title, author, isbn) => ({
+    card: { cardId: id, advantageKey: id },
+    media: {
+      id,
+      title,
+      firstCreatorName: author,
+      ...(isbn && { formats: [{ id: "ebook", identifiers: [{ type: "ISBN", value: isbn }] }] }),
+      type: { id: "ebook" },
+    },
+    titleScore: 1,
+  });
+  const groups = groupSearchResults(
+    [
+      match("one", "Dune", "Herbert, Frank", "9780441013593"),
+      { ...match("two", "Dune", undefined), card: { cardId: "sparse", advantageKey: "sparse" } },
+      match("two", "Dune", "Frank Herbert", "9781429954228"),
+      match("three", "Dune", "Another Author"),
+    ],
+    [],
+    ["ebook"],
+  );
+  expect(groups.map((group) => group.matches.map((row) => row.card.cardId))).toEqual([
+    ["one", "sparse", "two"],
+    ["three"],
+  ]);
+});
+
+it("uses typed authors before firstCreatorName and safely falls back around narrators", async () => {
+  const { mediaAuthors } = await import("../src/matcher.ts");
+  expect(
+    mediaAuthors({
+      id: "typed",
+      title: "Dune",
+      firstCreatorName: "Ray Porter",
+      creators: [
+        { name: "Andy Weir", role: "Author" },
+        { name: "Ray Porter", role: "Narrator" },
+      ],
+    }),
+  ).toEqual(["Andy Weir"]);
+  expect(
+    mediaAuthors({
+      id: "fallback",
+      title: "Dune",
+      firstCreatorName: "Andy Weir",
+      creators: [{ name: "Ray Porter", role: "Narrator" }],
+    }),
+  ).toEqual(["Andy Weir"]);
+  expect(
+    mediaAuthors({
+      id: "narrator",
+      title: "Dune",
+      firstCreatorName: "Ray Porter",
+      creators: [{ name: "Ray Porter", role: "Narrator" }],
+    }),
+  ).toEqual([]);
+});
+
+it("keeps distinct explicit narrator credits in catalog order", async () => {
+  const { mediaNarrators } = await import("../src/matcher.ts");
+  expect(
+    mediaNarrators({
+      creators: [
+        { name: "Wilkie Collins", role: "Author" },
+        { name: "Ian Holm", role: " Narrator " },
+        { name: " ian holm ", role: "narrator" },
+        { name: "Simon Prebble", role: "NARRATOR" },
+        { name: "Uncredited" },
+        { name: "", role: "Narrator" },
+        null,
+      ],
+    }),
+  ).toEqual(["Ian Holm", "Simon Prebble"]);
+  expect(mediaNarrators({})).toEqual([]);
+});
+
 it("filters library options before sorting books and keeps their priority order", async () => {
   const { filterSearchGroups } = await import("../ui/src/lib/search-results.ts");
   const option = (library, type, available) => ({

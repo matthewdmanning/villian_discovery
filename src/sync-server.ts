@@ -27,6 +27,7 @@ import { Runner, selectCards } from "./runner.js";
 import { disconnectedAdapter, fableAdapter, libbyAdapter } from "./sync-adapters.js";
 import { resolveSyncSettings } from "./sync-config.js";
 import { createSyncOrchestrator, type SyncOrchestrator } from "./sync-orchestrator.js";
+import { ThunderClient } from "./thunder-client.js";
 
 const PORT = Number(process.env.LIBBY_SHELF_PORT ?? 8787);
 // A rebuild rewrites this file, so its time stamp tells a running copy from a newer build.
@@ -43,6 +44,12 @@ const TYPES: Record<string, string> = {
 const config = parseConfig(mergeConfig(configFromEnv()));
 const logger = createLogger(config.logLevel);
 const http = { ...config.http, logger };
+const publicCatalog = new ThunderClient({
+  ...http,
+  timeoutMs: Math.min(http.timeoutMs, 8_000),
+  retries: 0,
+  ...(config.http.thunderBaseUrl ? { baseUrl: config.http.thunderBaseUrl } : {}),
+});
 const SETTINGS_FILE = join(dirname(config.auth.tokenFile), "sync-settings.json");
 const context = { userId: "local", connectionId: "libby-and-fable" };
 let fable: Promise<FableGet> | undefined;
@@ -161,7 +168,7 @@ const routes: Record<string, Handler> = {
   },
   "GET /api/login/device-code": async () => ({ code: deviceCode }),
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
-  "GET /api/shelf": async () => listShelf(await libby()),
+  "GET /api/shelf": async () => listShelf(await libby(), publicCatalog),
   "GET /api/tags": async () => (await libby()).tags(),
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };

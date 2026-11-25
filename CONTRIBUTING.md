@@ -48,6 +48,8 @@ Install [gitleaks](https://github.com/gitleaks/gitleaks#installing). The pre-com
 Biome, not ESLint: typescript-eslint supports TypeScript `<6.1`; this repo uses TypeScript 7.
 `noNonNullAssertion` is off: `noUncheckedIndexedAccess` makes `!` the explicit, checked-by-review escape hatch.
 
+Set `LIBBY_LIVE_CATALOG_TEST=1` and run `npm test -- test/catalog-search.live.test.mjs` to check ISBN edition grouping and narrator credits against OverDrive's public catalog. The test needs internet access and uses no Libby account.
+
 ## CI
 
 | Workflow      | Runs                         | Jobs                                                                                                    |

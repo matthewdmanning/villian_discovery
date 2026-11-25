@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listAudiobookLoans, loanUrl } from "../src/libby-audiobooks.js";
+import { listAudiobookLoans, loanUrl, narratorsForItem } from "../src/libby-audiobooks.js";
 import type { LibbyClient } from "../src/libby-client.js";
 
 const fakeClient = (state: unknown, progress: Record<string, number | Error>) =>
@@ -47,5 +47,87 @@ describe("listAudiobookLoans", () => {
   it("throws when the account read fails instead of returning no books", async () => {
     const client = { sync: async () => Promise.reject(new Error("401")) } as unknown as LibbyClient;
     await expect(listAudiobookLoans(client)).rejects.toThrow("401");
+  });
+
+  it("uses explicit credits before catalog fallback and keeps loans when catalog fails", async () => {
+    const calls: string[] = [];
+    const rows = await listAudiobookLoans(
+      fakeClient(
+        {
+          cards: [{ cardId: "1", advantageKey: "library-4" }],
+          loans: [
+            { id: "21", cardId: "1", title: "Catalog", type: { id: "audiobook" } },
+            {
+              id: "22",
+              cardId: "1",
+              title: "Explicit",
+              type: { id: "audiobook" },
+              creators: [{ name: "Ian Holm", role: "Narrator" }],
+            },
+          ],
+        },
+        { "21": 12, "22": 4 },
+      ),
+      {
+        getLibraryMedia: async (library: string, titleId: string) => {
+          calls.push(`${library}:${titleId}`);
+          return { id: titleId, title: "Catalog", creators: [{ name: "Catalog Voice", role: "Narrator" }] };
+        },
+      } as never,
+    );
+
+    expect(rows).toEqual([
+      {
+        titleId: "21",
+        title: "Catalog",
+        narrators: ["Catalog Voice"],
+        progress: 12,
+        status: "reading",
+        url: "https://libbyapp.com/open/loan/1/21",
+      },
+      {
+        titleId: "22",
+        title: "Explicit",
+        narrators: ["Ian Holm"],
+        progress: 4,
+        status: "reading",
+        url: "https://libbyapp.com/open/loan/1/22",
+      },
+    ]);
+    expect(calls).toEqual(["library-4:21"]);
+
+    const failed = await listAudiobookLoans(
+      fakeClient(
+        {
+          cards: [{ cardId: "1", advantageKey: "library-5" }],
+          loans: [{ id: "23", cardId: "1", title: "Still here", type: { id: "audiobook" } }],
+        },
+        { "23": 9 },
+      ),
+      {
+        getLibraryMedia: () => {
+          throw new Error("catalog down");
+        },
+      },
+    );
+    expect(failed[0]).toMatchObject({ titleId: "23", progress: 9, status: "reading" });
+    expect(failed[0]).not.toHaveProperty("narrators");
+  });
+
+  it("retries empty catalog credits and reuses successful credits across refreshes", async () => {
+    let calls = 0;
+    const item = { id: "24", type: { id: "audiobook" } };
+    const card = { advantageKey: "library-6" };
+    const catalog = {
+      getLibraryMedia: async () => ({
+        id: item.id,
+        title: "Audio",
+        creators: ++calls === 1 ? [] : [{ name: "Catalog Voice", role: "Narrator" }],
+      }),
+    };
+    expect(await narratorsForItem(item, card, catalog)).toEqual([]);
+    expect(await narratorsForItem(item, card, catalog)).toEqual(["Catalog Voice"]);
+    expect(await narratorsForItem(item, card, catalog)).toEqual(["Catalog Voice"]);
+    expect(calls).toBe(2);
   });
 });

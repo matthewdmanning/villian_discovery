@@ -143,6 +143,9 @@ cd ui && npm install && npm run dev
 
 Runs on built-in demo data (`demo` badge): nothing reaches Libby. Demo pairing displays a sample code and completes automatically.
 
+Search groups editions with the same title and author so you can compare their formats and libraries. In the live web app, an ISBN search also looks for other editions once the catalog resolves the title.
+Audiobook options in Search and audiobook entries on the Shelf show narrator credits when available.
+
 To use your real accounts on Windows, double-click `Start libby-shelf.cmd`. It installs what is missing, starts a local server on <http://127.0.0.1:8787>, and opens it. On other systems, run `npm ci && npm ci --prefix ui && npm run live`. Connect Libby opens libbyapp.com for your sign-in on its own; "phone code" shows a setup code in the app instead. Sync compares on its own when it opens; the first comparison opens a browser window for your Fable login. Settings save as you change them. Live sync only reads: every write stays blocked until its contract is verified ([docs/sync-contracts.md](docs/sync-contracts.md)). Login, token-file changes, and completed runs refresh card data. At least one card must stay selected because an empty CLI card filter means all cards.
 
 Book drafts and per-row edits survive screen navigation for the current tab. Changing the input or its format clears row overrides. Invalid rules block runs until corrected. Demo plans use the library planner, including card limits, per-run limits, and lending periods.

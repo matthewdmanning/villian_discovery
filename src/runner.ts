@@ -1,10 +1,10 @@
-import type { Config } from "./config.js";
+import { type Config, MediaTypeSchema } from "./config.js";
 import { ConfigError, HttpError, MutationUncertainError } from "./errors.js";
 import { sleep } from "./http.js";
 import type { BookRequest } from "./input.js";
 import type { LibbyClient } from "./libby-client.js";
 import type { Logger } from "./logger.js";
-import { bestMatch, rankedMatches } from "./matcher.js";
+import { bestMatch, mediaAuthors, normalizeTitle, rankedMatches } from "./matcher.js";
 import { type Candidate, type Plan, planBook, type RunState } from "./planner.js";
 import type { ThunderClient } from "./thunder-client.js";
 import type { LibbyCard, SyncResponse, ThunderMedia } from "./types.js";
@@ -84,7 +84,38 @@ export class Runner {
 
   /** Use this function to list what each card's library would match for a book, as flat `search` rows. */
   async searchMatches(book: BookRequest, cards: LibbyCard[]) {
-    return (await this.findCandidates(book, cards)).map(({ card, match }) => ({
+    const { isbn, title, author, ...request } = book;
+    let candidates: Candidate[];
+    if (isbn && !book.titleId) {
+      const mediaTypes = request.mediaTypes?.length ? request.mediaTypes : this.cfg.mediaTypes;
+      const identifierTypes = [...new Set([...mediaTypes, ...MediaTypeSchema.options])];
+      const exact = await this.findCandidates({ ...request, isbn, mediaTypes: identifierTypes }, cards);
+      candidates = exact.filter(
+        ({ match }) => !match.media.type || mediaTypes.some((type) => type === match.media.type?.id),
+      );
+      const seed = (candidates[0] ?? exact[0])?.match.media;
+      const resolvedTitle = title ?? seed?.title;
+      const resolvedAuthor = author ?? (seed && mediaAuthors(seed)[0]);
+      if (resolvedTitle) {
+        const titleKey = normalizeTitle(resolvedTitle, false);
+        const editions = await this.findCandidates(
+          { ...request, title: resolvedTitle, ...(resolvedAuthor && { author: resolvedAuthor }) },
+          cards,
+        );
+        const seen = new Set(candidates.map(({ card, match }) => JSON.stringify([card.cardId, match.media.id])));
+        for (const edition of editions) {
+          const { card, match } = edition;
+          if (normalizeTitle(match.media.title, false) !== titleKey) continue;
+          const key = JSON.stringify([card.cardId, match.media.id]);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          candidates.push(edition);
+        }
+      }
+    } else {
+      candidates = await this.findCandidates(book, cards);
+    }
+    return candidates.map(({ card, match }) => ({
       card,
       media: match.media,
       titleScore: match.titleScore,

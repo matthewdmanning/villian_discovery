@@ -7,3 +7,4 @@ Keep a signed-in Libby tab open. Open Libby Shelf from Chrome's Extensions menu 
 The **Tags** tab displays Libby tag names and descriptions and saves them in Chrome's local extension storage. Refresh updates the cache; a failed refresh leaves the displayed tags intact. Restoring cached tags requires verifying the current account's library cards, so they are not available when that verification fails. The Libby identity token is not saved in the tag cache.
 
 The **Shelf** tab lists current checkouts and holds. Returned history is unavailable until a reliable Libby source is verified.
+Audiobook narrator credits appear in the side panel, Shelf, and expanded Search results when available from Libby or the OverDrive catalog.

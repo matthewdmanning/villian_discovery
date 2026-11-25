@@ -1,6 +1,7 @@
 import { BookCopy, ChevronDown, Clock, Search, Users } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { parseBookLine } from "../../../src/input.ts";
+import { mediaNarrators } from "../../../src/matcher.ts";
 import { dash, Empty, Panel, Screen } from "../components/ui.tsx";
 import type { Match } from "../lib/api.ts";
 import { filterSearchGroups, groupSearchResults, type SearchFilters } from "../lib/search-results.ts";
@@ -196,6 +197,7 @@ export function SearchScreen() {
                     <ul className="space-y-2 pb-4">
                       {group.matches.map((m) => {
                         const type = m.media.type?.id?.toLowerCase();
+                        const narrators = type === "audiobook" ? mediaNarrators(m.media) : [];
                         const format =
                           type === "ebook"
                             ? "Ebook"
@@ -219,6 +221,9 @@ export function SearchScreen() {
                               </p>
                               <Avail m={m} />
                             </div>
+                            {narrators.length > 0 && (
+                              <p className="text-sm opacity-75">Narrated by {narrators.join(", ")}</p>
+                            )}
                             <div className="flex flex-wrap items-center gap-x-3">
                               <Metric label="Available / total copies" value={copies(m)}>
                                 <BookCopy aria-hidden="true" className="size-4" />

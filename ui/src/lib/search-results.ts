@@ -1,3 +1,4 @@
+import { mediaAuthors, normalizeName, normalizeTitle } from "../../../src/matcher.js";
 import type { Match } from "./api.ts";
 
 export type SearchGroup = { key: string; title: string; author?: string; matches: Match[] };
@@ -8,13 +9,51 @@ export function groupSearchResults(
   libraries: string[],
   mediaTypes: readonly string[],
 ): SearchGroup[] {
-  const groups = new Map<string, SearchGroup>();
-  const normalize = (value: string) => value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
-  matches.forEach((match, index) => {
+  const metadata = matches.map((match) => {
     const title = match.media.title.trim();
-    const author = match.media.firstCreatorName?.trim();
-    const key = title && author ? JSON.stringify([normalize(title), normalize(author)]) : `unknown-${index}`;
-    const group = groups.get(key) ?? { key, title, ...(author && { author }), matches: [] };
+    const titleKey = title ? normalizeTitle(title, false) : undefined;
+    const authors = mediaAuthors(match.media);
+    const authorKey = authors.length
+      ? [...new Set(authors.map((author) => normalizeName(author, true)))].sort().join("|")
+      : undefined;
+    return {
+      title,
+      titleKey,
+      authors,
+      authorKey,
+      workKey: titleKey && authorKey ? `work:${titleKey}|authors:${authorKey}` : undefined,
+      id: match.media.id.trim(),
+    };
+  });
+  type Identity = (typeof metadata)[number];
+  const identifiedById = new Map<string, Identity | null>();
+  metadata.forEach((identity) => {
+    if (!identity.id || !identity.workKey) return;
+    const previous = identifiedById.get(identity.id);
+    identifiedById.set(identity.id, previous === undefined || previous?.workKey === identity.workKey ? identity : null);
+  });
+  const groups = new Map<string, SearchGroup>();
+  matches.forEach((match, index) => {
+    const current = metadata[index]!;
+    const identified = current.workKey
+      ? current
+      : current.id
+        ? (identifiedById.get(current.id) ?? undefined)
+        : undefined;
+    const compatible =
+      identified &&
+      (!current.titleKey || !identified.titleKey || current.titleKey === identified.titleKey) &&
+      (!current.authorKey || !identified.authorKey || current.authorKey === identified.authorKey);
+    const identity = compatible ? identified : undefined;
+    const key = identity?.workKey ?? (current.id ? `catalog:${current.id}` : `unknown-${index}`);
+    const displayTitle = identity?.title || current.title;
+    const displayAuthor = identity?.authors.length ? identity.authors.join(", ") : current.authors.join(", ");
+    const group = groups.get(key) ?? {
+      key,
+      title: displayTitle,
+      ...(displayAuthor && { author: displayAuthor }),
+      matches: [],
+    };
     group.matches.push(match);
     groups.set(key, group);
   });

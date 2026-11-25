@@ -82,9 +82,10 @@ Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliat
 
 ```
 ┌ Search preview ─────────────────────────────── [Search] ┐
-│ [Project Hail Mary by Andy Weir                       ] │
-│ card │ title │ creator │ type │ t/a score │ avail │ copies │ holds │ wait │
-│ Main │ PHM   │ Weir    │ ebook│ 1.00/0.92 │ no    │ 0/4    │ 12    │ 21d  │
+│ [The Woman in White by Wilkie Collins                 ] │
+│ Sort      Availability      Format      Library        │
+│ ▾ The Woman in White · Wilkie Collins                  │
+│   Audiobook · Main · Narrated by Ian Holm              │
 └─────────────────────────────────────────────────────────┘
 ```
 

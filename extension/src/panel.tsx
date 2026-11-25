@@ -98,9 +98,14 @@ function Audiobooks() {
   return (
     <ul className="px-4 pt-4">
       {rows.map((row) => (
-        <li key={row.titleId} className="flex items-center gap-2 py-1">
-          <span className="font-display font-semibold">{row.title}</span>→
-          <span>{row.progress === undefined ? row.status : `${row.status}, ${row.progress}%`}</span>
+        <li key={row.titleId} className="flex flex-wrap items-center gap-2 py-1">
+          <div className="min-w-0">
+            <span className="font-display font-semibold">{row.title}</span>
+            {row.narrators?.length ? (
+              <span className="block text-sm opacity-70">Narrated by {row.narrators.join(", ")}</span>
+            ) : null}
+          </div>
+          →<span>{row.progress === undefined ? row.status : `${row.status}, ${row.progress}%`}</span>
           {row.url && (
             <button type="button" className="link" onClick={() => void openInLibby(row.url as string)}>
               Open in Libby

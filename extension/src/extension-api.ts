@@ -1,5 +1,5 @@
 import type { Config } from "../../src/config.ts";
-import { type AudiobookRow, listAudiobookLoans } from "../../src/libby-audiobooks.ts";
+import { type AudiobookRow, type CatalogReader, listAudiobookLoans } from "../../src/libby-audiobooks.ts";
 import { listShelf } from "../../src/libby-shelf.ts";
 import type { LibbyTag } from "../../src/libby-tags-cache.ts";
 import {
@@ -22,6 +22,13 @@ import { libbyClient, libbyProblem } from "./libby-session.ts";
 const SETTINGS_KEY = "syncSettings";
 export const LIBBY_TAGS_CACHE_KEY = "libbyTags";
 const context: SyncContext = { userId: "local", connectionId: "libby-and-fable" };
+const publicCatalog: CatalogReader = new ThunderClient({
+  timeoutMs: 8_000,
+  retries: 0,
+  retryBaseMs: 250,
+  userAgent: "villian-discovery-extension",
+  logger: silentLogger,
+});
 
 export type { LibbyTag } from "../../src/libby-tags-cache.ts";
 export {
@@ -49,7 +56,7 @@ export async function connections() {
 export async function audiobooks(): Promise<AudiobookRow[]> {
   const client = await libbyClient();
   if (!client) throw new Error(libbyProblem() || "Sign in to Libby first");
-  return listAudiobookLoans(client);
+  return listAudiobookLoans(client, publicCatalog);
 }
 
 /** Use this function to read, validate and cache Libby tags for the signed-in account. */
@@ -136,7 +143,7 @@ export const extensionApi: LibraryApi = {
   shelf: async () => {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");
-    return listShelf(client);
+    return listShelf(client, publicCatalog);
   },
   search: async (book, config) => {
     const client = await libbyClient();
