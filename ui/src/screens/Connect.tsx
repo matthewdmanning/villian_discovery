@@ -111,8 +111,8 @@ export function Connect() {
                   : "Not connected to Libby"}
         </span>
         {connection === "connected" && (
-          <button type="button" className="btn btn-sm btn-pop btn-neutral" onClick={() => go("books")}>
-            Add books
+          <button type="button" className="btn btn-sm btn-pop btn-neutral" onClick={() => go("shelf")}>
+            View shelf
           </button>
         )}
       </div>

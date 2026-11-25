@@ -8,7 +8,7 @@ import {
   libbySnapshots,
 } from "../src/sync-adapters.js";
 import { resolveSyncSettings } from "../src/sync-config.js";
-import { previewSync } from "../src/sync-plan.js";
+import { applySync, createMemoryJournal, previewSync } from "../src/sync-plan.js";
 
 describe("libbySnapshots", () => {
   it("turns each current loan into one checked-out book", () => {
@@ -35,6 +35,20 @@ describe("libbySnapshots", () => {
         fields: { checkedOut: { value: true } },
       },
     ]);
+    for (const book of books) BookSnapshotSchema.parse(book);
+  });
+
+  it("adds reading progress only for loans whose position is known", () => {
+    const books = libbySnapshots(
+      {
+        loans: [
+          { id: "11", cardId: "1", title: "Dune" },
+          { id: "12", cardId: "1", title: "Emma" },
+        ],
+      },
+      new Map([["11", 1.82]]),
+    );
+    expect(books.map((book) => book.fields.readingProgress)).toEqual([{ value: 1.82 }, undefined]);
     for (const book of books) BookSnapshotSchema.parse(book);
   });
 });
@@ -77,17 +91,145 @@ describe("fableSnapshots", () => {
 });
 
 describe("live adapters", () => {
-  it("stay unverified, expose no writable fields, and refuse writes", async () => {
+  it("expose no writable fields and refuse writes", async () => {
     const adapters = [
       libbyAdapter({ sync: async () => ({}) } as never),
       fableAdapter(async () => ({ next: null, results: [] }) as never),
     ];
     for (const adapter of adapters) {
-      expect(adapter.verified).toBe(false);
       expect(adapter.writableFields).toEqual([]);
       await expect(adapter.write({} as never, {} as never, async () => {})).rejects.toThrow(/not verified/);
       expect(await adapter.read({ userId: "u", connectionId: "c" })).toEqual([]);
     }
+  });
+
+  it("reads Libby progress per loan and leaves it unknown when Libby has none", async () => {
+    const adapter = libbyAdapter({
+      sync: async () => ({
+        loans: [
+          { id: "11", cardId: "1", title: "Dune", type: { id: "audiobook" } },
+          { id: "12", cardId: "1", title: "Emma", type: { id: "ebook" } },
+        ],
+      }),
+      loanProgress: async ({ titleId }: { titleId: string }) =>
+        titleId === "11" ? 85 : Promise.reject(new Error("404")),
+    } as never);
+    const books = await adapter.read({ userId: "u", connectionId: "c" });
+    expect(books.map((book) => book.fields.readingProgress)).toEqual([{ value: 85 }, undefined]);
+  });
+});
+
+describe("adding a Libby loan to Fable", () => {
+  const ids = { userId: "u", connectionId: "c" };
+  const loans = {
+    sync: async () => ({
+      loans: [
+        {
+          id: "11",
+          cardId: "1",
+          title: "The Road to Tender Hearts",
+          firstCreatorName: "Ann Author",
+          type: { id: "audiobook" },
+        },
+      ],
+    }),
+    loanProgress: async () => 85,
+  } as never;
+
+  /** A fake fable.co: a catalog search, the user's lists, and a picker that records adds. */
+  function fakeFable(
+    search: unknown[] = [{ id: "cat-1", title: "The Road to Tender Hearts", authors: [{ name: "Ann Author" }] }],
+  ) {
+    const posts: { path: string; body: unknown }[] = [];
+    const onList: { id: string; title: string }[] = [];
+    const get = async (path: string, query: Record<string, string | number>) => {
+      if (path === "/api/search") return { books: search };
+      if (path === "/api/me/book-lists")
+        return { next: null, results: [{ id: "cur", name: "Currently Reading", system_type: "current_reading" }] };
+      return {
+        next: null,
+        results: onList.map((book) => ({
+          note: null,
+          book: { id: book.id, title: book.title, authors: [{ name: "Ann Author" }], reading_progress: null },
+        })),
+        query,
+      };
+    };
+    const post = async (path: string, body: unknown) => {
+      posts.push({ path, body });
+      onList.push({ id: "cat-1", title: "The Road to Tender Hearts" });
+      return { applied: true };
+    };
+    return { get: get as never, post: post as never, posts };
+  }
+
+  it("proposes the add, writes it through the list picker, and verifies it", async () => {
+    const { get, post, posts } = fakeFable();
+    const adapters = { libby: libbyAdapter(loans), fable: fableAdapter(get, post) };
+    const plan = await previewSync({ context: ids, settings: resolveSyncSettings(), adapters });
+    expect(plan.operations).toMatchObject([
+      {
+        field: "readingStatus",
+        target: "fable",
+        after: "currently-reading",
+        create: { title: "The Road to Tender Hearts" },
+      },
+    ]);
+    expect(plan.operations[0]?.blocked).toBeUndefined();
+    const report = await applySync({
+      context: ids,
+      settings: resolveSyncSettings(),
+      plan,
+      adapters,
+      journal: createMemoryJournal(),
+      approvals: { selected: [plan.operations[0]!.id], removals: [] },
+    });
+    expect(posts).toEqual([
+      { path: "/api/me/book-lists/picker", body: { book_id: "cat-1", book_list_ids: ["cur"], exclude_from: [] } },
+    ]);
+    expect(report.outcomes).toMatchObject([{ status: "success" }]);
+  });
+
+  it("blocks the add when Fable has no write capability", async () => {
+    const { get } = fakeFable();
+    const plan = await previewSync({
+      context: ids,
+      settings: resolveSyncSettings(),
+      adapters: { libby: libbyAdapter(loans), fable: fableAdapter(get) },
+    });
+    expect(plan.operations[0]?.blocked).toMatch(/not verified/);
+  });
+
+  it("adds nothing when a loan has no progress", async () => {
+    const { get, post } = fakeFable();
+    const noProgress = { ...(loans as object), loanProgress: async () => undefined } as never;
+    const plan = await previewSync({
+      context: ids,
+      settings: resolveSyncSettings(),
+      adapters: { libby: libbyAdapter(noProgress), fable: fableAdapter(get, post) },
+    });
+    expect(plan.operations).toEqual([]);
+    expect(plan.conflicts[0]?.message).toMatch(/No matched destination/);
+  });
+
+  it("refuses to guess between several Fable books with the same title", async () => {
+    const twin = { id: "x", title: "The Road to Tender Hearts", authors: [{ name: "Other Person" }] };
+    const { get, post, posts } = fakeFable([twin, { ...twin, id: "y" }]);
+    const adapters = { libby: libbyAdapter(loans), fable: fableAdapter(get, post) };
+    const plan = await previewSync({ context: ids, settings: resolveSyncSettings(), adapters });
+    const report = await applySync({
+      context: ids,
+      settings: resolveSyncSettings(),
+      plan,
+      adapters,
+      journal: createMemoryJournal(),
+      approvals: { selected: [plan.operations[0]!.id], removals: [] },
+    });
+    expect(posts).toEqual([]);
+    expect(report.outcomes[0]).toMatchObject({
+      status: "failed",
+      message: expect.stringMatching(/No single Fable book/),
+    });
   });
 });
 

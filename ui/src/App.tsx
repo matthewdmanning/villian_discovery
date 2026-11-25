@@ -11,7 +11,7 @@ import {
   Search,
   SlidersHorizontal,
   Sun,
-  Tags,
+  Tags as TagsIcon,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { compact } from "./components/ui.tsx";
@@ -25,6 +25,7 @@ import { Player } from "./screens/Player.tsx";
 import { Results } from "./screens/Results.tsx";
 import { SearchScreen } from "./screens/Search.tsx";
 import { Settings } from "./screens/Settings.tsx";
+import { Shelf } from "./screens/Shelf.tsx";
 import { SyncScreen } from "./screens/Sync.tsx";
 import { TagsScreen } from "./screens/Tags.tsx";
 
@@ -32,12 +33,13 @@ const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; sho
   connect: { icon: Plug, short: "Connect", view: Connect },
   cards: { icon: CreditCard, short: "Cards", view: Cards },
   books: { icon: BookOpen, short: "Books", view: Books },
+  shelf: { icon: BookOpen, short: "Shelf", view: Shelf },
+  tags: { icon: TagsIcon, short: "Tags", view: TagsScreen },
   settings: { icon: SlidersHorizontal, short: "Rules", view: Settings },
   search: { icon: Search, short: "Search", view: SearchScreen },
   results: { icon: ListChecks, short: "Results", view: Results },
   sync: { icon: RefreshCw, short: "Sync", view: SyncScreen },
   player: { icon: Headphones, short: "Player", view: Player },
-  tags: { icon: Tags, short: "Tags", view: TagsScreen },
 };
 
 const navigationScreens = screens.filter((s) => s.id !== "results");
@@ -47,11 +49,11 @@ const mobileOnly = options.layout === "mobile";
 const desk = mobileOnly ? "hidden" : "hidden lg:flex";
 const phone = mobileOnly ? "" : "lg:hidden";
 
-export function App() {
+export function App({ tagsView }: { tagsView?: () => ReactNode } = {}) {
   const { screen, go, api } = useStore();
   const [theme, toggleTheme] = useTheme();
   const activeScreen = screen === "results" ? "search" : screen;
-  const View = VIEWS[activeScreen].view;
+  const View = activeScreen === "tags" && tagsView ? tagsView : VIEWS[activeScreen].view;
   const idx = navigationScreens.findIndex((s) => s.id === activeScreen);
 
   const brand = (

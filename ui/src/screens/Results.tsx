@@ -48,8 +48,8 @@ export function Results() {
           </p>
         ) : (
           <Empty icon={<ListChecks className="size-7" />} title="No plan yet">
-            <button type="button" className="btn btn-primary btn-pop" onClick={() => go("books")}>
-              Add books
+            <button type="button" className="btn btn-primary btn-pop" onClick={() => go("search")}>
+              Search books
             </button>
           </Empty>
         )}

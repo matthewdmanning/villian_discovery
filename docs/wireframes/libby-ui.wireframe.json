@@ -5,7 +5,7 @@
     "layout": "desktop",
     "density": "comfortable",
     "navigation": "sidebar",
-    "defaultScreen": "books",
+    "defaultScreen": "shelf",
     "showAdvanced": false
   },
   "screens": [
@@ -59,38 +59,23 @@
       ]
     },
     {
-      "id": "books",
-      "title": "Book list",
-      "cli": "run <input>",
+      "id": "shelf",
+      "title": "Shelf",
+      "cli": "",
       "enabled": true,
       "regions": [
         {
-          "id": "input",
-          "components": [
-            { "type": "textarea", "label": "One book per line: Title by Author · isbn:… · id:…" },
-            { "type": "dropzone", "label": "Or drop .txt / .csv / .tsv / .json" },
-            { "type": "select", "label": "Input format", "options": ["auto", "text", "csv", "tsv", "json"] }
-          ]
-        },
-        {
-          "id": "rows",
-          "components": [
-            {
-              "type": "table",
-              "label": "Parsed books",
-              "columns": ["title", "author", "isbn", "format", "action", "libraries"],
-              "editable": ["format", "action", "libraries"]
-            }
-          ]
-        },
-        {
-          "id": "actions",
-          "components": [
-            { "type": "toggle", "label": "Dry run", "binds": "dryRun" },
-            { "type": "button", "label": "Plan", "action": "run --dry-run", "primary": true }
-          ]
+          "id": "shelf",
+          "components": [{ "type": "tabs", "label": "Shelf", "options": ["Checked out", "Holds", "Returned"] }]
         }
       ]
+    },
+    {
+      "id": "tags",
+      "title": "Tags",
+      "cli": "",
+      "enabled": true,
+      "regions": [{ "id": "tags", "components": [{ "type": "output", "label": "Libby tags" }] }]
     },
     {
       "id": "settings",
@@ -278,13 +263,6 @@
           ]
         }
       ]
-    },
-    {
-      "id": "tags",
-      "title": "Libby tags (experimental)",
-      "cli": "",
-      "enabled": true,
-      "regions": [{ "id": "tags", "components": [{ "type": "button", "label": "Load tags", "action": "load-tags" }] }]
     },
     {
       "id": "player",

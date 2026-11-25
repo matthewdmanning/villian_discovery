@@ -21,11 +21,12 @@ import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discover
 import { createClients } from "./index.js";
 import type { BookRequest } from "./input.js";
 import { LibbyClient } from "./libby-client.js";
+import { listShelf } from "./libby-shelf.js";
 import { createLogger } from "./logger.js";
 import { Runner, selectCards } from "./runner.js";
 import { disconnectedAdapter, fableAdapter, libbyAdapter } from "./sync-adapters.js";
-import { resolveSyncSettings, SyncSettingsSchema } from "./sync-config.js";
-import { applySync, createMemoryJournal, previewSync, type SyncContext, type SyncPlan } from "./sync-plan.js";
+import { resolveSyncSettings } from "./sync-config.js";
+import { createSyncOrchestrator, type SyncOrchestrator } from "./sync-orchestrator.js";
 
 const PORT = Number(process.env.LIBBY_SHELF_PORT ?? 8787);
 // A rebuild rewrites this file, so its time stamp tells a running copy from a newer build.
@@ -43,10 +44,7 @@ const config = parseConfig(mergeConfig(configFromEnv()));
 const logger = createLogger(config.logLevel);
 const http = { ...config.http, logger };
 const SETTINGS_FILE = join(dirname(config.auth.tokenFile), "sync-settings.json");
-const context: SyncContext = { userId: "local", connectionId: "libby-and-fable" };
-const journal = createMemoryJournal();
-const plans = new Map<string, SyncPlan>();
-let matches: Record<string, string> = {};
+const context = { userId: "local", connectionId: "libby-and-fable" };
 let fable: Promise<FableGet> | undefined;
 let browser: Promise<BrowserSession> | undefined;
 let libbySignIn: Promise<void> | undefined;
@@ -122,6 +120,13 @@ async function body(request: IncomingMessage): Promise<unknown> {
   return text ? JSON.parse(text) : {};
 }
 
+const sync: SyncOrchestrator = createSyncOrchestrator({
+  context,
+  adapters,
+  readSettings: loadSettings,
+  writeSettings: async (settings) => writeFile(SETTINGS_FILE, `${JSON.stringify(settings, null, 2)}\n`),
+});
+
 type Handler = (input: unknown) => Promise<unknown>;
 const routes: Record<string, Handler> = {
   "GET /api/status": async () => ({
@@ -155,8 +160,9 @@ const routes: Record<string, Handler> = {
     return {};
   },
   "GET /api/login/device-code": async () => ({ code: deviceCode }),
-  "GET /api/tags": async () => (await libby()).tags(),
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
+  "GET /api/shelf": async () => listShelf(await libby()),
+  "GET /api/tags": async () => (await libby()).tags(),
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };
     const { runner, cfg, libby } = await liveRunner(settings);
@@ -166,39 +172,14 @@ const routes: Record<string, Handler> = {
     const { books, config: settings } = input as { books: BookRequest[]; config?: unknown };
     return (await liveRunner(settings)).runner.run(books);
   },
-  "GET /api/sync/settings": loadSettings,
-  "PUT /api/sync/settings": async (input) =>
-    journal.withLock(context, async () => {
-      const overrides = SyncSettingsSchema.partial().strict().parse(input);
-      await writeFile(SETTINGS_FILE, `${JSON.stringify(overrides, null, 2)}\n`);
-      plans.clear();
-      return resolveSyncSettings(overrides);
-    }),
+  "GET /api/sync/settings": sync.getSettings,
+  "PUT /api/sync/settings": sync.saveSettings,
   "POST /api/sync/preview": async (input) => {
-    const options = (input ?? {}) as Parameters<typeof previewSync>[0]["options"];
-    if (options?.matches) matches = options.matches;
-    const plan = await previewSync({
-      context,
-      settings: await loadSettings(),
-      adapters: await adapters(),
-      options: { ...options, matches },
-    });
-    plans.set(plan.id, plan);
-    return plan;
+    return sync.previewSync((input ?? {}) as Parameters<typeof sync.previewSync>[0]);
   },
   "POST /api/sync/apply": async (input) => {
     const { planId, approvals } = input as { planId?: string; approvals?: unknown };
-    const plan = planId ? plans.get(planId) : undefined;
-    if (!plan) throw new Error("Preview is unavailable or settings changed; preview again");
-    return applySync({
-      context,
-      settings: await loadSettings(),
-      readSettings: loadSettings,
-      plan,
-      adapters: await adapters(),
-      journal,
-      approvals: approvals as Parameters<typeof applySync>[0]["approvals"],
-    });
+    return sync.applySync(planId ?? "", approvals);
   },
 };
 
