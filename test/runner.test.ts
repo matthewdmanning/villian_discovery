@@ -204,6 +204,35 @@ describe("Runner", () => {
     expect(calls).toHaveLength(1);
     expect(await runner.searchMatches({ raw: isbn, isbn, title: "Project Hail Mary" }, [card()])).toHaveLength(1);
   });
+
+  it("keeps exact ISBN results and checks later libraries when alternate lookup fails", async () => {
+    const isbn = "9780593135204";
+    const { runner } = setup([
+      {
+        match: /thunder/,
+        respond: (url) => {
+          if (url.searchParams.has("identifier")) {
+            return { body: { items: url.pathname.endsWith("lib1/media") ? [media()] : [] } };
+          }
+          if (url.pathname.endsWith("lib2/media")) return { status: 503, body: { message: "Catalog unavailable" } };
+          return { body: { items: [media({ id: "222", formats: [] })] } };
+        },
+      },
+    ]);
+    const cards = [
+      card(),
+      card({ cardId: "200", advantageKey: "lib2" }),
+      card({ cardId: "300", advantageKey: "lib3" }),
+    ];
+
+    const matches = await runner.searchMatches({ raw: isbn, isbn }, cards);
+    expect(matches.filter((match) => match.isbnMatch).map(({ media }) => media.id)).toEqual(["111"]);
+    expect(matches.map(({ card, media }) => [card.advantageKey, media.id])).toEqual([
+      ["lib1", "111"],
+      ["lib1", "222"],
+      ["lib3", "222"],
+    ]);
+  });
 });
 
 describe("auth", () => {

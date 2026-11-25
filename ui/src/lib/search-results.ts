@@ -3,7 +3,7 @@ import type { Match } from "./api.ts";
 
 export type SearchGroup = { key: string; title: string; author?: string; matches: Match[] };
 
-/** Group only known title/author pairs; preserve the search's relevance order for books. */
+/** Group title and author pairs, using the most complete compatible byline for a shared catalog ID. */
 export function groupSearchResults(
   matches: Match[],
   libraries: string[],
@@ -13,14 +13,13 @@ export function groupSearchResults(
     const title = match.media.title.trim();
     const titleKey = title ? normalizeTitle(title, false) : undefined;
     const authors = mediaAuthors(match.media);
-    const authorKey = authors.length
-      ? [...new Set(authors.map((author) => normalizeName(author, true)))].sort().join("|")
-      : undefined;
+    const authorKeys = [...new Set(authors.map((author) => normalizeName(author, true)).filter(Boolean))].sort();
+    const authorKey = authorKeys.length ? authorKeys.join("|") : undefined;
     return {
       title,
       titleKey,
       authors,
-      authorKey,
+      authorKeys,
       workKey: titleKey && authorKey ? `work:${titleKey}|authors:${authorKey}` : undefined,
       id: match.media.id.trim(),
     };
@@ -29,28 +28,28 @@ export function groupSearchResults(
   const identifiedById = new Map<string, Identity | null>();
   metadata.forEach((identity) => {
     if (!identity.id || !identity.workKey) return;
-    const previous = identifiedById.get(identity.id);
-    identifiedById.set(identity.id, previous === undefined || previous?.workKey === identity.workKey ? identity : null);
+    const best = identifiedById.get(identity.id);
+    if (!best || identity.authorKeys.length > best.authorKeys.length) identifiedById.set(identity.id, identity);
+  });
+  metadata.forEach((identity) => {
+    const best = identifiedById.get(identity.id);
+    if (
+      best &&
+      ((identity.titleKey && identity.titleKey !== best.titleKey) ||
+        identity.authorKeys.some((author) => !best.authorKeys.includes(author)))
+    ) {
+      identifiedById.set(identity.id, null);
+    }
   });
   const groups = new Map<string, SearchGroup>();
   matches.forEach((match, index) => {
     const current = metadata[index]!;
-    const identified = current.workKey
-      ? current
-      : current.id
-        ? (identifiedById.get(current.id) ?? undefined)
-        : undefined;
-    const compatible =
-      identified &&
-      (!current.titleKey || !identified.titleKey || current.titleKey === identified.titleKey) &&
-      (!current.authorKey || !identified.authorKey || current.authorKey === identified.authorKey);
-    const identity = compatible ? identified : undefined;
-    const key = identity?.workKey ?? (current.id ? `catalog:${current.id}` : `unknown-${index}`);
-    const displayTitle = identity?.title || current.title;
-    const displayAuthor = identity?.authors.length ? identity.authors.join(", ") : current.authors.join(", ");
+    const identity = identifiedById.get(current.id) ?? current;
+    const key = identity.workKey ?? (current.id ? `catalog:${current.id}` : `unknown-${index}`);
+    const displayAuthor = identity.authors.join(", ");
     const group = groups.get(key) ?? {
       key,
-      title: displayTitle,
+      title: identity.title,
       ...(displayAuthor && { author: displayAuthor }),
       matches: [],
     };
@@ -101,6 +100,13 @@ export function filterSearchGroups(groups: SearchGroup[], filters: SearchFilters
     }))
     .filter((group) => group.matches.length > 0);
   const compare = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+  if (filters.sort === "relevance") {
+    const score = (group: SearchGroup) =>
+      Math.max(
+        ...group.matches.map((match) => (match.isbnMatch ? 10 : 0) + match.titleScore + (match.authorScore ?? 0)),
+      );
+    filtered.sort((a, b) => score(b) - score(a));
+  }
   if (filters.sort === "title") filtered.sort((a, b) => compare(a.title, b.title));
   if (filters.sort === "author")
     filtered.sort((a, b) =>

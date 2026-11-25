@@ -69,11 +69,19 @@ export class Runner {
   }
 
   /** Finds candidates and the plan without acting. Exposed for `search`/debugging. */
-  async findCandidates(book: BookRequest, cards: LibbyCard[]): Promise<Candidate[]> {
+  async findCandidates(
+    book: BookRequest,
+    cards: LibbyCard[],
+    { allowPartialResults = false }: { allowPartialResults?: boolean } = {},
+  ): Promise<Candidate[]> {
     const libs = orderedLibraries(cards, book.libraries);
     const out: Candidate[] = [];
     for (const lib of libs) {
-      const items = await this.search(lib, book);
+      const items = await this.search(lib, book).catch((error: unknown) => {
+        if (!allowPartialResults) throw error;
+        this.deps.logger.warn(`Could not check alternate editions at ${lib}`);
+        return [];
+      });
       const matches = rankedMatches(book, items, { ...this.cfg.matching, mediaTypes: this.cfg.mediaTypes });
       for (const match of matches) {
         for (const card of cards.filter((c) => c.advantageKey === lib)) out.push({ card, match });
@@ -101,6 +109,7 @@ export class Runner {
         const editions = await this.findCandidates(
           { ...request, title: resolvedTitle, ...(resolvedAuthor && { author: resolvedAuthor }) },
           cards,
+          { allowPartialResults: candidates.length > 0 },
         );
         const seen = new Set(candidates.map(({ card, match }) => JSON.stringify([card.cardId, match.media.id])));
         for (const edition of editions) {
@@ -120,6 +129,7 @@ export class Runner {
       media: match.media,
       titleScore: match.titleScore,
       ...(match.authorScore !== undefined && { authorScore: match.authorScore }),
+      ...(match.isbnMatch && { isbnMatch: true }),
     }));
   }
 

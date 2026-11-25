@@ -160,3 +160,80 @@ it("filters library options before sorting books and keeps their priority order"
   expect(filterSearchGroups(groups, { ...filters, sort: "author" }).map((g) => g.title)).toEqual(["Zulu", "Alpha"]);
   expect(groups[0].matches).toHaveLength(2);
 });
+
+it("ranks Best match by the strongest visible option while preserving option priority", async () => {
+  const { filterSearchGroups, groupSearchResults } = await import("../ui/src/lib/search-results.ts");
+  const match = (title, author, library, titleScore, authorScore) => ({
+    card: { cardId: library, advantageKey: library },
+    media: { id: `${library}-${title}`, title, firstCreatorName: author, type: { id: "ebook" }, isAvailable: true },
+    titleScore,
+    authorScore,
+  });
+  const groups = groupSearchResults(
+    [
+      match("Alpha", "A", "first", 0.85, 0.2),
+      match("Dune", "Frank Herbert", "first", 0.6, 0.1),
+      match("Dune", "Frank Herbert", "second", 1, 1),
+      match("Beta", "B", "first", 0.85, 0.2),
+    ],
+    ["first", "second"],
+    ["ebook"],
+  );
+  const filters = { availability: "all", format: "", library: "", sort: "relevance" };
+  expect(filterSearchGroups(groups, filters).map((group) => group.title)).toEqual(["Dune", "Alpha", "Beta"]);
+  expect(filterSearchGroups(groups, { ...filters, library: "first" }).map((group) => group.title)).toEqual([
+    "Alpha",
+    "Beta",
+    "Dune",
+  ]);
+  expect(filterSearchGroups(groups, filters)[0].matches.map((match) => match.card.advantageKey)).toEqual([
+    "first",
+    "second",
+  ]);
+  const isbnGroups = groupSearchResults(
+    [match("Alternate title", "A", "first", 1, 1), { ...match("Exact ISBN", "B", "second", 1), isbnMatch: true }],
+    [],
+    ["ebook"],
+  );
+  expect(filterSearchGroups(isbnGroups, filters).map((group) => group.title)).toEqual([
+    "Exact ISBN",
+    "Alternate title",
+  ]);
+});
+
+it("groups same-ID compatible author sets under the complete byline, but keeps boundaries", async () => {
+  const { groupSearchResults } = await import("../ui/src/lib/search-results.ts");
+  const media = (id, authors) => ({
+    id,
+    title: "Dune",
+    creators: authors.map((name) => ({ name, role: "Author" })),
+    type: { id: "ebook" },
+  });
+  const row = (id, authors) => ({
+    card: { cardId: id, advantageKey: id },
+    media: media(id, authors),
+    titleScore: 1,
+  });
+  for (const rows of [
+    [row("same", ["Frank Herbert"]), row("same", ["Frank Herbert", "Brian Herbert"])],
+    [row("same", ["Frank Herbert", "Brian Herbert"]), row("same", ["Frank Herbert"])],
+    [row("same", ["Frank Herbert"]), row("same", ["Brian Herbert"]), row("same", ["Frank Herbert", "Brian Herbert"])],
+  ]) {
+    const groups = groupSearchResults(rows, [], ["ebook"]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].author).toBe("Frank Herbert, Brian Herbert");
+  }
+  expect(
+    groupSearchResults(
+      [row("partial", ["Frank Herbert"]), row("full", ["Frank Herbert", "Brian Herbert"])],
+      [],
+      ["ebook"],
+    ),
+  ).toHaveLength(2);
+  expect(
+    groupSearchResults([row("conflict", ["Frank Herbert"]), row("conflict", ["Another Author"])], [], ["ebook"]),
+  ).toHaveLength(2);
+  expect(
+    groupSearchResults([row("one", ["Frank Herbert"]), row("two", ["Frank Herbert"])], [], ["ebook"]),
+  ).toHaveLength(1);
+});
