@@ -96,6 +96,20 @@ export function mediaNarrators(media: Pick<ThunderMedia, "creators">): string[] 
   return [...names.values()];
 }
 
+/** Use this function to compare ISBN editions by the catalog media's full title and explicit author IDs. Missing IDs leave the edition unconfirmed. */
+export function catalogEditionKey(media: ThunderMedia): string | undefined {
+  const authorIds = new Set<number>();
+  for (const creator of Array.isArray(media.creators) ? media.creators : []) {
+    if (typeof creator?.role !== "string" || !/^(author|writer)$/i.test(creator.role.trim())) continue;
+    if (typeof creator.id !== "number" || !Number.isSafeInteger(creator.id) || creator.id <= 0) return undefined;
+    authorIds.add(creator.id);
+  }
+  const normalize = (text: string) => text.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
+  const title = normalize(media.title);
+  if (!title || !authorIds.size) return undefined;
+  return JSON.stringify([title, normalize(media.subtitle ?? ""), [...authorIds].sort((a, b) => a - b)]);
+}
+
 export function authorSimilarity(wanted: string, media: ThunderMedia): number {
   const names = mediaAuthors(media);
   if (!names.length) return 0;

@@ -4,7 +4,7 @@ import { sleep } from "./http.js";
 import type { BookRequest } from "./input.js";
 import type { LibbyClient } from "./libby-client.js";
 import type { Logger } from "./logger.js";
-import { bestMatch, mediaAuthors, normalizeTitle, rankedMatches } from "./matcher.js";
+import { bestMatch, catalogEditionKey, mediaAuthors, rankedMatches } from "./matcher.js";
 import { type Candidate, type Plan, planBook, type RunState } from "./planner.js";
 import type { ThunderClient } from "./thunder-client.js";
 import type { LibbyCard, SyncResponse, ThunderMedia } from "./types.js";
@@ -72,16 +72,18 @@ export class Runner {
   async findCandidates(
     book: BookRequest,
     cards: LibbyCard[],
-    { allowPartialResults = false }: { allowPartialResults?: boolean } = {},
+    { allowPartialResults = false, queryAuthor }: { allowPartialResults?: boolean; queryAuthor?: string } = {},
   ): Promise<Candidate[]> {
     const libs = orderedLibraries(cards, book.libraries);
     const out: Candidate[] = [];
     for (const lib of libs) {
-      const items = await this.search(lib, book).catch((error: unknown) => {
-        if (!allowPartialResults) throw error;
-        this.deps.logger.warn(`Could not check alternate editions at ${lib}`);
-        return [];
-      });
+      const items = await this.search(lib, queryAuthor ? { ...book, author: queryAuthor } : book).catch(
+        (error: unknown) => {
+          if (!allowPartialResults) throw error;
+          this.deps.logger.warn(`Could not check alternate editions at ${lib}`);
+          return [];
+        },
+      );
       const matches = rankedMatches(book, items, { ...this.cfg.matching, mediaTypes: this.cfg.mediaTypes });
       for (const match of matches) {
         for (const card of cards.filter((c) => c.advantageKey === lib)) out.push({ card, match });
@@ -92,7 +94,7 @@ export class Runner {
 
   /** Use this function to list what each card's library would match for a book, as flat `search` rows. */
   async searchMatches(book: BookRequest, cards: LibbyCard[]) {
-    const { isbn, title, author, ...request } = book;
+    const { isbn, title: _title, author: _author, ...request } = book;
     let candidates: Candidate[];
     if (isbn && !book.titleId) {
       const mediaTypes = request.mediaTypes?.length ? request.mediaTypes : this.cfg.mediaTypes;
@@ -101,20 +103,23 @@ export class Runner {
       candidates = exact.filter(
         ({ match }) => !match.media.type || mediaTypes.some((type) => type === match.media.type?.id),
       );
-      const seed = (candidates[0] ?? exact[0])?.match.media;
-      const resolvedTitle = title ?? seed?.title;
-      const resolvedAuthor = author ?? (seed && mediaAuthors(seed)[0]);
-      if (resolvedTitle) {
-        const titleKey = normalizeTitle(resolvedTitle, false);
-        const editions = await this.findCandidates(
-          { ...request, title: resolvedTitle, ...(resolvedAuthor && { author: resolvedAuthor }) },
-          cards,
-          { allowPartialResults: candidates.length > 0 },
-        );
+      const confirmed = new Map<string, ThunderMedia>();
+      for (const { match } of exact) {
+        const key = catalogEditionKey(match.media);
+        if (key && !confirmed.has(key)) confirmed.set(key, match.media);
+      }
+      const identity = confirmed.size === 1 ? confirmed.entries().next().value : undefined;
+      if (identity) {
+        const [editionKey, seed] = identity;
+        const author = mediaAuthors(seed)[0];
+        const editions = await this.findCandidates({ ...request, title: seed.title }, cards, {
+          allowPartialResults: candidates.length > 0,
+          ...(author && { queryAuthor: author }),
+        });
         const seen = new Set(candidates.map(({ card, match }) => JSON.stringify([card.cardId, match.media.id])));
         for (const edition of editions) {
           const { card, match } = edition;
-          if (normalizeTitle(match.media.title, false) !== titleKey) continue;
+          if (catalogEditionKey(match.media) !== editionKey) continue;
           const key = JSON.stringify([card.cardId, match.media.id]);
           if (seen.has(key)) continue;
           seen.add(key);
