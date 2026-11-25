@@ -77,6 +77,17 @@ export class LibbyClient {
     return this.tagsHttp.request("tags", { signal });
   }
 
+  /** Reading position of one loan, as a percent of the book (0-100); undefined when Libby has no position for it. */
+  async loanProgress(args: { cardId: string; titleId: string; mediaType: string }): Promise<number | undefined> {
+    const data = await this.http.request<{ position?: { percentageOfBook?: unknown } }>(
+      `card/${enc(args.cardId)}/${enc(args.mediaType)}/data/${enc(args.titleId)}`,
+    );
+    const fraction = data.position?.percentageOfBook;
+    return typeof fraction === "number" && fraction >= 0 && fraction <= 1
+      ? Math.round(fraction * 10_000) / 100
+      : undefined;
+  }
+
   borrow(args: {
     cardId: string;
     titleId: string;

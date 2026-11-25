@@ -30,7 +30,7 @@ export class HttpClient {
     private readonly opts: HttpOptions,
     private readonly defaultHeaders: () => Record<string, string> = () => ({}),
   ) {
-    this.doFetch = opts.fetch ?? globalThis.fetch;
+    this.doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   async request<T = unknown>(path: string, req: RequestOptions = {}): Promise<T> {

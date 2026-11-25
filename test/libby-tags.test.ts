@@ -13,14 +13,19 @@ describe("experimental Libby tags read", () => {
     ]);
     const client = new LibbyClient({ ...options, fetch: transport.fetch, identityToken: "old" });
     client.identityToken = "current";
+
     expect(await client.tags()).toEqual(response);
     expect(transport.calls).toHaveLength(1);
-    expect(transport.calls[0]).toMatchObject({ method: "GET", headers: { Authorization: "Bearer current" } });
+    expect(transport.calls[0]).toMatchObject({
+      method: "GET",
+      headers: { Authorization: "Bearer current" },
+    });
   });
 
   it("reports a failed read instead of treating it as an empty tag list", async () => {
     const transport = fakeFetch([{ match: /\/tags$/, respond: () => ({ status: 401, body: { message: "expired" } }) }]);
     const client = new LibbyClient({ ...options, fetch: transport.fetch, identityToken: "expired" });
+
     await expect(client.tags()).rejects.toThrow("401");
   });
 });
