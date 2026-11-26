@@ -13,6 +13,7 @@ import { ThunderClient } from "../src/thunder-client.js";
 import { card, fakeFetch, media } from "./fixtures.js";
 
 const http = { timeoutMs: 1000, retries: 0, retryBaseMs: 1, userAgent: "test", logger: silentLogger };
+const projectAuthors = [{ id: 42, name: "Andy Weir", role: "Author" }];
 
 function setup(routes: Parameters<typeof fakeFetch>[0], cfgOver = {}) {
   const f = fakeFetch(routes);
@@ -146,9 +147,10 @@ describe("Runner", () => {
     "previews other editions at every selected library (audiobook only: %s)",
     async (audioOnly) => {
       const isbn = "9780593135204";
-      const exact = media({ creators: [{ name: "Andy Weir", role: "Author" }], firstCreatorName: "Ray Porter" });
+      const exact = media({ creators: projectAuthors, firstCreatorName: "Ray Porter" });
       const alternative = media({
         id: "222",
+        creators: projectAuthors,
         type: { id: "audiobook" },
         formats: [{ id: "audiobook-overdrive", identifiers: [{ type: "ISBN", value: "9780593395579" }] }],
       });
@@ -192,7 +194,7 @@ describe("Runner", () => {
     },
   );
 
-  it("keeps an unresolved bare ISBN search empty and uses an explicitly supplied title if present", async () => {
+  it("does not confirm cross-ISBN editions without an authoritative ISBN match", async () => {
     const isbn = "9780593135204";
     const { runner, calls } = setup([
       {
@@ -202,7 +204,8 @@ describe("Runner", () => {
     ]);
     expect(await runner.searchMatches({ raw: isbn, isbn }, [card()])).toEqual([]);
     expect(calls).toHaveLength(1);
-    expect(await runner.searchMatches({ raw: isbn, isbn, title: "Project Hail Mary" }, [card()])).toHaveLength(1);
+    expect(await runner.searchMatches({ raw: isbn, isbn, title: "Project Hail Mary" }, [card()])).toEqual([]);
+    expect(calls.every(({ url }) => url.searchParams.has("identifier"))).toBe(true);
   });
 
   it("keeps exact ISBN results and checks later libraries when alternate lookup fails", async () => {
@@ -212,10 +215,12 @@ describe("Runner", () => {
         match: /thunder/,
         respond: (url) => {
           if (url.searchParams.has("identifier")) {
-            return { body: { items: url.pathname.endsWith("lib1/media") ? [media()] : [] } };
+            return {
+              body: { items: url.pathname.endsWith("lib1/media") ? [media({ creators: projectAuthors })] : [] },
+            };
           }
           if (url.pathname.endsWith("lib2/media")) return { status: 503, body: { message: "Catalog unavailable" } };
-          return { body: { items: [media({ id: "222", formats: [] })] } };
+          return { body: { items: [media({ id: "222", creators: projectAuthors, formats: [] })] } };
         },
       },
     ]);
@@ -233,6 +238,67 @@ describe("Runner", () => {
       ["lib3", "222"],
     ]);
   });
+
+  it("uses the complete catalog author IDs and full title for Dune prequel editions", async () => {
+    const isbn = "9780553897821";
+    const brian = { id: 119279, name: "Brian Herbert", role: "Author" };
+    const kevin = { id: 304870, name: "Kevin J. Anderson", role: "Author" };
+    const exact = media({
+      id: "33309",
+      title: "House Atreides",
+      creators: [brian, kevin],
+      formats: [{ id: "ebook-overdrive", identifiers: [{ type: "ISBN", value: isbn }] }],
+    });
+    const audiobook = media({
+      ...exact,
+      id: "253024",
+      title: " house  atreides ",
+      creators: [kevin, { ...brian, name: "B. H." }, { id: 402650, name: "Scott Brick", role: "Narrator" }],
+      type: { id: "audiobook" },
+      formats: [{ id: "audiobook-overdrive", identifiers: [{ type: "ISBN", value: "9781400183616" }] }],
+    });
+    const lookalikes = [
+      media({ ...exact, id: "other-credited-author", creators: [{ ...brian, id: 393911 }, kevin], formats: [] }),
+      media({ ...exact, id: "partial-byline", creators: [brian], formats: [] }),
+      media({
+        ...exact,
+        id: "missing-author-id",
+        creators: [brian, { name: kevin.name, role: "Author" }],
+        formats: [],
+      }),
+      media({ ...exact, id: "different-subtitle", subtitle: "The Graphic Novel", formats: [] }),
+      media({ ...exact, id: "33310", title: "House Harkonnen", formats: [] }),
+    ];
+    const { runner } = setup([
+      {
+        match: /thunder/,
+        respond: (url) => ({
+          body: { items: url.searchParams.has("identifier") ? [exact] : [audiobook, ...lookalikes] },
+        }),
+      },
+    ]);
+
+    const matches = await runner.searchMatches({ raw: isbn, isbn }, [card()]);
+    expect(matches.map(({ media }) => media.id)).toEqual(["33309", "253024"]);
+  });
+
+  it.each([false, true])(
+    "keeps exact ISBN hits without a unique credited identity (conflict: %s)",
+    async (conflict) => {
+      const isbn = "9780593135204";
+      const items = conflict
+        ? [
+            media({ creators: projectAuthors }),
+            media({ id: "444", creators: [{ id: 43, name: "Another Author", role: "Author" }] }),
+          ]
+        : [media()];
+      const { runner, calls } = setup([{ match: /thunder/, respond: () => ({ body: { items } }) }]);
+      expect(await runner.searchMatches({ raw: isbn, isbn }, [card()])).toMatchObject(
+        items.map(({ id }) => ({ media: { id }, isbnMatch: true })),
+      );
+      expect(calls).toHaveLength(1);
+    },
+  );
 });
 
 describe("auth", () => {

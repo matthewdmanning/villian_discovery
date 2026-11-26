@@ -49,6 +49,7 @@ export interface MediaFormat {
 }
 
 interface MediaCreator {
+  id?: number;
   name: string;
   role?: string;
 }

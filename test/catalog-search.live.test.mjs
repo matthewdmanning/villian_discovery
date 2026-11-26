@@ -6,7 +6,9 @@ import { Runner } from "../src/runner.ts";
 import { ThunderClient } from "../src/thunder-client.ts";
 import { groupSearchResults } from "../ui/src/lib/search-results.ts";
 
-it.skipIf(process.env.LIBBY_LIVE_CATALOG_TEST !== "1")(
+const live = it.skipIf(process.env.LIBBY_LIVE_CATALOG_TEST !== "1");
+
+live(
   "groups alternate ISBN editions from the public OverDrive catalog",
   async () => {
     const isbn = "9780553904666";
@@ -39,6 +41,41 @@ it.skipIf(process.env.LIBBY_LIVE_CATALOG_TEST !== "1")(
     expect(mediaNarrators(audiobook?.media ?? {})).toContain("Ian Holm");
     const details = await thunder.getLibraryMedia("lapl", "504939");
     expect(mediaNarrators(details)).toContain("Ian Holm");
+  },
+  25_000,
+);
+
+live(
+  "confirms Dune editions while excluding similar titles and the same-title graphic adaptation",
+  async () => {
+    const card = { cardId: "test-nypl", advantageKey: "nypl" };
+    const config = parseConfig({ libraries: [card.advantageKey] });
+    const thunder = new ThunderClient({ ...config.http, logger: silentLogger });
+    const runner = new Runner(config, { thunder, logger: silentLogger });
+    const cases = [
+      {
+        isbn: "9780553897821",
+        query: "House Atreides Brian Herbert",
+        expected: ["33309", "253024"],
+        excluded: "5962020", // Dune: House Atreides (2020), Issue 3
+      },
+      {
+        isbn: "9781101658055",
+        query: "Dune Frank Herbert",
+        expected: ["1243691", "217929"],
+        excluded: "5318037", // Dune graphic adaptation with two additional credited authors
+      },
+    ];
+    for (const { isbn, query, expected, excluded } of cases) {
+      const [catalog, matches] = await Promise.all([
+        thunder.searchLibrary(card.advantageKey, { query, mediaTypes: config.mediaTypes }),
+        runner.searchMatches({ raw: isbn, isbn }, [card]),
+      ]);
+      expect(catalog.map(({ id }) => id)).toContain(excluded);
+      const ids = matches.map(({ media }) => media.id);
+      expect(ids).toEqual(expect.arrayContaining(expected));
+      expect(ids).not.toContain(excluded);
+    }
   },
   25_000,
 );
