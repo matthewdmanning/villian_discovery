@@ -1,3 +1,5 @@
+import type { SyncOperation } from "../../../src/sync-plan.ts";
+
 export const SYNC_FIELD_LABELS: Record<string, string> = {
   readingProgress: "Progress",
   checkedOut: "Checked out",
@@ -14,4 +16,10 @@ export function displaySyncValue(value: unknown, field: string): string {
   if (value === "currently-reading") return "Currently reading";
   if (value === "finished") return "Finished";
   return Array.isArray(value) ? value.join(", ") || "Empty" : String(value);
+}
+
+/** Use this function to tell whether a change overwrites a different value the destination app already holds. */
+export function isAppConflict({ before }: SyncOperation): boolean {
+  const value = before?.value;
+  return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && !value.length);
 }

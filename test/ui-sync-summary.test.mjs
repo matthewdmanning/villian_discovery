@@ -28,6 +28,6 @@ it("reports apply failures as a plain status", () => {
 it("keeps blocked preview changes visible as requiring review", () => {
   expect(summarizeSyncResult(plan([operation("one", "Needs review")]))).toEqual({
     status: "Success",
-    summary: "1 change require review before applying.",
+    summary: "1 change requires review before applying.",
   });
 });

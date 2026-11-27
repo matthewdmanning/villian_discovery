@@ -3,19 +3,7 @@ import { useState } from "react";
 import type { ListLibraryAvailability } from "../../../src/libby-list-availability.ts";
 import type { ListItem } from "../../../src/libby-lists.ts";
 import type { LibbyTag } from "../../../src/libby-tags-cache.ts";
-
-export type ListSort = "title" | "author";
-export function sortListItems(items: ListItem[], sort: ListSort): ListItem[] {
-  return [...items].sort((a, b) => {
-    if (sort === "author") {
-      if (!a.author && b.author) return 1;
-      if (a.author && !b.author) return -1;
-      const byAuthor = (a.author ?? "").localeCompare(b.author ?? "", undefined, { sensitivity: "base" });
-      if (byAuthor) return byAuthor;
-    }
-    return a.title.localeCompare(b.title, undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id);
-  });
-}
+import { libbyTitleUrl, listLibraryDetails } from "../lib/list-results.ts";
 
 export function LibraryRows({
   rows,
@@ -45,19 +33,8 @@ export function LibraryRows({
         </thead>
         <tbody>
           {rows.map(({ card, status, media }) => {
-            const checkedOut =
-              typeof media?.ownedCopies === "number" &&
-              typeof media.availableCopies === "number" &&
-              media.availableCopies <= media.ownedCopies
-                ? media.ownedCopies - media.availableCopies
-                : undefined;
-            const action =
-              status === "ok" && media?.isAvailable === true
-                ? "Borrow"
-                : status === "ok" && media?.isHoldable === true
-                  ? "Place hold"
-                  : undefined;
-            const url = `https://libbyapp.com/library/${encodeURIComponent(card.advantageKey)}/everything/page-1/${encodeURIComponent(titleId)}`;
+            const { checkedOut, action } = listLibraryDetails({ card, status, ...(media ? { media } : {}) });
+            const url = libbyTitleUrl(card.advantageKey, titleId);
             return (
               <tr key={card.cardId}>
                 <th scope="row">
@@ -79,10 +56,7 @@ export function LibraryRows({
                 <td>
                   {action ? (
                     demo ? (
-                      <span role="img" className="inline-flex items-center gap-1" aria-label={`${action} (demo)`}>
-                        <CreditCard className="size-4" />
-                        {action === "Borrow" ? <Plus className="size-3" /> : <Clock className="size-3" />}
-                      </span>
+                      <span className="text-sm opacity-70">Demo</span>
                     ) : (
                       <a
                         href={url}
@@ -141,7 +115,7 @@ export function ListResult({
           if (event.currentTarget.open && !rows && !loading && !failed) void fetchRows();
         }}
       >
-        <summary className="flex cursor-pointer list-none items-center gap-3 rounded-field py-3 [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none items-center gap-3 rounded-field py-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
           <span className="min-w-0 flex-1">
             <span className="block font-semibold">{item.title}</span>
             {item.author && <span className="block text-sm opacity-70">{item.author}</span>}

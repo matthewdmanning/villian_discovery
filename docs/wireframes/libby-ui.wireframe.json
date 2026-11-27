@@ -59,6 +59,59 @@
       ]
     },
     {
+      "id": "books",
+      "title": "Book list",
+      "cli": "run <input>",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "input",
+          "components": [
+            {
+              "type": "textarea",
+              "label": "One book per line: Title by Author · isbn:… · id:…"
+            },
+            {
+              "type": "dropzone",
+              "label": "Or drop .txt / .csv / .tsv / .json"
+            },
+            {
+              "type": "select",
+              "label": "Input format",
+              "options": ["auto", "text", "csv", "tsv", "json"]
+            }
+          ]
+        },
+        {
+          "id": "rows",
+          "components": [
+            {
+              "type": "table",
+              "label": "Parsed books",
+              "columns": ["title", "author", "isbn", "format", "action", "libraries"],
+              "editable": ["format", "action", "libraries"]
+            }
+          ]
+        },
+        {
+          "id": "actions",
+          "components": [
+            {
+              "type": "toggle",
+              "label": "Dry run",
+              "binds": "dryRun"
+            },
+            {
+              "type": "button",
+              "label": "Plan",
+              "action": "run --dry-run",
+              "primary": true
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "shelf",
       "title": "Shelf",
       "cli": "",

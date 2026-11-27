@@ -2,16 +2,14 @@ import { ChevronDown, ChevronUp, GripVertical, TriangleAlert } from "lucide-reac
 import { type DragEvent, useState } from "react";
 import { Panel, Screen, sz } from "../components/ui.tsx";
 import type { LibbyCard } from "../lib/api.ts";
-import { cardSelected, libraryOrder, toggleCard } from "../lib/cards.ts";
+import { cardSelected, cardUsage, libraryOrder, toggleCard } from "../lib/cards.ts";
 import { useStore } from "../lib/store.tsx";
 
 function Usage({ card, kind }: { card: LibbyCard; kind: "loan" | "hold" }) {
-  const used = card.counts?.[kind] ?? 0;
-  const limit = card.limits?.[kind];
-  const isFull = limit !== undefined && used >= limit;
+  const { used, limit, isFull } = cardUsage(card, kind);
   return (
     <span className={`inline-flex items-center gap-1.5 tabular-nums ${isFull ? "font-semibold text-error" : ""}`}>
-      {used} / {limit ?? "?"}
+      {used ?? "?"} / {limit ?? "?"}
       {isFull && <TriangleAlert aria-label="Limit reached" className="size-4" />}
     </span>
   );
@@ -124,6 +122,11 @@ export function Cards() {
   return (
     <Screen id="cards">
       <Panel>
+        <div className="mb-3 flex justify-end">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={refreshCards}>
+            Refresh cards
+          </button>
+        </div>
         <p className="mb-3 text-sm opacity-70">
           Highest priority first. Drag a card or use the arrows. At least one card must stay selected.
         </p>

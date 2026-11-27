@@ -10,6 +10,7 @@ const browser = await chromium.launch({
 });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.setDefaultTimeout(5000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
@@ -75,7 +76,7 @@ try {
   const limit = page.getByText("Max loans per run", { exact: true }).locator("..").locator("input");
   await limit.fill("-1");
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
-  assert.equal(await page.getByRole("button", { name: "Plan", exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Preview results", exact: true }).isDisabled(), true);
   await page.getByRole("alert").waitFor();
   await nav.getByRole("button", { name: "Rules", exact: true }).click();
   await limit.fill("");
@@ -92,20 +93,20 @@ try {
       throw new Error("Injected run failure");
     };
   });
-  await page.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("button", { name: "Preview results", exact: true }).click();
   await page.getByText("Run failed: Injected run failure", { exact: true }).waitFor();
   await page.evaluate(() => {
     window.testDemoApi.run = window.originalRun;
   });
-  await page.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("button", { name: "Preview results", exact: true }).click();
   await page.getByRole("heading", { name: "Plan & results", exact: true }).waitFor();
   await nav.getByRole("button", { name: "Rules", exact: true }).click();
   await limit.fill("-1");
-  await nav.getByRole("button", { name: "Plan & results", exact: true }).click();
+  await nav.getByRole("button", { name: "Search & Results", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Run for real", exact: true }).isDisabled(), true);
   await nav.getByRole("button", { name: "Rules", exact: true }).click();
   await limit.fill("");
-  await nav.getByRole("button", { name: "Plan & results", exact: true }).click();
+  await nav.getByRole("button", { name: "Search & Results", exact: true }).click();
   await page.evaluate(() => {
     window.testDemoApi.run = async () => {
       throw new Error("Injected real run failure");
@@ -167,12 +168,8 @@ try {
     };
   });
   await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
-  // Connect starts a browser sign-in on its own; stop it before changing the token file.
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByText("Advanced", { exact: true }).click();
-  const tokenFile = page.getByRole("textbox");
-  await tokenFile.fill("/tmp/demo-account.identity.json");
   await nav.getByRole("button", { name: "Library cards", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh cards", exact: true }).click();
   await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
@@ -180,19 +177,19 @@ try {
   await chooseMethod("phone code");
   await page.getByRole("button", { name: "Display setup code", exact: true }).click();
   await page.getByText("12345678", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
   assert.equal(await page.evaluate(() => window.pairingCancelled), true);
-  await page.getByText("Not connected", { exact: true }).waitFor();
+  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
+  await page.getByText("Not connected to Libby", { exact: true }).waitFor();
   await chooseMethod("phone code");
   await page.getByRole("button", { name: "Display setup code", exact: true }).click();
   await page.getByText("12345678", { exact: true }).waitFor();
   await page.evaluate(() => window.approvePairing());
   await page.getByText("12345678", { exact: true }).waitFor({ state: "hidden" });
-  await page.getByText("Connected", { exact: true }).waitFor();
+  await page.getByText("Connected to Libby", { exact: true }).waitFor();
   await nav.getByRole("button", { name: "Library cards", exact: true }).click();
   await page.getByRole("checkbox", { name: "Use One", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Move One up", exact: true }).count(), 1);
-  assert.equal(await page.evaluate(() => window.cardsTokenFile), "/tmp/demo-account.identity.json");
 
   await page.evaluate(async () => {
     (await import("/src/lib/api.ts")).demoApi.cards = async () => [];
@@ -203,7 +200,7 @@ try {
   await page.getByText("12345678", { exact: true }).waitFor();
   await page.evaluate(() => window.approvePairing());
   await page.getByText("12345678", { exact: true }).waitFor({ state: "hidden" });
-  await page.getByText("Connected", { exact: true }).waitFor();
+  await page.getByText("Connected to Libby", { exact: true }).waitFor();
   await nav.getByRole("button", { name: "Library cards", exact: true }).click();
   await page.getByText("No library cards found.", { exact: false }).waitFor();
   await page.getByRole("button", { name: "Refresh cards", exact: true }).waitFor();
@@ -257,8 +254,7 @@ try {
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await openTab("Changes");
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
-  await page.getByRole("region", { name: "Apply results" }).waitFor();
-  assert.match(await page.getByRole("region", { name: "Apply results" }).textContent(), /success/);
+  await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await page.getByText("No applicable changes in this preview.", { exact: true }).waitFor();
   await openTab("Library");
@@ -275,7 +271,7 @@ try {
   await page.getByRole("checkbox", { name: "Confirm removal of shelves on Fable for Piranesi", exact: true }).check();
   assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), false);
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
-  await page.getByRole("region", { name: "Apply results" }).waitFor();
+  await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await openTab("Library");
   await bookItem("Piranesi").waitFor();
@@ -289,10 +285,10 @@ try {
   assert.equal(await page.getByLabel("Removals", { exact: true }).inputValue(), "none");
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await openTab("Changes");
-  const comparisonStatus = await page.getByRole("status").textContent();
+  const comparisonStatus = await page.getByRole("status").filter({ hasText: "Last compared" }).textContent();
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
-  assert.equal(await page.getByRole("status").textContent(), comparisonStatus);
+  assert.equal(await page.getByRole("status").filter({ hasText: "Last compared" }).textContent(), comparisonStatus);
   await page.evaluate(() => {
     window.testDemoApi.previewSync = async () => {
       throw new Error("Injected sync failure");
@@ -300,15 +296,15 @@ try {
   });
   await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "Injected sync failure" }).waitFor();
-  assert.equal(await page.getByRole("status").textContent(), comparisonStatus);
+  assert.equal(await page.getByRole("status").filter({ hasText: "Last compared" }).textContent(), comparisonStatus);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator("nav.dock").getByRole("button", { name: "Books", exact: true }).click();
-  await page.locator("nav.dock").getByRole("button", { name: "Sync", exact: true }).click();
+  await page.locator('nav[aria-label="Screens"]').last().getByRole("button", { name: "Books", exact: true }).click();
+  await page.locator('nav[aria-label="Screens"]').last().getByRole("button", { name: "Sync", exact: true }).click();
   await page.getByRole("heading", { name: "Sync libraries", exact: true }).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 
   // Phone audiobook bookmarks: full-screen sheet, draft until Save, back asks before discarding.
-  await page.locator("nav.dock").getByRole("button", { name: "Player", exact: true }).click();
+  await page.locator('nav[aria-label="Screens"]').last().getByRole("button", { name: "Player", exact: true }).click();
   const openSheet = () => page.getByRole("button", { name: /^Bookmarks \(/ }).click();
   const sheet = page.getByRole("dialog", { name: "Bookmarks", exact: true });
   const discard = page.getByRole("dialog", { name: "Discard changes?", exact: true });

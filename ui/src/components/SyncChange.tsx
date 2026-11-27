@@ -5,11 +5,7 @@ import { displaySyncValue, SYNC_FIELD_LABELS } from "../lib/sync-format.ts";
 
 export const APP_NAMES: Record<SyncProvider, string> = { libby: "Libby", fable: "Fable" };
 
-/** Use this function to tell whether a change overwrites a different value the destination app already holds. */
-export function isAppConflict({ before }: SyncOperation): boolean {
-  const value = before?.value;
-  return value !== undefined && value !== null && value !== "" && !(Array.isArray(value) && !value.length);
-}
+export { isAppConflict } from "../lib/sync-format.ts";
 
 /** Use this component to show one app's value in that app's color; the app name is for screen readers and the edit time is on hover. */
 export function AppValue({

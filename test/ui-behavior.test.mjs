@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { parseBookDraft } from "../ui/src/lib/books.ts";
-import { cardSelected, libraryOrder, toggleCard } from "../ui/src/lib/cards.ts";
+import { cardSelected, cardUsage, libraryOrder, toggleCard } from "../ui/src/lib/cards.ts";
 
 const cards = [
   { cardId: "one", advantageKey: "library", cardName: "Main" },
@@ -236,4 +236,13 @@ it("groups same-ID compatible author sets under the complete byline, but keeps b
   expect(
     groupSearchResults([row("one", ["Frank Herbert"]), row("two", ["Frank Herbert"])], [], ["ebook"]),
   ).toHaveLength(1);
+});
+
+it("keeps missing card usage unknown and flags a known full limit", () => {
+  expect(cardUsage(cards[0], "loan")).toEqual({ used: undefined, limit: undefined, isFull: false });
+  expect(cardUsage({ ...cards[0], counts: { loan: 5 }, limits: { loan: 5 } }, "loan")).toEqual({
+    used: 5,
+    limit: 5,
+    isFull: true,
+  });
 });

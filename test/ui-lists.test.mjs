@@ -39,7 +39,7 @@ it("shows saved query groups with Libby names", async () => {
 });
 
 it("sorts titles and authors without changing the original results", async () => {
-  const { sortListItems } = await import("../ui/src/components/ListResult.tsx");
+  const { sortListItems } = await import("../ui/src/lib/list-results.ts");
   const books = [
     { id: "1", title: "Zulu", author: "Adams", tags: [] },
     { id: "2", title: "Alpha", author: "Zola", tags: [] },

@@ -1,37 +1,11 @@
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import {
-  activeListQueries,
-  filterListGroups,
-  filterListQueries,
-  type ListQuery,
-  type ListsData,
-  listQueryKey,
-  type TagGroups,
-} from "../../../src/libby-lists.ts";
+import type { ListQuery, TagGroups } from "../../../src/libby-lists.ts";
 import type { LibbyTag } from "../../../src/libby-tags-cache.ts";
-import { ListResult, type ListSort, sortListItems } from "../components/ListResult.tsx";
+import { ListResult } from "../components/ListResult.tsx";
 import { Panel, Screen } from "../components/ui.tsx";
-import { useStore } from "../lib/store.tsx";
-
-function readFlag(name: string) {
-  try {
-    return localStorage.getItem(`libby-shelf.feature.${name}`) === "true";
-  } catch {
-    return false;
-  }
-}
-function saveFlag(name: string, value: boolean) {
-  try {
-    localStorage.setItem(`libby-shelf.feature.${name}`, String(value));
-  } catch {
-    /* Storage can be unavailable. */
-  }
-}
-const emptyQuery = (): ListQuery => ({ includes: [[]], excludes: [[]] });
-const toggle = (selected: string[], id: string) =>
-  selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id];
-const union = (groups: TagGroups) => [...new Set(groups.flat())];
+import { formatTagGroups, toggleTag, unionTags } from "../lib/list-query.ts";
+import { type ListSort, sortListItems } from "../lib/list-results.ts";
+import { useLists } from "../lib/use-lists.ts";
 
 export function TagChoices({
   tags,
@@ -45,7 +19,7 @@ export function TagChoices({
   return (
     <>
       {tags.map((tag) => (
-        <label key={tag.uuid} className="flex items-center gap-2 py-1">
+        <label key={tag.uuid} className="flex min-h-11 items-center gap-2 py-1">
           <input
             type="checkbox"
             className="checkbox checkbox-sm"
@@ -80,7 +54,7 @@ export function QueryFields({
       ).map(([label, key]) => {
         const groups = query[key];
         const setGroups = (next: TagGroups) => onChange({ ...query, [key]: next });
-        const selected = union(groups);
+        const selected = unionTags(groups);
         return (
           <fieldset key={key} className="min-w-0 space-y-2">
             <legend className="font-semibold">{label}</legend>
@@ -95,12 +69,14 @@ export function QueryFields({
                     <TagChoices
                       tags={tags}
                       selected={group}
-                      onToggle={(id) => setGroups(groups.map((value, i) => (i === index ? toggle(value, id) : value)))}
+                      onToggle={(id) =>
+                        setGroups(groups.map((value, i) => (i === index ? toggleTag(value, id) : value)))
+                      }
                     />
                     {groups.length > 1 && (
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs"
+                        className="btn btn-ghost btn-sm min-h-11"
                         onClick={() => setGroups(groups.filter((_, i) => i !== index))}
                       >
                         Remove group
@@ -117,7 +93,7 @@ export function QueryFields({
                 tags={tags}
                 selected={selected}
                 onToggle={(id) => {
-                  const next = toggle(selected, id);
+                  const next = toggleTag(selected, id);
                   setGroups(key === "includes" ? [next] : next.length ? next.map((tag) => [tag]) : [[]]);
                 }}
               />
@@ -130,104 +106,47 @@ export function QueryFields({
 }
 
 export function QuerySummary({ query, tags }: { query: ListQuery; tags: LibbyTag[] }) {
-  const names = new Map(tags.map((tag) => [tag.uuid, tag.name]));
-  function format(groups: TagGroups) {
-    const parts = groups.map((group) => group.map((id) => names.get(id) ?? id).join(" AND ")).filter(Boolean);
-    return parts.length
-      ? parts.map((part) => (parts.length > 1 && part.includes(" AND ") ? `(${part})` : part)).join(" OR ")
-      : "—";
-  }
   return (
     <>
       <div className="min-w-0 break-words">
         <span className="text-sm font-semibold">Includes</span>
-        <p>{format(query.includes)}</p>
+        <p>{formatTagGroups(query.includes, tags)}</p>
       </div>
       <div className="min-w-0 break-words">
         <span className="text-sm font-semibold">Exclude</span>
-        <p>{format(query.excludes)}</p>
+        <p>{formatTagGroups(query.excludes, tags)}</p>
       </div>
     </>
   );
 }
 
-type SavedQuery = { id: number; query: ListQuery };
 export function TagsScreen() {
-  const { api } = useStore();
-  const [data, setData] = useState<ListsData>();
-  const [draft, setDraft] = useState<ListQuery>(emptyQuery);
-  const [saved, setSaved] = useState<SavedQuery[]>([]);
-  const [nextId, setNextId] = useState(0);
-  const [editing, setEditing] = useState<{ id: number; query: ListQuery }>();
-  const [duplicate, setDuplicate] = useState(false);
-  const [boolean, setBoolean] = useState(() => readFlag("Boolean"));
-  const [multiquery, setMultiquery] = useState(() => readFlag("multiquery"));
-  const [error, setError] = useState(false);
-  const [busy, setBusy] = useState(true);
-  const [revision, setRevision] = useState(0);
-  const [sort, setSort] = useState<ListSort>("title");
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision triggers a refresh.
-  useEffect(() => {
-    let active = true;
-    setBusy(true);
-    setError(false);
-    api
-      .lists()
-      .then((result) => {
-        if (active) {
-          setData(result);
-        }
-      })
-      .catch(() => {
-        if (active) setError(true);
-      })
-      .finally(() => {
-        if (active) setBusy(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, revision]);
-
-  function changeBoolean(value: boolean) {
-    if (!value) setDraft({ includes: [union(draft.includes)], excludes: union(draft.excludes).map((id) => [id]) });
-    setEditing(undefined);
-    setDuplicate(false);
-    setBoolean(value);
-    saveFlag("Boolean", value);
-  }
-  function add() {
-    if (saved.some((row) => listQueryKey(row.query) === listQueryKey(draft))) {
-      setDuplicate(true);
-      return;
-    }
-    setSaved([...saved, { id: nextId, query: draft }]);
-    setNextId(nextId + 1);
-    setDraft(emptyQuery());
-    setDuplicate(false);
-  }
-  function saveEdit() {
-    if (!editing) return;
-    if (saved.some((row) => row.id !== editing.id && listQueryKey(row.query) === listQueryKey(editing.query))) {
-      setDuplicate(true);
-      return;
-    }
-    setSaved(saved.map((row) => (row.id === editing.id ? { ...row, query: editing.query } : row)));
-    setEditing(undefined);
-    setDuplicate(false);
-  }
-  const items = data
-    ? multiquery && saved.length
-      ? filterListQueries(
-          data.items,
-          activeListQueries(
-            saved.map((row) => row.query),
-            draft,
-          ),
-        )
-      : filterListGroups(data.items, draft.includes, draft.excludes)
-    : [];
+  const {
+    api,
+    data,
+    draft,
+    setDraft,
+    saved,
+    setSaved,
+    editing,
+    setEditing,
+    duplicate,
+    setDuplicate,
+    boolean,
+    multiquery,
+    error,
+    busy,
+    revision,
+    setRevision,
+    sort,
+    setSort,
+    items,
+    changeBoolean,
+    changeMultiquery,
+    add,
+    saveEdit,
+    startEdit,
+  } = useLists();
   return (
     <Screen id="tags">
       <Panel className="space-y-5">
@@ -235,16 +154,7 @@ export function TagsScreen() {
           {(
             [
               ["Boolean", boolean, changeBoolean],
-              [
-                "multiquery",
-                multiquery,
-                (value: boolean) => {
-                  setMultiquery(value);
-                  saveFlag("multiquery", value);
-                  setDuplicate(false);
-                  setEditing(undefined);
-                },
-              ],
+              ["multiquery", multiquery, changeMultiquery],
             ] as const
           ).map(([label, checked, set]) => (
             <label key={label} className="flex items-center gap-2">
@@ -274,7 +184,7 @@ export function TagsScreen() {
             {multiquery && (
               <button
                 type="button"
-                className="btn btn-ghost btn-square btn-sm"
+                className="btn btn-ghost btn-square btn-sm min-h-11 min-w-11"
                 aria-label="Add query"
                 disabled={busy || !data}
                 onClick={add}
@@ -303,7 +213,7 @@ export function TagsScreen() {
                     <div className="flex flex-col">
                       <button
                         type="button"
-                        className="btn btn-ghost btn-square btn-sm"
+                        className="btn btn-ghost btn-square btn-sm min-h-11 min-w-11"
                         aria-label="Save query"
                         onClick={saveEdit}
                       >
@@ -311,7 +221,7 @@ export function TagsScreen() {
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-square btn-sm"
+                        className="btn btn-ghost btn-square btn-sm min-h-11 min-w-11"
                         aria-label="Cancel editing query"
                         onClick={() => {
                           setEditing(undefined);
@@ -328,26 +238,15 @@ export function TagsScreen() {
                     <div className="flex flex-col">
                       <button
                         type="button"
-                        className="btn btn-ghost btn-square btn-sm"
+                        className="btn btn-ghost btn-square btn-sm min-h-11 min-w-11"
                         aria-label="Edit query"
-                        onClick={() => {
-                          setEditing({ id: row.id, query: row.query });
-                          setDuplicate(false);
-                          if (
-                            !boolean &&
-                            (row.query.includes.filter((group) => group.length > 0).length > 1 ||
-                              row.query.excludes.some((group) => group.length > 1))
-                          ) {
-                            setBoolean(true);
-                            saveFlag("Boolean", true);
-                          }
-                        }}
+                        onClick={() => startEdit(row)}
                       >
                         <Pencil className="size-4" />
                       </button>
                       <button
                         type="button"
-                        className="btn btn-ghost btn-square btn-sm"
+                        className="btn btn-ghost btn-square btn-sm min-h-11 min-w-11"
                         aria-label="Remove query"
                         onClick={() => {
                           setSaved(saved.filter((entry) => entry.id !== row.id));
@@ -367,7 +266,7 @@ export function TagsScreen() {
             </p>
           )}
         </div>
-        <div className="flex items-center justify-between gap-3 border-t-2 border-base-200 pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-base-200 pt-4">
           <h2 className="text-lg font-semibold">Items</h2>
           <label className="flex items-center gap-2 text-sm">
             Sort{" "}

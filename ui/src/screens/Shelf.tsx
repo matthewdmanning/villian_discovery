@@ -13,7 +13,10 @@ const TABS = [
 function ShelfRows({ items, kind }: { items: ShelfEntry[]; kind: "checkedOut" | "holds" | "returned" }) {
   if (!items.length)
     return (
-      <Empty icon={<BookOpen className="size-7" />} title={kind === "holds" ? "No holds" : "Nothing checked out"} />
+      <Empty
+        icon={<BookOpen className="size-7" />}
+        title={kind === "holds" ? "No holds" : kind === "returned" ? "No returned titles" : "Nothing checked out"}
+      />
     );
   return (
     <ul className="divide-y-2 divide-base-200">
