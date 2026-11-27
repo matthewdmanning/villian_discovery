@@ -174,3 +174,15 @@ describe("useLists saved searches", () => {
     expect(hook.editing).toBeUndefined();
   });
 });
+
+describe("useLists sorting", () => {
+  it("sorts the filtered items and reuses them until an input changes", async () => {
+    await mount();
+    expect(hook.sorted.map((item) => item.id)).toEqual(["1", "3", "2"]);
+    const before = hook.sorted;
+    await act(async () => hook.setDuplicate(false));
+    expect(hook.sorted).toBe(before);
+    await act(async () => hook.setDraft(query([["b"]])));
+    expect(hook.sorted.map((item) => item.id)).toEqual(["1", "3"]);
+  });
+});

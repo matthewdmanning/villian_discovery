@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestMatch, normalizeName, normalizeTitle, toIsbn13 } from "../src/matcher.js";
+import { bestMatch, isbn13, normalizeName, normalizeTitle, toIsbn13 } from "../src/matcher.js";
 import { media } from "./fixtures.js";
 
 const opts = {
@@ -63,6 +63,9 @@ it("normalizers", () => {
   expect(normalizeName("Weir, Andy")).toBe(normalizeName("Andy Weir"));
   expect(normalizeName("J. R. R. Tolkien")).toBe("tolkien");
   expect(toIsbn13("0593135202")).toBe("9780593135204");
+  for (const spelling of ["0-593-13520-2", "isbn:978 0593135204", "9780593135204"])
+    expect(isbn13(spelling)).toBe("9780593135204");
+  expect(isbn13("not an isbn")).toBeUndefined();
 });
 
 it("preserves non-Latin titles and authors without matching unrelated books", () => {

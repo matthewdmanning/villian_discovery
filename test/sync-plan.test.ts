@@ -540,3 +540,30 @@ describe("sync plan preview and apply", () => {
     expect(plan.conflicts).toHaveLength(0);
   });
 });
+
+describe("edition choices", () => {
+  it("still apply when the group ID changed since the choice was made", async () => {
+    const snapshots = pair({ readingProgress: field(20) }, { readingProgress: field(10) });
+    snapshots.libby.push({
+      ...structuredClone(snapshots.libby[0]!),
+      bookId: "libby-2",
+      fields: { readingProgress: field(60) },
+    });
+    const adapters: SyncAdapters = {
+      libby: makeAdapter("libby", snapshots.libby),
+      fable: makeAdapter("fable", snapshots.fable),
+    };
+    const progress = async (editions?: Record<string, string>) =>
+      (
+        await previewSync({
+          context,
+          settings: SYNC_FALLBACKS,
+          adapters,
+          ...(editions ? { options: { editions } } : {}),
+        })
+      ).operations.find((operation) => operation.field === "readingProgress")?.after;
+    // A group ID from before "libby-2" joined the group no longer exists.
+    expect(await progress()).not.toBe(20);
+    expect(await progress({ "group:fable-1|libby-1": "libby-1" })).toBe(20);
+  });
+});

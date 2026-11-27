@@ -53,7 +53,73 @@ describe("libbySnapshots", () => {
   });
 });
 
+describe("duplicate loans across cards", () => {
+  it("fills missing details from the other card's loan instead of adding a book", () => {
+    const books = libbySnapshots({
+      loans: [
+        { id: "11", cardId: "1", title: "Dune" },
+        {
+          id: "11",
+          cardId: "2",
+          title: "Dune",
+          firstCreatorName: "Frank Herbert",
+          formats: [{ id: "ebook-kindle", identifiers: [{ type: "ISBN", value: "9780441172719" }] }],
+        },
+      ],
+    });
+    expect(books).toMatchObject([{ bookId: "libby:11", author: "Frank Herbert", isbn: "9780441172719" }]);
+    expect(books).toHaveLength(1);
+  });
+
+  it("keeps the furthest progress whichever card answers last", async () => {
+    for (const slowCard of ["1", "2"]) {
+      const adapter = libbyAdapter({
+        sync: async () => ({
+          loans: [
+            { id: "11", cardId: "1", title: "Dune", type: { id: "audiobook" } },
+            { id: "11", cardId: "2", title: "Dune", type: { id: "audiobook" } },
+          ],
+        }),
+        loanProgress: async ({ cardId }: { cardId: string }) => {
+          if (cardId === slowCard) await new Promise((resolve) => setTimeout(resolve, 5));
+          return cardId === "1" ? 30 : 70;
+        },
+      } as never);
+      const [book] = await adapter.read({ userId: "u", connectionId: "c" });
+      expect(book?.fields.readingProgress).toEqual({ value: 70 });
+    }
+  });
+});
+
 describe("fableSnapshots", () => {
+  it("keeps a system list's status when a custom list follows it", () => {
+    const book = { id: "b1", title: "Piranesi" };
+    const [snapshot] = fableSnapshots([
+      { list: { id: "l1", name: "Want to Read", system_type: "want_to_read" }, entries: [{ book, note: null }] },
+      { list: { id: "l2", name: "Favorites", system_type: null }, entries: [{ book, note: null }] },
+    ]);
+    expect(snapshot?.fields.readingStatus).toEqual({ value: "want-to-read" });
+  });
+
+  it("names each shelf once and picks the furthest status in any list order", () => {
+    const book = { id: "b1", title: "Piranesi" };
+    const lists = [
+      { list: { id: "l1", name: "Finished", system_type: "finished" }, entries: [{ book, note: null }] },
+      {
+        list: { id: "l2", name: "Want to Read", system_type: "want_to_read" },
+        entries: [
+          { book, note: null },
+          { book, note: null },
+        ],
+      },
+    ];
+    for (const order of [lists, [...lists].reverse()]) {
+      const [snapshot] = fableSnapshots(order);
+      expect(snapshot?.fields.readingStatus).toEqual({ value: "finished" });
+      expect([...((snapshot?.fields.shelves?.value ?? []) as string[])].sort()).toEqual(["Finished", "Want to Read"]);
+    }
+  });
+
   it("merges a book across lists and omits fields Fable did not return", () => {
     const book = {
       id: "b1",
@@ -210,6 +276,82 @@ describe("adding a Libby loan to Fable", () => {
     });
     expect(plan.operations).toEqual([]);
     expect(plan.conflicts[0]?.message).toMatch(/No matched destination/);
+  });
+
+  it("matches a Fable book whose ISBN is spelled differently", async () => {
+    const isbnLoans = {
+      sync: async () => ({
+        loans: [
+          {
+            id: "11",
+            cardId: "1",
+            title: "The Road to Tender Hearts",
+            type: { id: "audiobook" },
+            formats: [{ id: "audiobook-mp3", identifiers: [{ type: "ISBN", value: "9780441172719" }] }],
+          },
+        ],
+      }),
+      loanProgress: async () => 85,
+    } as never;
+    // Same title twice, so only the ISBN can pick the book; Fable spells it as ISBN-10 with hyphens.
+    const { get, post, posts } = fakeFable([
+      { id: "cat-1", title: "The Road to Tender Hearts", isbn: "0-441-17271-7" },
+      { id: "cat-2", title: "The Road to Tender Hearts", isbn: "9999999999999" },
+    ]);
+    const adapters = { libby: libbyAdapter(isbnLoans), fable: fableAdapter(get, post) };
+    const plan = await previewSync({ context: ids, settings: resolveSyncSettings(), adapters });
+    await applySync({
+      context: ids,
+      settings: resolveSyncSettings(),
+      plan,
+      adapters,
+      journal: createMemoryJournal(),
+      approvals: { selected: [plan.operations[0]!.id], removals: [] },
+    });
+    expect(posts).toMatchObject([{ body: { book_id: "cat-1" } }]);
+  });
+
+  it("reads the Currently Reading list once per adapter and retries after a failed read", async () => {
+    let listReads = 0;
+    let failNext = true;
+    const posts: unknown[] = [];
+    const get = (async (path: string) => {
+      if (path === "/api/search") return { books: [{ id: "cat-1", title: "Dune" }] };
+      if (path === "/api/me/book-lists") {
+        listReads += 1;
+        if (failNext) {
+          failNext = false;
+          throw new Error("Fable is down");
+        }
+        return { next: null, results: [{ id: "cur", name: "Currently Reading", system_type: "current_reading" }] };
+      }
+      throw new Error(`unexpected ${path}`);
+    }) as never;
+    const adapter = fableAdapter(get, (async (_path: string, body: unknown) => posts.push(body)) as never);
+    const operation = { field: "readingStatus", after: "currently-reading", create: { title: "Dune" } } as never;
+    await expect(adapter.write(ids, operation, async () => {})).rejects.toThrow("Fable is down");
+    await adapter.write(ids, operation, async () => {});
+    await adapter.write(ids, operation, async () => {});
+    expect(listReads).toBe(2);
+    expect(posts).toHaveLength(2);
+  });
+
+  it("checks the plan is current before any Fable read or write", async () => {
+    const calls: string[] = [];
+    const adapter = fableAdapter(
+      (async (path: string) => {
+        calls.push(path);
+        return { next: null, results: [] };
+      }) as never,
+      (async () => calls.push("post")) as never,
+    );
+    const operation = { field: "readingStatus", after: "currently-reading", create: { title: "Dune" } } as never;
+    await expect(
+      adapter.write(ids, operation, async () => {
+        throw new Error("Library data changed");
+      }),
+    ).rejects.toThrow("Library data changed");
+    expect(calls).toEqual([]);
   });
 
   it("refuses to guess between several Fable books with the same title", async () => {

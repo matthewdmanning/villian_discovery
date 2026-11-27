@@ -24,6 +24,26 @@ describe("list library availability", () => {
     expect(result.map((row) => row.status)).toEqual(["ok", "not-offered", "error"]);
     expect(result[0]?.media?.availableCopies).toBe(1);
   });
+  it("asks each library's catalog once when several cards share it", async () => {
+    const calls: string[] = [];
+    const result = await listLibraryAvailability(
+      "42",
+      { sync: async () => ({ cards: [...cards, { cardId: "4", advantageKey: "first" }] }) },
+      {
+        getLibraryMedia: async (key, id) => {
+          calls.push(key);
+          return { id, title: "Book", isAvailable: true };
+        },
+      },
+    );
+    expect(calls.sort()).toEqual(["first", "second", "third"]);
+    expect(result.map((row) => [row.card.cardId, row.status])).toEqual([
+      ["1", "ok"],
+      ["2", "ok"],
+      ["3", "ok"],
+      ["4", "ok"],
+    ]);
+  });
   it("rejects invalid title IDs and propagates account failures", async () => {
     const client = {
       sync: async () => {
