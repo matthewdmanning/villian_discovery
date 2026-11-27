@@ -75,7 +75,11 @@ export function QueryFields({ tags, query, boolean, onChange }: QueryFieldsProps
                     )}
                   </div>
                 ))}
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setGroups([...displayGroups, []])}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setGroups([...displayGroups, []])}
+                >
                   Add OR group
                 </button>
               </>
