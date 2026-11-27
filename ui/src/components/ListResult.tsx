@@ -33,7 +33,7 @@ export function LibraryRows({
         </thead>
         <tbody>
           {rows.map(({ card, status, media }) => {
-            const { checkedOut, action } = listLibraryDetails({ card, status, ...(media ? { media } : {}) });
+            const { checkedOut, total, action } = listLibraryDetails({ card, status, ...(media ? { media } : {}) });
             const url = libbyTitleUrl(card.advantageKey, titleId);
             return (
               <tr key={card.cardId}>
@@ -46,7 +46,7 @@ export function LibraryRows({
                     </span>
                   )}
                 </th>
-                <td>{status === "ok" ? `${checkedOut ?? "—"} / ${media?.ownedCopies ?? "—"}` : "—"}</td>
+                <td>{status === "ok" ? `${checkedOut} / ${total}` : "—"}</td>
                 <td>{status === "ok" ? (media?.holdsCount ?? "—") : "—"}</td>
                 <td>
                   {status === "ok" && typeof media?.estimatedWaitDays === "number"

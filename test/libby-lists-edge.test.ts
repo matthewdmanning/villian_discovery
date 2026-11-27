@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { HttpError } from "../src/errors.js";
 import { LibbyClient } from "../src/libby-client.js";
-import { listLibraryAvailability } from "../src/libby-list-availability.js";
-import { filterListGroups, readLists } from "../src/libby-lists.js";
+import { createCardCache, listLibraryAvailability } from "../src/libby-list-availability.js";
+import { filterListGroups, mapLimit, readLists, TAG_CONCURRENCY } from "../src/libby-lists.js";
 import { silentLogger } from "../src/logger.js";
 import { fakeFetch } from "./fixtures.js";
 
@@ -178,5 +178,60 @@ describe("listLibraryAvailability input and catalog edge cases", () => {
         { getLibraryMedia: async () => ({ id: "1", title: "A" }) },
       ),
     ).toEqual([]);
+  });
+});
+
+describe("tag request concurrency", () => {
+  it("readLists keeps at most TAG_CONCURRENCY tag requests in flight, in tag order", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const tags = Array.from({ length: 10 }, (_, i) => tag(`t${i}`));
+    const data = await readLists({
+      tags: async () => ({ tags }),
+      taggings: async ({ uuid }) => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        inFlight--;
+        return { tag: { taggings: [{ titleId: uuid, sortTitle: uuid }] } };
+      },
+    });
+    expect(peak).toBe(TAG_CONCURRENCY);
+    expect(data.items.map((item) => item.id)).toEqual(tags.map((t) => t.uuid));
+  });
+
+  it("mapLimit stops starting calls after the first failure", async () => {
+    const started: number[] = [];
+    await expect(
+      mapLimit([0, 1, 2, 3, 4], 1, async (n) => {
+        started.push(n);
+        if (n === 1) throw new Error("boom");
+        return n;
+      }),
+    ).rejects.toThrow("boom");
+    expect(started).toEqual([0, 1]);
+  });
+});
+
+describe("card cache", () => {
+  it("reuses one card list per token until it expires", async () => {
+    let time = 0;
+    let loads = 0;
+    const cache = createCardCache(1000, () => time);
+    const load = async () => ({ cards: [{ cardId: String(++loads) }] as never });
+    await cache("a", load);
+    await cache("a", load);
+    expect(loads).toBe(1);
+    await cache("b", load);
+    expect(loads).toBe(2);
+    time = 5000;
+    await cache("b", load);
+    expect(loads).toBe(3);
+  });
+
+  it("does not remember a failed load", async () => {
+    const cache = createCardCache(1000, () => 0);
+    await expect(cache("a", async () => Promise.reject(new Error("down")))).rejects.toThrow("down");
+    await expect(cache("a", async () => ({ cards: [] }))).resolves.toEqual({ cards: [] });
   });
 });

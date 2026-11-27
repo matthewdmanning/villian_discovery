@@ -59,16 +59,21 @@ describe("list result helpers", () => {
     const ok = (media) => listLibraryDetails({ card: {}, status: "ok", media });
     expect(ok({ ownedCopies: 5, availableCopies: 2, isAvailable: true })).toEqual({
       checkedOut: 3,
+      total: 5,
       action: "Borrow",
     });
     expect(ok({ ownedCopies: 5, availableCopies: 0, isAvailable: false, isHoldable: true })).toEqual({
       checkedOut: 5,
+      total: 5,
       action: "Place hold",
     });
     expect(ok({ isAvailable: false, isHoldable: false }).action).toBeUndefined();
-    // Impossible counts are not reported as a number.
-    expect(ok({ ownedCopies: 2, availableCopies: 5 }).checkedOut).toBeUndefined();
-    expect(ok({ ownedCopies: 2 }).checkedOut).toBeUndefined();
+    // Impossible or missing counts still give two integers.
+    expect(ok({ ownedCopies: 2, availableCopies: 5 })).toMatchObject({ checkedOut: 0, total: 2 });
+    expect(ok({ ownedCopies: 2 })).toMatchObject({ checkedOut: 0, total: 2 });
+    expect(ok({ ownedCopies: 2, isAvailable: false })).toMatchObject({ checkedOut: 2, total: 2 });
+    expect(ok({ availableCopies: 3 })).toMatchObject({ checkedOut: 0, total: 0 });
+    expect(ok(undefined)).toMatchObject({ checkedOut: 0, total: 0 });
   });
 
   it("offers no action for a library that failed or does not carry the title", () => {

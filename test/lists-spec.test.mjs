@@ -9,10 +9,7 @@ import { sortListItems } from "../ui/src/lib/list-results.ts";
 import { StoreProvider } from "../ui/src/lib/store.tsx";
 import { TagsScreen } from "../ui/src/screens/Tags.tsx";
 
-/**
- * Product rules for Lists. `it.fails` marks a rule the code does not yet meet: CI stays green, and the test
- * starts failing as soon as the rule is met, which is the cue to change `it.fails` to `it`.
- */
+/** Product rules for Lists. */
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const titlesOf = (items) => sortListItems(items, "title").map((item) => item.title);
@@ -27,7 +24,7 @@ describe("title sort", () => {
       "gamma",
     ]);
   });
-  it.fails("does not distinguish leading articles", () => {
+  it("does not distinguish leading articles", () => {
     expect(titlesOf([book("The Zebra"), book("A Gamma"), book("An Apple"), book("Beta")])).toEqual([
       "An Apple",
       "Beta",
@@ -54,8 +51,10 @@ describe("Available column", () => {
     expect(cell({ id: "1", title: "T", ownedCopies: 5, availableCopies: 2 })).toMatch(/^\d+ \/ \d+$/);
     expect(cell({ id: "1", title: "T", ownedCopies: 0, availableCopies: 0 })).toMatch(/^\d+ \/ \d+$/);
   });
-  it.fails("is two integers even when the catalog omits a count", () => {
+  it("is two integers even when the catalog omits a count", () => {
     expect(cell({ id: "1", title: "T", ownedCopies: 5 })).toMatch(/^\d+ \/ \d+$/);
+    expect(cell({ id: "1", title: "T", availableCopies: 2 })).toMatch(/^\d+ \/ \d+$/);
+    expect(cell({ id: "1", title: "T" })).toMatch(/^\d+ \/ \d+$/);
   });
 });
 
@@ -76,7 +75,7 @@ describe("feature flags", () => {
     const api = { ...demoApi, lists: vi.fn(async () => ({ tags: [], items: [] })) };
     await act(async () => root.render(createElement(StoreProvider, { api }, createElement(TagsScreen))));
   };
-  it.fails("Boolean and multiquery are not shown as controls in the UI", async () => {
+  it("Boolean and multiquery are not shown as controls in the UI", async () => {
     await render();
     expect(container.textContent).not.toMatch(/Boolean|multiquery/);
     expect(container.querySelectorAll("input.toggle")).toHaveLength(0);

@@ -141,8 +141,6 @@ export function TagsScreen() {
     sort,
     setSort,
     items,
-    changeBoolean,
-    changeMultiquery,
     add,
     saveEdit,
     startEdit,
@@ -150,24 +148,6 @@ export function TagsScreen() {
   return (
     <Screen id="tags">
       <Panel className="space-y-5">
-        <div className="flex flex-wrap gap-4">
-          {(
-            [
-              ["Boolean", boolean, changeBoolean],
-              ["multiquery", multiquery, changeMultiquery],
-            ] as const
-          ).map(([label, checked, set]) => (
-            <label key={label} className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                className="toggle toggle-sm"
-                checked={checked}
-                onChange={(event) => set(event.target.checked)}
-              />{" "}
-              {label}
-            </label>
-          ))}
-        </div>
         <div className="space-y-2">
           <div
             className={`grid gap-4 rounded-field border border-base-300 p-3 ${multiquery ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" : "grid-cols-2"}`}

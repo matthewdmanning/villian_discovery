@@ -1,7 +1,7 @@
 import { CircleCheck, CircleDashed, Plug } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Field, Panel, Screen, Segmented, sz } from "../components/ui.tsx";
-import { screen } from "../lib/spec.ts";
+import { Advanced, Field, Panel, Screen, Segmented, sz } from "../components/ui.tsx";
+import { labelFor, screen } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
 
 const SIGN_IN_METHODS = ["library card", "passkey", "phone code"] as const;
@@ -26,7 +26,7 @@ const codeField = screen("connect")
   .find((c) => c.type === "output" && !c.binds);
 
 export function Connect() {
-  const { api, config, go, login } = useStore();
+  const { api, config, set, go, login } = useStore();
   const tokenFile = config.auth.tokenFile;
   const [connection, setConnection] = useState<"checking" | "connected" | "disconnected" | "check-error">("checking");
   const [checkRevision, setCheckRevision] = useState(0);
@@ -186,6 +186,19 @@ export function Connect() {
           </form>
         </Panel>
       )}
+
+      <div className="max-w-xl">
+        <Advanced title="Advanced">
+          <Field label={labelFor("connect", "auth.tokenFile", "Token file")}>
+            <input
+              className={`input w-full font-mono text-sm ${sz("input")}`}
+              disabled={busy}
+              value={tokenFile}
+              onChange={(e) => set("auth.tokenFile", e.target.value || undefined)}
+            />
+          </Field>
+        </Advanced>
+      </div>
     </Screen>
   );
 }

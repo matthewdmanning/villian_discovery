@@ -17,7 +17,7 @@ export async function readLists(client: {
   taggings(tag: LibbyTag): Promise<unknown>;
 }): Promise<ListsData> {
   const tags = parseTagsResponse(await client.tags());
-  const responses = await Promise.all(tags.map((tag) => client.taggings(tag)));
+  const responses = await mapLimit(tags, TAG_CONCURRENCY, (tag) => client.taggings(tag));
   const items = new Map<string, ListItem>();
   for (const [index, response] of responses.entries()) {
     const tag = tags[index]!;
@@ -43,6 +43,29 @@ export async function readLists(client: {
     }
   }
   return { tags, items: [...items.values()] };
+}
+
+/** Tags read at once, so an account with many tags stays under Libby's rate limits. */
+export const TAG_CONCURRENCY = 4;
+
+/** Map in input order with at most `limit` calls in flight; the first failure rejects and starts no more calls. */
+export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  let failed = false;
+  const worker = async () => {
+    while (!failed && next < items.length) {
+      const index = next++;
+      try {
+        results[index] = await fn(items[index]!);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker));
+  return results;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
