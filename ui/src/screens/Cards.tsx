@@ -1,9 +1,9 @@
-import { ChevronDown, ChevronUp, GripVertical, TriangleAlert } from "lucide-react";
-import { type DragEvent, useState } from "react";
-import { Panel, Screen, sz } from "../components/ui.tsx";
+import { GripVertical, TriangleAlert } from "lucide-react";
+import { Panel, ReorderControls, Screen, sz } from "../components/ui.tsx";
 import type { LibbyCard } from "../lib/api.ts";
 import { cardSelected, cardUsage, libraryOrder, toggleCard } from "../lib/cards.ts";
 import { useStore } from "../lib/store.tsx";
+import { useReorder } from "../lib/use-reorder.ts";
 
 function Usage({ card, kind }: { card: LibbyCard; kind: "loan" | "hold" }) {
   const { used, limit, isFull } = cardUsage(card, kind);
@@ -17,7 +17,6 @@ function Usage({ card, kind }: { card: LibbyCard; kind: "loan" | "hold" }) {
 
 export function Cards() {
   const { cards, cardsLoading, cardsError, refreshCards, config, set } = useStore();
-  const [dragging, setDragging] = useState<string>();
   const using = (c: LibbyCard) => cardSelected(config.cards, c);
   const selectedCount = cards.filter(using).length;
   const toggle = (c: LibbyCard, on: boolean) => set("cards", toggleCard(cards, config.cards, c, on));
@@ -27,43 +26,11 @@ export function Cards() {
     (a, b) => Number(using(b)) - Number(using(a)) || order.indexOf(a.advantageKey) - order.indexOf(b.advantageKey),
   );
 
-  /** Use this function to move an enabled library from one priority position to another using `enabled`, `order`, and the config setter. */
-  function move(from: string, to: string) {
-    const start = enabled.indexOf(from);
-    const end = enabled.indexOf(to);
-    if (start < 0 || end < 0 || start === end) return;
-    const next = [...enabled];
-    next.splice(start, 1);
-    next.splice(end, 0, from);
-    set("libraries", [...next, ...order.filter((key) => !next.includes(key))]);
-  }
+  const { moveTo, dragProps } = useReorder(enabled, (next) =>
+    set("libraries", [...next, ...order.filter((key) => !next.includes(key))]),
+  );
 
-  /** Use this function to attach drag behavior to a card row; disabled cards cannot start or receive moves through `move`. */
-  function dragProps(c: LibbyCard) {
-    return {
-      draggable: using(c),
-      onDragStart: (e: DragEvent) => {
-        if (!using(c)) {
-          e.preventDefault();
-          return;
-        }
-        e.dataTransfer.setData("text/plain", c.advantageKey);
-        e.dataTransfer.effectAllowed = "move";
-        setDragging(c.advantageKey);
-      },
-      onDragOver: (e: DragEvent) => {
-        if (using(c)) e.preventDefault();
-      },
-      onDrop: (e: DragEvent) => {
-        e.preventDefault();
-        if (using(c) && dragging) move(dragging, c.advantageKey);
-        setDragging(undefined);
-      },
-      onDragEnd: () => setDragging(undefined),
-    };
-  }
-
-  /** Use this function to render descending priority and accessible reorder controls for a card using the enabled library order and `move`. */
+  /** Use this function to render descending priority and accessible reorder controls for a card using the enabled library order and `moveTo`. */
   function priority(c: LibbyCard) {
     const index = enabled.indexOf(c.advantageKey);
     const active = using(c);
@@ -72,24 +39,13 @@ export function Cards() {
       <div className="inline-flex items-center gap-1">
         <GripVertical aria-hidden className={`size-4 ${active ? "cursor-grab" : "opacity-30"}`} />
         <span className="min-w-5 text-center font-semibold tabular-nums">{active ? enabled.length - index : "—"}</span>
-        <button
-          type="button"
-          className="btn btn-ghost btn-xs btn-square"
-          aria-label={`Move ${name} up`}
-          disabled={!active || index <= 0}
-          onClick={() => move(c.advantageKey, enabled[index - 1]!)}
-        >
-          <ChevronUp className="size-4" />
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-xs btn-square"
-          aria-label={`Move ${name} down`}
-          disabled={!active || index >= enabled.length - 1}
-          onClick={() => move(c.advantageKey, enabled[index + 1]!)}
-        >
-          <ChevronDown className="size-4" />
-        </button>
+        <ReorderControls
+          name={name}
+          index={index}
+          count={enabled.length}
+          disabled={!active}
+          onMove={(to) => moveTo(c.advantageKey, to)}
+        />
       </div>
     );
   }
@@ -143,7 +99,7 @@ export function Cards() {
             </thead>
             <tbody>
               {sorted.map((c) => (
-                <tr key={c.cardId} {...dragProps(c)} className={using(c) ? "" : "opacity-50"}>
+                <tr key={c.cardId} {...dragProps(c.advantageKey)} className={using(c) ? "" : "opacity-50"}>
                   <td>
                     <input
                       type="checkbox"
@@ -172,7 +128,7 @@ export function Cards() {
           {sorted.map((c) => (
             <li
               key={c.cardId}
-              {...dragProps(c)}
+              {...dragProps(c.advantageKey)}
               className={`rounded-field border-2 border-base-300 p-4 ${using(c) ? "" : "opacity-50"}`}
             >
               <label className="flex items-center justify-between gap-3">

@@ -1,8 +1,9 @@
 import { BookOpen, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Empty, Panel, Screen } from "../components/ui.tsx";
 import type { ShelfData, ShelfEntry, ShelfTab } from "../lib/api.ts";
 import { useStore } from "../lib/store.tsx";
+import { useResource } from "../lib/use-resource.ts";
 
 const TABS = [
   ["checkedOut", "Checked out"],
@@ -61,35 +62,7 @@ function TabContent({ tab, kind }: { tab: ShelfTab; kind: "checkedOut" | "holds"
 export function Shelf() {
   const { api } = useStore();
   const [active, setActive] = useState<(typeof TABS)[number][0]>("checkedOut");
-  const [data, setData] = useState<ShelfData>();
-  const [error, setError] = useState<string>();
-  const [loading, setLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision intentionally triggers an explicit shelf reload.
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(undefined);
-    api.shelf().then(
-      (next) => {
-        if (!cancelled) {
-          setData(next);
-          setLoading(false);
-        }
-      },
-      (reason) => {
-        if (!cancelled) {
-          setData(undefined);
-          setError(reason instanceof Error ? reason.message : String(reason));
-          setLoading(false);
-        }
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [api, revision]);
+  const { data, error, loading, reload } = useResource(useCallback(() => api.shelf(), [api]));
 
   return (
     <Screen id="shelf">
@@ -97,7 +70,7 @@ export function Shelf() {
       {!loading && error && (
         <div className="space-y-3" role="alert">
           <p>Could not load shelf: {error}</p>
-          <button type="button" className="btn btn-primary" onClick={() => setRevision((value) => value + 1)}>
+          <button type="button" className="btn btn-primary" onClick={reload}>
             <RefreshCw className="size-4" /> Retry
           </button>
         </div>

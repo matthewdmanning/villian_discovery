@@ -1,15 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   activeListQueries,
   filterListGroups,
   filterListQueries,
   type ListQuery,
-  type ListsData,
   listQueryKey,
 } from "../../../src/libby-lists.ts";
 import { emptyQuery, needsBoolean, simpleQuery } from "./list-query.ts";
 import type { ListSort } from "./list-results.ts";
 import { useStore } from "./store.tsx";
+import { useResource } from "./use-resource.ts";
 
 function readFlag(name: string) {
   try {
@@ -28,7 +28,13 @@ function saveFlag(name: string, value: boolean) {
 type SavedQuery = { id: number; query: ListQuery };
 export function useLists() {
   const { api } = useStore();
-  const [data, setData] = useState<ListsData>();
+  const lists = useResource(
+    useCallback(() => api.lists(), [api]),
+    { keepStale: true },
+  );
+  const { data, revision, reload } = lists;
+  const error = lists.error !== undefined;
+  const busy = lists.loading;
   const [draft, setDraft] = useState<ListQuery>(emptyQuery);
   const [saved, setSaved] = useState<SavedQuery[]>([]);
   const [nextId, setNextId] = useState(0);
@@ -36,33 +42,7 @@ export function useLists() {
   const [duplicate, setDuplicate] = useState(false);
   const [boolean, setBoolean] = useState(() => readFlag("Boolean"));
   const [multiquery, setMultiquery] = useState(() => readFlag("multiquery"));
-  const [error, setError] = useState(false);
-  const [busy, setBusy] = useState(true);
-  const [revision, setRevision] = useState(0);
   const [sort, setSort] = useState<ListSort>("title");
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: revision triggers a refresh.
-  useEffect(() => {
-    let active = true;
-    setBusy(true);
-    setError(false);
-    api
-      .lists()
-      .then((result) => {
-        if (active) {
-          setData(result);
-        }
-      })
-      .catch(() => {
-        if (active) setError(true);
-      })
-      .finally(() => {
-        if (active) setBusy(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, revision]);
 
   function changeBoolean(value: boolean) {
     if (!value) setDraft(simpleQuery(draft));
@@ -132,7 +112,7 @@ export function useLists() {
     error,
     busy,
     revision,
-    setRevision,
+    reload,
     sort,
     setSort,
     items,

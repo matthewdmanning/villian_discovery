@@ -137,7 +137,7 @@ export function TagsScreen() {
     error,
     busy,
     revision,
-    setRevision,
+    reload,
     sort,
     setSort,
     items,
@@ -259,12 +259,7 @@ export function TagsScreen() {
               <option value="author">Author A–Z</option>
             </select>
           </label>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={busy}
-            onClick={() => setRevision((value) => value + 1)}
-          >
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={reload}>
             Refresh
           </button>
         </div>

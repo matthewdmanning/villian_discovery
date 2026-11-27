@@ -12,6 +12,7 @@ import {
 } from "./api.ts";
 import { type Config, type ConfigInput, resolve, setPath } from "./config.ts";
 import { options, type ScreenId, screens } from "./spec.ts";
+import { useResource } from "./use-resource.ts";
 
 export type BookDraftEdit = {
   mediaTypes?: BookRequest["mediaTypes"] | undefined;
@@ -56,6 +57,7 @@ interface Store {
 
 const Ctx = createContext<Store | null>(null);
 const KEY = "libby-shelf.config";
+const NO_CARDS: LibbyCard[] = [];
 
 /** Saved overrides. The UI starts in dry run (wireframe default) until the user turns it off. */
 function load(): ConfigInput {
@@ -75,12 +77,10 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     const overrides = load();
     return { overrides, ...resolve(overrides) };
   });
-  const [cards, setCards] = useState<LibbyCard[]>([]);
-  const [cardsLoading, setCardsLoading] = useState(true);
-  const [cardsError, setCardsError] = useState<string>();
-  const [cardRevision, setCardRevision] = useState(0);
   const tokenFile = resolved.config.auth.tokenFile;
-  const refreshCards = useCallback(() => setCardRevision((revision) => revision + 1), []);
+  const cardsResource = useResource(useCallback(() => api.cards(tokenFile), [api, tokenFile]));
+  const cards = cardsResource.data ?? NO_CARDS;
+  const { loading: cardsLoading, error: cardsError, reload: refreshCards } = cardsResource;
   const login = async (options: LoginOptions) => {
     await api.login(tokenFile, options);
     options.signal?.throwIfAborted();
@@ -92,31 +92,6 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
   const [syncResult, setSyncResult] = useState<Store["syncResult"]>();
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState<string>();
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: cardRevision intentionally triggers explicit card reloads.
-  useEffect(() => {
-    let cancelled = false;
-    setCards([]);
-    setCardsLoading(true);
-    setCardsError(undefined);
-    api.cards(tokenFile).then(
-      (next) => {
-        if (!cancelled) {
-          setCards(next);
-          setCardsLoading(false);
-        }
-      },
-      (error) => {
-        if (!cancelled) {
-          setCardsError((error as Error).message);
-          setCardsLoading(false);
-        }
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [api, tokenFile, cardRevision]);
 
   useEffect(() => {
     try {
