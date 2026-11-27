@@ -92,6 +92,15 @@ describe("duplicate loans across cards", () => {
 });
 
 describe("fableSnapshots", () => {
+  it("keeps a system list's status when a custom list follows it", () => {
+    const book = { id: "b1", title: "Piranesi" };
+    const [snapshot] = fableSnapshots([
+      { list: { id: "l1", name: "Want to Read", system_type: "want_to_read" }, entries: [{ book, note: null }] },
+      { list: { id: "l2", name: "Favorites", system_type: null }, entries: [{ book, note: null }] },
+    ]);
+    expect(snapshot?.fields.readingStatus).toEqual({ value: "want-to-read" });
+  });
+
   it("names each shelf once and picks the furthest status in any list order", () => {
     const book = { id: "b1", title: "Piranesi" };
     const lists = [
@@ -300,6 +309,49 @@ describe("adding a Libby loan to Fable", () => {
       approvals: { selected: [plan.operations[0]!.id], removals: [] },
     });
     expect(posts).toMatchObject([{ body: { book_id: "cat-1" } }]);
+  });
+
+  it("reads the Currently Reading list once per adapter and retries after a failed read", async () => {
+    let listReads = 0;
+    let failNext = true;
+    const posts: unknown[] = [];
+    const get = (async (path: string) => {
+      if (path === "/api/search") return { books: [{ id: "cat-1", title: "Dune" }] };
+      if (path === "/api/me/book-lists") {
+        listReads += 1;
+        if (failNext) {
+          failNext = false;
+          throw new Error("Fable is down");
+        }
+        return { next: null, results: [{ id: "cur", name: "Currently Reading", system_type: "current_reading" }] };
+      }
+      throw new Error(`unexpected ${path}`);
+    }) as never;
+    const adapter = fableAdapter(get, (async (_path: string, body: unknown) => posts.push(body)) as never);
+    const operation = { field: "readingStatus", after: "currently-reading", create: { title: "Dune" } } as never;
+    await expect(adapter.write(ids, operation, async () => {})).rejects.toThrow("Fable is down");
+    await adapter.write(ids, operation, async () => {});
+    await adapter.write(ids, operation, async () => {});
+    expect(listReads).toBe(2);
+    expect(posts).toHaveLength(2);
+  });
+
+  it("checks the plan is current before any Fable read or write", async () => {
+    const calls: string[] = [];
+    const adapter = fableAdapter(
+      (async (path: string) => {
+        calls.push(path);
+        return { next: null, results: [] };
+      }) as never,
+      (async () => calls.push("post")) as never,
+    );
+    const operation = { field: "readingStatus", after: "currently-reading", create: { title: "Dune" } } as never;
+    await expect(
+      adapter.write(ids, operation, async () => {
+        throw new Error("Library data changed");
+      }),
+    ).rejects.toThrow("Library data changed");
+    expect(calls).toEqual([]);
   });
 
   it("refuses to guess between several Fable books with the same title", async () => {
