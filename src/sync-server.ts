@@ -22,6 +22,7 @@ import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discover
 import { createClients } from "./index.js";
 import type { BookRequest } from "./input.js";
 import { LibbyClient } from "./libby-client.js";
+import { listLibraryAvailability } from "./libby-list-availability.js";
 import { readLists } from "./libby-lists.js";
 import { listShelf } from "./libby-shelf.js";
 import { createLogger } from "./logger.js";
@@ -172,6 +173,8 @@ const routes: Record<string, Handler> = {
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
   "GET /api/shelf": async () => listShelf(await libby(), publicCatalog),
   "GET /api/lists": async () => readLists(await libby()),
+  "POST /api/lists/availability": async (input) =>
+    listLibraryAvailability((input as { titleId: string })?.titleId, await libby(), publicCatalog),
   "GET /api/tags": async () => (await libby()).tags(),
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };

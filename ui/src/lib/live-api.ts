@@ -54,6 +54,7 @@ export const liveApi: LibraryApi = {
   shelf: () => call("GET", "shelf"),
   tags: () => call("GET", "tags"),
   lists: () => call("GET", "lists"),
+  listAvailability: (titleId) => call("POST", "lists/availability", { titleId }),
   search: (book, config) => call("POST", "search", { book, config }),
   run: (books, config) => call("POST", "run", { books, config }, false),
   previewSync: (options) => call("POST", "sync/preview", options ?? {}),

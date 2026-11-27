@@ -1,6 +1,7 @@
 import type { PairingOptions } from "../../../src/auth.js";
 import type { BookRequest } from "../../../src/input.js";
 import { LibbyClient } from "../../../src/libby-client.js";
+import type { ListLibraryAvailability } from "../../../src/libby-list-availability.ts";
 import type { ListsData } from "../../../src/libby-lists.ts";
 import { type ShelfData, unavailableShelf } from "../../../src/libby-shelf.ts";
 import { silentLogger } from "../../../src/logger.js";
@@ -35,6 +36,7 @@ export interface LibraryApi {
   shelf(): Promise<ShelfData>;
   tags(): Promise<unknown>;
   lists(): Promise<ListsData>;
+  listAvailability(titleId: string): Promise<ListLibraryAvailability[]>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
   previewSync(options?: SyncPreviewOptions): Promise<SyncPlan>;
@@ -172,6 +174,23 @@ export const demoApi: LibraryApi = {
         { id: "3", title: "Kindred", author: "Octavia E. Butler", tags: ["favorites"] },
       ],
     };
+  },
+  async listAvailability(titleId) {
+    await wait(250);
+    return CARDS.map((card, index) => ({
+      card,
+      status: "ok" as const,
+      media: {
+        id: titleId,
+        title: `Title ${titleId}`,
+        isAvailable: index === 0,
+        isHoldable: true,
+        ownedCopies: 5,
+        availableCopies: index === 0 ? 2 : 0,
+        holdsCount: index === 0 ? 0 : 12,
+        estimatedWaitDays: index === 0 ? 0 : 21,
+      },
+    }));
   },
   async tags() {
     await wait(250);

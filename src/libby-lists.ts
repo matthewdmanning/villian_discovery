@@ -68,3 +68,44 @@ export function filterListGroups(items: ListItem[], includes: TagGroups, exclude
     (item) => (!hasIncludes || matchesTagGroups(item.tags, includes)) && !matchesTagGroups(item.tags, excludes),
   );
 }
+
+export interface ListQuery {
+  includes: TagGroups;
+  excludes: TagGroups;
+}
+
+/** Ignore ordering, duplicate tags and redundant OR groups when comparing queries. */
+export function listQueryKey(query: ListQuery): string {
+  function normalize(groups: TagGroups): string[][] {
+    const distinct = new Map<string, string[]>();
+    for (const group of groups) {
+      const tags = [...new Set(group)].sort();
+      if (tags.length) distinct.set(JSON.stringify(tags), tags);
+    }
+    const candidates = [...distinct.values()];
+    return candidates
+      .filter(
+        (group) =>
+          !candidates.some((other) => other.length < group.length && other.every((tag) => group.includes(tag))),
+      )
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  }
+  return JSON.stringify([normalize(query.includes), normalize(query.excludes)]);
+}
+
+export function filterListQueries(items: ListItem[], queries: ListQuery[]): ListItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    const match = queries.some((query) => filterListGroups([item], query.includes, query.excludes).length > 0);
+    if (match) seen.add(item.id);
+    return match;
+  });
+}
+
+/** Include a populated draft alongside saved searches; an empty draft is a new search placeholder. */
+export function activeListQueries(saved: ListQuery[], draft: ListQuery): ListQuery[] {
+  return saved.length && ![...draft.includes, ...draft.excludes].some((group) => group.length > 0)
+    ? saved
+    : [...saved, draft];
+}

@@ -72,3 +72,35 @@ describe("Boolean tag groups", () => {
     expect(ids([["a"]], [["a"]])).toEqual([]);
   });
 });
+
+describe("multiple queries", () => {
+  it("unions matches by title ID without letting an unsaved query change the result", async () => {
+    const { fixtureClient } = await import("./libby-lists-fixtures.js");
+    const { filterListQueries } = await import("../src/libby-lists.js");
+    const { items } = await readLists(fixtureClient);
+    const queries = [
+      { includes: [["a"]], excludes: [["c"]] },
+      { includes: [["b"]], excludes: [] },
+    ];
+    expect(
+      filterListQueries([...items, items[1]!], queries)
+        .map((item) => Number(item.id))
+        .sort(),
+    ).toEqual([1, 2, 3, 6, 7]);
+  });
+  it("includes a populated draft but not the empty placeholder", async () => {
+    const { activeListQueries } = await import("../src/libby-lists.js");
+    const saved = [{ includes: [["a"]], excludes: [] }];
+    expect(activeListQueries(saved, { includes: [[]], excludes: [[]] })).toEqual(saved);
+    expect(activeListQueries(saved, { includes: [["b"]], excludes: [] })).toHaveLength(2);
+    expect(activeListQueries([], { includes: [[]], excludes: [[]] })).toHaveLength(1);
+  });
+  it("recognizes duplicate queries regardless of order, empty groups and redundant groups", async () => {
+    const { listQueryKey } = await import("../src/libby-lists.js");
+    const first = { includes: [["a", "b"], ["c"]], excludes: [["a"], ["b"]] };
+    const same = { includes: [["c", "a"], [], ["c"], ["b", "a", "a"]], excludes: [["b"], ["a"], ["a"]] };
+    expect(listQueryKey(first)).toBe(listQueryKey(same));
+    expect(listQueryKey(first)).not.toBe(listQueryKey({ includes: [["a"]], excludes: [["b"]] }));
+    expect(listQueryKey({ includes: [], excludes: [] })).toBe(listQueryKey({ includes: [[]], excludes: [[]] }));
+  });
+});
