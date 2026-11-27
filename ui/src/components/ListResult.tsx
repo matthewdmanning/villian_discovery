@@ -33,20 +33,28 @@ export function LibraryRows({
         </thead>
         <tbody>
           {rows.map(({ card, status, media }) => {
-            const { checkedOut, total, action } = listLibraryDetails({ card, status, ...(media ? { media } : {}) });
+            const { checkedOut, total, notOwned, action } = listLibraryDetails({
+              card,
+              status,
+              ...(media ? { media } : {}),
+            });
             const url = libbyTitleUrl(card.advantageKey, titleId);
             return (
-              <tr key={card.cardId}>
+              <tr
+                key={card.cardId}
+                className={notOwned ? "opacity-50" : undefined}
+                aria-disabled={notOwned || undefined}
+              >
                 <th scope="row">
                   <span>{card.library?.name ?? card.advantageKey}</span>
                   {card.cardName && <span className="block text-xs font-normal opacity-70">{card.cardName}</span>}
-                  {status !== "ok" && (
+                  {(notOwned || status === "error") && (
                     <span className="block text-xs font-normal opacity-70">
-                      {status === "not-offered" ? "Not offered" : "Could not load"}
+                      {notOwned ? "Library owns no copies" : "Could not load"}
                     </span>
                   )}
                 </th>
-                <td>{status === "ok" ? `${checkedOut} / ${total}` : "—"}</td>
+                <td>{status === "error" ? "—" : `${checkedOut} / ${total}`}</td>
                 <td>{status === "ok" ? (media?.holdsCount ?? "—") : "—"}</td>
                 <td>
                   {status === "ok" && typeof media?.estimatedWaitDays === "number"

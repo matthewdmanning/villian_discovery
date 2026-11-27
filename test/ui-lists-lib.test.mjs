@@ -60,11 +60,13 @@ describe("list result helpers", () => {
     expect(ok({ ownedCopies: 5, availableCopies: 2, isAvailable: true })).toEqual({
       checkedOut: 3,
       total: 5,
+      notOwned: false,
       action: "Borrow",
     });
     expect(ok({ ownedCopies: 5, availableCopies: 0, isAvailable: false, isHoldable: true })).toEqual({
       checkedOut: 5,
       total: 5,
+      notOwned: false,
       action: "Place hold",
     });
     expect(ok({ isAvailable: false, isHoldable: false }).action).toBeUndefined();
@@ -72,7 +74,9 @@ describe("list result helpers", () => {
     expect(ok({ ownedCopies: 2, availableCopies: 5 })).toMatchObject({ checkedOut: 0, total: 2 });
     expect(ok({ ownedCopies: 2 })).toMatchObject({ checkedOut: 0, total: 2 });
     expect(ok({ ownedCopies: 2, isAvailable: false })).toMatchObject({ checkedOut: 2, total: 2 });
-    expect(ok({ availableCopies: 3 })).toMatchObject({ checkedOut: 0, total: 0 });
+    expect(ok({ availableCopies: 3 })).toMatchObject({ checkedOut: 0, total: 3 });
+    expect(ok({ ownedCopies: 0, isAvailable: true })).toMatchObject({ checkedOut: 0, total: 0, notOwned: true });
+    expect(ok({ ownedCopies: 0, isAvailable: true }).action).toBeUndefined();
     expect(ok(undefined)).toMatchObject({ checkedOut: 0, total: 0 });
   });
 

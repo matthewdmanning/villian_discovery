@@ -58,6 +58,36 @@ describe("Available column", () => {
   });
 });
 
+describe("all copies out vs. no copies owned", () => {
+  const row = (status, media) => {
+    const html = renderToStaticMarkup(
+      createElement(LibraryRows, {
+        rows: [{ card: { cardId: "1", advantageKey: "first" }, status, ...(media ? { media } : {}) }],
+        titleId: "1",
+        demo: false,
+      }),
+    );
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    return container.querySelector("tbody tr");
+  };
+  it("shows the counts, not grayed, when every copy is checked out", () => {
+    const tr = row("ok", { id: "1", title: "T", ownedCopies: 3, availableCopies: 0, isHoldable: true });
+    expect(tr.querySelector("td").textContent).toBe("3 / 3");
+    expect(tr.getAttribute("aria-disabled")).toBeNull();
+    expect(tr.querySelector("a")).not.toBeNull();
+  });
+  it("grays the row with no action when the library owns zero copies", () => {
+    for (const tr of [row("ok", { id: "1", title: "T", ownedCopies: 0, isHoldable: true }), row("not-offered")]) {
+      expect(tr.querySelector("td").textContent).toBe("0 / 0");
+      expect(tr.getAttribute("aria-disabled")).toBe("true");
+      expect(tr.className).toContain("opacity-50");
+      expect(tr.textContent).toContain("Library owns no copies");
+      expect(tr.querySelector("a")).toBeNull();
+    }
+  });
+});
+
 describe("feature flags", () => {
   let root;
   let container;

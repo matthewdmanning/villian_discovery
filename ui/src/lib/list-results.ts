@@ -20,20 +20,23 @@ export function sortListItems(items: ListItem[], sort: ListSort): ListItem[] {
 const count = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined;
 /**
- * Counts for the Available cell, always two integers. A missing total counts as 0. A missing available count
- * means every copy is out when the title is not available, and none is out otherwise.
+ * Counts for the Available cell, always two integers. A missing total falls back to the available count, then 0.
+ * A missing available count means every copy is out when the title is not available, and none is out otherwise.
+ * `notOwned`: the library has no copies (not offered, or owns 0); every copy checked out is still owned.
  */
 export function listLibraryDetails({ status, media }: ListLibraryAvailability) {
-  const total = count(media?.ownedCopies) ?? 0;
+  const notOwned = status === "not-offered" || (status === "ok" && count(media?.ownedCopies) === 0);
+  const total = notOwned ? 0 : (count(media?.ownedCopies) ?? count(media?.availableCopies) ?? 0);
   const available = count(media?.availableCopies) ?? (media?.isAvailable === false ? 0 : total);
   const checkedOut = Math.max(0, total - Math.min(available, total));
-  const action =
-    status === "ok" && media?.isAvailable === true
+  const action = notOwned
+    ? undefined
+    : status === "ok" && media?.isAvailable === true
       ? "Borrow"
       : status === "ok" && media?.isHoldable === true
         ? "Place hold"
         : undefined;
-  return { checkedOut, total, action };
+  return { checkedOut, total, notOwned, action };
 }
 export const libbyTitleUrl = (library: string, titleId: string) =>
   `https://libbyapp.com/library/${encodeURIComponent(library)}/everything/page-1/${encodeURIComponent(titleId)}`;
