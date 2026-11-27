@@ -33,14 +33,20 @@ export async function listLibraryAvailability(
 ): Promise<ListLibraryAvailability[]> {
   if (typeof titleId !== "string" || !titleId.trim() || titleId.length > 200) throw new Error("Invalid title ID");
   const { cards = [] } = await client.sync();
+  // Cards at one library share its catalog: ask each library once.
+  const byLibrary = new Map<string, Promise<Omit<ListLibraryAvailability, "card">>>();
+  const lookup = (library: string) => {
+    let result = byLibrary.get(library);
+    if (!result) {
+      result = catalog.getLibraryMedia(library, titleId).then(
+        (media) => ({ status: media.isOwned === false ? "not-offered" : "ok", media }),
+        (error: unknown) => ({ status: error instanceof HttpError && error.status === 404 ? "not-offered" : "error" }),
+      );
+      byLibrary.set(library, result);
+    }
+    return result;
+  };
   return Promise.all(
-    cards.map(async (card): Promise<ListLibraryAvailability> => {
-      try {
-        const media = await catalog.getLibraryMedia(card.advantageKey, titleId);
-        return { card, status: media.isOwned === false ? "not-offered" : "ok", media };
-      } catch (error) {
-        return { card, status: error instanceof HttpError && error.status === 404 ? "not-offered" : "error" };
-      }
-    }),
+    cards.map(async (card): Promise<ListLibraryAvailability> => ({ card, ...(await lookup(card.advantageKey)) })),
   );
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { normalizeName, normalizeTitle, toIsbn13 } from "./matcher.js";
+import { isbn13, normalizeName, normalizeTitle } from "./matcher.js";
 import { resolveSyncSettings, type SyncSettings } from "./sync-config.js";
 
 export const SnapshotValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())]);
@@ -107,16 +107,11 @@ function parseSnapshots(input: unknown, provider: "Libby" | "Fable"): BookSnapsh
 /**
  * Use this function to normalize an optional ISBN into the shared ISBN-13 identity used for matching.
  * Inputs: `book` — a normalized provider snapshot; `book.isbn` or a legacy `isbn:` book ID is inspected.
- * Dependencies: `toIsbn13` from the matcher module.
+ * Dependencies: `isbn13` from the matcher module.
  */
 function isbn13For(book: BookSnapshot): string | undefined {
   const value = book.isbn ?? (book.bookId.toLowerCase().startsWith("isbn:") ? book.bookId.slice(5) : undefined);
-  if (!value) return undefined;
-  const normalized = value
-    .replace(/^isbn:/i, "")
-    .replace(/[\s-]/g, "")
-    .toUpperCase();
-  return toIsbn13(normalized);
+  return value ? isbn13(value) : undefined;
 }
 
 /**
