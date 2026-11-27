@@ -25,6 +25,7 @@ import { createCardCache, listLibraryAvailability } from "./libby-list-availabil
 import { readLists } from "./libby-lists.js";
 import { listShelf } from "./libby-shelf.js";
 import { createLogger } from "./logger.js";
+import { createQueryCooldown, withCooldown } from "./query-cooldown.js";
 import { Runner, selectCards } from "./runner.js";
 import { disconnectedAdapter, fableAdapter, libbyAdapter } from "./sync-adapters.js";
 import { resolveSyncSettings } from "./sync-config.js";
@@ -149,7 +150,7 @@ const sync: SyncOrchestrator = createSyncOrchestrator({
 });
 
 type Handler = (input: unknown) => Promise<unknown>;
-const routes: Record<string, Handler> = {
+const apiRoutes: Record<string, Handler> = {
   "GET /api/status": async () => ({
     connected: !!(config.auth.identityToken ?? (await readTokenFile(config.auth.tokenFile))),
     build: BUILD,
@@ -205,6 +206,31 @@ const routes: Record<string, Handler> = {
     return sync.applySync(planId ?? "", approvals);
   },
 };
+
+// External reads share results for a short cooldown so repeated clicks do not hammer Libby, Fable or catalogs.
+const routes = withCooldown(
+  apiRoutes,
+  {
+    reads: [
+      "GET /api/cards",
+      "GET /api/shelf",
+      "GET /api/lists",
+      "POST /api/lists/availability",
+      "GET /api/tags",
+      "POST /api/search",
+      "POST /api/sync/preview",
+    ],
+    // Anything that changes an account or settings makes kept reads stale.
+    writes: [
+      "POST /api/login",
+      "POST /api/login/device-code",
+      "POST /api/run",
+      "PUT /api/sync/settings",
+      "POST /api/sync/apply",
+    ],
+  },
+  createQueryCooldown(),
+);
 
 /** Use this function to serve one built UI file; unknown paths get the app page. */
 async function serveUi(pathname: string, response: ServerResponse) {

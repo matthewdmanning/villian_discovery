@@ -6,7 +6,7 @@ import { syncDecisionKey } from "../../../src/sync-plan.ts";
 import { BookLine, BookSections } from "../components/SyncBook.tsx";
 import { APP_NAMES, AppValue, SyncChange } from "../components/SyncChange.tsx";
 import { SyncSettingsPanel } from "../components/SyncSettings.tsx";
-import { Empty, Panel, Screen } from "../components/ui.tsx";
+import { CooldownButton, Empty, Panel, Screen } from "../components/ui.tsx";
 import { type BookSummary, hasValue, LINE_FIELDS, summarizeBooks } from "../lib/sync-books.ts";
 import { displaySyncValue as displayValue, SYNC_FIELD_LABELS as labels } from "../lib/sync-format.ts";
 import { useSync } from "../lib/use-sync.ts";
@@ -21,6 +21,7 @@ export function SyncScreen() {
     api,
     syncResult,
     busy,
+    cooldown,
     error,
     review,
     settings,
@@ -99,15 +100,16 @@ export function SyncScreen() {
       id="sync"
       actions={
         <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
+          <CooldownButton
             className="btn btn-primary btn-pop btn-lg"
-            disabled={busy || !saved}
-            onClick={() => sync()}
+            busy={busy}
+            disabled={!saved}
+            cooldown={cooldown}
+            onClick={() => void sync()}
           >
             {busy ? <span className="loading loading-spinner" /> : <RefreshCw className="size-5" />}
             Preview changes
-          </button>
+          </CooldownButton>
           <button
             type="button"
             className="btn btn-secondary btn-pop btn-lg"

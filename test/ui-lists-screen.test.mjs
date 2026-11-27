@@ -40,7 +40,13 @@ const group = (name) =>
 const checkbox = (fieldset, label) =>
   [...fieldset.querySelectorAll("label")].find((el) => el.textContent === label).querySelector("input");
 const button = (label) => container.querySelector(`button[aria-label="${label}"]`);
-const buttonText = (label) => [...container.querySelectorAll("button")].find((el) => el.textContent.trim() === label);
+// A cooling-down button adds its countdown after the label.
+const buttonText = (label) =>
+  [...container.querySelectorAll("button")].find((el) => el.textContent.trim().split(/\d+s/)[0]?.trim() === label);
+const COOLDOWN_MS = 10_000;
+/** Fake the clock so tests can step past the refresh cooldown. */
+const useClock = () => vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+const waitOutCooldown = () => act(async () => vi.advanceTimersByTime(COOLDOWN_MS));
 
 async function mount(api = {}) {
   const fake = {
@@ -65,6 +71,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.useRealTimers();
 });
 
 describe("Lists screen", () => {
@@ -92,10 +99,12 @@ describe("Lists screen", () => {
   });
 
   it("shows the load error, then recovers when Refresh succeeds", async () => {
+    useClock();
     const lists = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ tags, items });
     await mount({ lists });
     expect(container.querySelector('[role="alert"]').textContent).toContain("Could not load items");
     expect(titles()).toEqual([]);
+    await waitOutCooldown();
     await click(buttonText("Refresh"));
     expect(lists).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -109,8 +118,28 @@ describe("Lists screen", () => {
     expect(container.querySelector('[role="status"]').textContent).toBe("Loading…");
     expect(buttonText("Refresh").disabled).toBe(true);
     await act(async () => finish({ tags, items }));
-    expect(buttonText("Refresh").disabled).toBe(false);
     expect(titles()).toHaveLength(4);
+  });
+
+  it("counts down before Refresh can ask Libby again", async () => {
+    useClock();
+    const api = await mount();
+    const refresh = () => buttonText("Refresh");
+    expect(refresh().disabled).toBe(true);
+    expect(refresh().textContent).toContain("10s");
+    const hint = container.querySelector(`#${CSS.escape(refresh().getAttribute("aria-describedby"))}`);
+    expect(hint.textContent).toBe("Available again in 10 seconds");
+    await act(async () => vi.advanceTimersByTime(4_000));
+    expect(refresh().textContent).toContain("6s");
+    await click(refresh());
+    expect(api.lists).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTime(6_000));
+    expect(refresh().disabled).toBe(false);
+    expect(refresh().textContent.trim()).toBe("Refresh");
+    expect(refresh().hasAttribute("aria-describedby")).toBe(false);
+    await click(refresh());
+    expect(api.lists).toHaveBeenCalledTimes(2);
+    expect(refresh().disabled).toBe(true);
   });
 
   it("ignores a response that arrives after the screen is closed", async () => {
@@ -168,7 +197,9 @@ describe("Lists screen", () => {
   });
 
   it("refetches availability after a refresh", async () => {
+    useClock();
     const api = await mount();
+    await waitOutCooldown();
     await click(buttonText("Refresh"));
     const details = container.querySelectorAll("details")[0];
     await act(async () => {
