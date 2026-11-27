@@ -21,20 +21,27 @@ const APPS = [
 /** Use this component for one line per app: its name, then its state or a sign-in link. The panel re-checks on its own, so no confirm button exists. */
 function Connections() {
   const [state, setState] = useState<Awaited<ReturnType<typeof connections>>>();
+  const [checkFailed, setCheckFailed] = useState(false);
   const { refreshCards } = useStore();
   useEffect(() => {
     let active = true;
     const check = () =>
-      connections().then((next) => {
-        if (active)
-          setState((previous) =>
-            previous?.libby === next.libby &&
-            previous.fable === next.fable &&
-            previous.libbyProblem === next.libbyProblem
-              ? previous
-              : next,
-          );
-      });
+      connections()
+        .then((next) => {
+          if (active) {
+            setCheckFailed(false);
+            setState((previous) =>
+              previous?.libby === next.libby &&
+              previous.fable === next.fable &&
+              previous.libbyProblem === next.libbyProblem
+                ? previous
+                : next,
+            );
+          }
+        })
+        .catch(() => {
+          if (active) setCheckFailed(true);
+        });
     void check();
     const timer = setInterval(check, CHECK_MS);
     return () => {
@@ -49,8 +56,10 @@ function Connections() {
       {APPS.map(({ key, name, signInUrl }) => (
         <li key={key} className="flex items-center gap-2 py-1">
           <span className="font-display font-semibold">{name}</span>→
-          {state === undefined ? (
-            <span className="opacity-60">checking</span>
+          {checkFailed ? (
+            <span className="text-sm text-error">Could not check connection</span>
+          ) : state === undefined ? (
+            <span className="opacity-60">Checking…</span>
           ) : state[key] ? (
             <span>connected</span>
           ) : (
@@ -58,7 +67,9 @@ function Connections() {
               Sign in
             </a>
           )}
-          {key === "libby" && state?.libbyProblem && <span className="text-sm opacity-60">{state.libbyProblem}</span>}
+          {!checkFailed && key === "libby" && state?.libbyProblem && (
+            <span className="text-sm opacity-60">{state.libbyProblem}</span>
+          )}
         </li>
       ))}
     </ul>

@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { parseBookDraft } from "../ui/src/lib/books.ts";
-import { cardSelected, libraryOrder, toggleCard } from "../ui/src/lib/cards.ts";
+import { cardSelected, cardUsage, libraryOrder, toggleCard } from "../ui/src/lib/cards.ts";
 
 const cards = [
   { cardId: "one", advantageKey: "library", cardName: "Main" },
@@ -236,4 +236,24 @@ it("groups same-ID compatible author sets under the complete byline, but keeps b
   expect(
     groupSearchResults([row("one", ["Frank Herbert"]), row("two", ["Frank Herbert"])], [], ["ebook"]),
   ).toHaveLength(1);
+});
+
+it("keeps missing card usage unknown and flags a known full limit", () => {
+  expect(cardUsage(cards[0], "loan")).toEqual({ used: undefined, limit: undefined, isFull: false });
+  expect(cardUsage({ ...cards[0], counts: { loan: 5 }, limits: { loan: 5 } }, "loan")).toEqual({
+    used: 5,
+    limit: 5,
+    isFull: true,
+  });
+});
+
+it("reports card usage when only the count or only the limit is known", () => {
+  expect(cardUsage({ ...cards[0], counts: { hold: 2 } }, "hold")).toEqual({ used: 2, limit: undefined, isFull: false });
+  expect(cardUsage({ ...cards[0], limits: { hold: 2 } }, "hold")).toEqual({ used: undefined, limit: 2, isFull: false });
+  expect(cardUsage({ ...cards[0], counts: { loan: 6 }, limits: { loan: 5 } }, "loan").isFull).toBe(true);
+  expect(cardUsage({ ...cards[0], counts: { loan: 0 }, limits: { loan: 5 } }, "loan")).toEqual({
+    used: 0,
+    limit: 5,
+    isFull: false,
+  });
 });

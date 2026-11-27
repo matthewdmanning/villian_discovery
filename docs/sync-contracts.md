@@ -19,7 +19,7 @@ A read-only check on 2026-11-16 found:
 - libbyapp.com calls `sentry.libbyapp.com` (`POST /chip`, `GET /chip/sync`) and `vandal.libbyapp.com` (`GET /tags`) with a Bearer token. `sentry-read.svc.overdrive.com` fails its TLS certificate check.
 - The stored `dewey:sentry.identity` value can be older than the token Libby sends, because `POST /chip` refreshes it.
 
-The Chrome extension's **Load tags** action reads `GET /tags` using its Libby session, validates the tag names and IDs, and caches the results for the connected account. The experimental web Tags screen reads the same endpoint through the local server and displays the raw response.
+The Lists screen reads `GET /tags` and each tag's `GET /tag/{uuid}/{base64-name}?enc=1` using the Libby session. It combines the returned taggings by title ID. With no included tags, the list covers titles in at least one tag; included tags must all match and excluded tags must all be absent by default. With the Boolean option enabled, each column can contain OR groups whose selected tags are combined with AND. A title must match an include group (unless none is selected) and must not match an exclude group.
 
 A live check on 2026-11-19 (a signed-in Chrome profile, with the user adding books by hand) found:
 

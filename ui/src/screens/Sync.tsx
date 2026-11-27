@@ -1,184 +1,42 @@
 import { Ban, CircleCheck, CircleX, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { SyncField, SyncProvider } from "../../../src/sync.ts";
-import { SYNC_FALLBACKS, type SyncSettings } from "../../../src/sync-config.ts";
-import {
-  type SyncApplyReport,
-  type SyncApprovals,
-  type SyncPlan,
-  type SyncPreviewOptions,
-  syncDecisionKey,
-} from "../../../src/sync-plan.ts";
-import {
-  BookLine,
-  BookSections,
-  type BookSummary,
-  hasValue,
-  LINE_FIELDS,
-  summarizeBooks,
-} from "../components/SyncBook.tsx";
-import { APP_NAMES, AppValue, isAppConflict, SyncChange } from "../components/SyncChange.tsx";
+import { SYNC_FALLBACKS } from "../../../src/sync-config.ts";
+import { syncDecisionKey } from "../../../src/sync-plan.ts";
+import { BookLine, BookSections } from "../components/SyncBook.tsx";
+import { APP_NAMES, AppValue, SyncChange } from "../components/SyncChange.tsx";
 import { SyncSettingsPanel } from "../components/SyncSettings.tsx";
 import { Empty, Panel, Screen } from "../components/ui.tsx";
-import { useStore } from "../lib/store.tsx";
+import { type BookSummary, hasValue, LINE_FIELDS, summarizeBooks } from "../lib/sync-books.ts";
 import { displaySyncValue as displayValue, SYNC_FIELD_LABELS as labels } from "../lib/sync-format.ts";
+import { useSync } from "../lib/use-sync.ts";
 
 const TABS = ["Changes", "Library", "Settings"] as const;
 
-/** Use plan counts, not provider payloads, to describe a completed preview or apply in plain language. */
-export function summarizeSyncResult(
-  plan: Pick<SyncPlan, "operations">,
-  report?: Pick<SyncApplyReport, "outcomes">,
-): { status: "Success" | "Fail"; summary: string } {
-  if (report) {
-    const applied = report.outcomes.filter((outcome) => outcome.status === "success").length;
-    const failed = report.outcomes.length - applied;
-    if (failed > 0)
-      return {
-        status: "Fail",
-        summary: `${applied ? `Applied ${applied} change${applied === 1 ? "" : "s"}; ` : ""}${failed} change${failed === 1 ? "" : "s"} could not be confirmed. Review the changes and try again.`,
-      };
-    return {
-      status: "Success",
-      summary: applied ? `Applied ${applied} change${applied === 1 ? "" : "s"}.` : "No changes were applied.",
-    };
-  }
-
-  const reviewable = plan.operations.filter((operation) => !operation.blocked).length;
-  return {
-    status: "Success",
-    summary: reviewable
-      ? `${reviewable} change${reviewable === 1 ? "" : "s"} found. Review before applying.`
-      : plan.operations.length
-        ? `${plan.operations.length} change${plan.operations.length === 1 ? "" : "s"} require review before applying.`
-        : "No changes needed.",
-  };
-}
+export { summarizeSyncResult } from "../lib/sync-state.ts";
 
 /** Use this screen to compare Libby and Fable through the store's API and retain the last successful reconciliation in the store. */
 export function SyncScreen() {
   const {
     api,
     syncResult,
-    setSyncResult,
-    syncBusy: busy,
-    setSyncBusy: setBusy,
-    syncError: error,
-    setSyncError: setError,
-  } = useStore();
-  const review: SyncApprovals = syncResult?.review ?? { selected: [], removals: [] };
-  const [settings, setSettings] = useState<SyncSettings>();
+    busy,
+    error,
+    review,
+    settings,
+    saved,
+    saveSettings,
+    sync,
+    toggleReview,
+    apply,
+    remaining,
+    visibleOperations,
+    missingApproval,
+    selectOperations,
+    outcomeOf,
+    resultSummary,
+  } = useSync();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Changes");
-  const saved = settings !== undefined;
-
-  useEffect(() => {
-    let active = true;
-    setSettings(undefined);
-    api.getSyncSettings().then(
-      (value) => {
-        if (active) setSettings(value);
-      },
-      (failure) => {
-        if (active) {
-          setSettings({ ...SYNC_FALLBACKS });
-          setError(`Saved settings could not be loaded: ${String(failure)}. Default settings are used.`);
-        }
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [api, setError]);
-
-  /** Use this function to save validated user overrides as soon as they change; clearing the result makes the preview run again. An empty object restores the shipped fallback values. */
-  async function saveSettings(input: unknown) {
-    if (busy) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      setSettings(await api.saveSyncSettings(input));
-      setSyncResult(undefined);
-    } catch (failure) {
-      setError(`Settings were not saved: ${String(failure)}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /** Use this function to update the local comparison only after the API completes successfully; errors preserve the previous result. */
-  async function sync(options: SyncPreviewOptions = syncResult?.plan.options ?? {}) {
-    if (busy || !saved) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      const plan = await api.previewSync(options);
-      setSyncResult({
-        rows: plan.rows,
-        plan,
-        comparedAt: new Date().toISOString(),
-        review: {
-          selected: plan.operations
-            .filter((operation) => !operation.blocked && !operation.removal)
-            .map((operation) => operation.id),
-          removals: [],
-        },
-      });
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Compare automatically when Sync opens and after each settings change; a failure waits for "Preview changes".
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sync reads current state; rerun only when these change.
-  useEffect(() => {
-    if (saved && !syncResult && !busy && !error) void sync();
-  }, [saved, syncResult]);
-
-  /** Use this function to record explicit selections and independent risk approvals for this exact preview. */
-  function toggleReview(kind: keyof SyncApprovals, id: string, checked: boolean) {
-    if (!syncResult) return;
-    const previous = syncResult.review;
-    setSyncResult({
-      ...syncResult,
-      review: {
-        ...previous,
-        [kind]: checked ? [...new Set([...previous[kind], id])] : previous[kind].filter((value) => value !== id),
-      },
-    });
-  }
-
-  /** Use this function to apply only the trusted plan ID and selected approvals; operation outcomes remain visible across navigation. */
-  async function apply() {
-    if (busy || !saved || !syncResult) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      const report = await api.applySync(syncResult.plan.id, review);
-      setSyncResult({ ...syncResult, report });
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const remaining =
-    syncResult?.plan.operations.filter(
-      (operation) =>
-        review.selected.includes(operation.id) &&
-        !syncResult.report?.outcomes.some(
-          (outcome) => outcome.operationId === operation.id && outcome.status === "success",
-        ),
-    ) ?? [];
-  const operations = syncResult?.plan.operations ?? [];
-  const visibleOperations = operations
-    .filter((operation) => settings?.showNonConflicting === "yes" || isAppConflict(operation) || operation.create)
-    .sort((left, right) => Number(right.removal) - Number(left.removal));
-  const missingApproval = remaining.some(
-    (operation) => operation.blocked || (operation.removal && !review.removals.includes(operation.id)),
-  );
 
   /** Use this function to show one app's side of a conflict; ordinary metadata sides are buttons that resolve the conflict with a new preview, while Libby-authoritative fields cannot be overridden. */
   function conflictSide(row: SyncField, provider: SyncProvider) {
@@ -235,20 +93,6 @@ export function SyncScreen() {
       )
     );
   }
-
-  /** Use this function to select or clear several operations at once, such as every line change for one book. */
-  function selectOperations(ids: string[], checked: boolean) {
-    if (!syncResult) return;
-    const selected = new Set(syncResult.review.selected);
-    for (const id of ids) {
-      if (checked) selected.add(id);
-      else selected.delete(id);
-    }
-    setSyncResult({ ...syncResult, review: { ...syncResult.review, selected: [...selected] } });
-  }
-
-  const outcomeOf = (id: string) => syncResult?.report?.outcomes.find((outcome) => outcome.operationId === id)?.status;
-  const resultSummary = syncResult && summarizeSyncResult(syncResult.plan, syncResult.report);
 
   return (
     <Screen

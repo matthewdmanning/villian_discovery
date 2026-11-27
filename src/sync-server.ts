@@ -21,6 +21,8 @@ import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discover
 import { createClients } from "./index.js";
 import type { BookRequest } from "./input.js";
 import { LibbyClient } from "./libby-client.js";
+import { createCardCache, listLibraryAvailability } from "./libby-list-availability.js";
+import { readLists } from "./libby-lists.js";
 import { listShelf } from "./libby-shelf.js";
 import { createLogger } from "./logger.js";
 import { Runner, selectCards } from "./runner.js";
@@ -59,10 +61,22 @@ let deviceLogin: Promise<void> | undefined;
 let deviceCode: string | undefined;
 
 /** Use this function to get a Libby client for the saved login; it throws when no one has signed in. */
-async function libby(): Promise<LibbyClient> {
+async function savedToken(): Promise<string> {
   const identityToken = config.auth.identityToken ?? (await readTokenFile(config.auth.tokenFile));
   if (!identityToken) throw new Error("Connect Libby first");
-  return new LibbyClient({ ...http, identityToken });
+  return identityToken;
+}
+
+async function libby(): Promise<LibbyClient> {
+  return new LibbyClient({ ...http, identityToken: await savedToken() });
+}
+
+/** Cards change rarely; opening titles in Lists reuses one card list for a minute. */
+const listCards = createCardCache(60_000);
+async function listAvailability(titleId: string) {
+  const identityToken = await savedToken();
+  const client = new LibbyClient({ ...http, identityToken });
+  return listLibraryAvailability(titleId, { sync: () => listCards(identityToken, () => client.sync()) }, publicCatalog);
 }
 
 /** Use this function to build the CLI's runner from the UI's settings; the server's login and HTTP settings always replace the page's, so a page never picks where the token goes. */
@@ -169,6 +183,8 @@ const routes: Record<string, Handler> = {
   "GET /api/login/device-code": async () => ({ code: deviceCode }),
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
   "GET /api/shelf": async () => listShelf(await libby(), publicCatalog),
+  "GET /api/lists": async () => readLists(await libby()),
+  "POST /api/lists/availability": async (input) => listAvailability((input as { titleId: string })?.titleId),
   "GET /api/tags": async () => (await libby()).tags(),
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };

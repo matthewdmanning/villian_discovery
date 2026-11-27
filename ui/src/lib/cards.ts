@@ -20,3 +20,9 @@ export function libraryOrder(cards: LibbyCard[], priority: string[]): string[] {
   const ordered = priority.flatMap((key) => keys.filter((candidate) => candidate.toLowerCase() === key.toLowerCase()));
   return [...new Set([...ordered, ...keys])];
 }
+
+export function cardUsage(card: LibbyCard, kind: "loan" | "hold") {
+  const used = card.counts?.[kind];
+  const limit = card.limits?.[kind];
+  return { used, limit, isFull: used !== undefined && limit !== undefined && used >= limit };
+}

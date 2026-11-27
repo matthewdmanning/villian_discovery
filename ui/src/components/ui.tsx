@@ -1,7 +1,8 @@
 import { ChevronDown, ChevronUp, GripVertical, Rocket } from "lucide-react";
-import { type ReactNode, type RefObject, useId, useState } from "react";
+import { type ReactNode, type RefObject, useId } from "react";
 import type { ResultStatus } from "../lib/api.ts";
 import { options, type ScreenId, screen } from "../lib/spec.ts";
+import { useReorder } from "../lib/use-reorder.ts";
 
 export const compact = options.density === "compact";
 /** Section heading style shared by panel titles and list category labels. */
@@ -146,6 +147,39 @@ export function Segmented<T extends string>(props: {
   );
 }
 
+/** Up/down buttons that move an item one step within an ordered list. */
+export function ReorderControls(props: {
+  name: string;
+  index: number;
+  count: number;
+  onMove(to: number): void;
+  disabled?: boolean;
+}) {
+  const { name, index, count, onMove, disabled = false } = props;
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-ghost btn-xs btn-square"
+        aria-label={`Move ${name} up`}
+        disabled={disabled || index <= 0}
+        onClick={() => onMove(index - 1)}
+      >
+        <ChevronUp className="size-4" />
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost btn-xs btn-square"
+        aria-label={`Move ${name} down`}
+        disabled={disabled || index >= count - 1}
+        onClick={() => onMove(index + 1)}
+      >
+        <ChevronDown className="size-4" />
+      </button>
+    </>
+  );
+}
+
 /** Reorderable list: drag, or use the arrow buttons (keyboard and touch friendly). */
 export function OrderedList(props: {
   label: string;
@@ -156,47 +190,21 @@ export function OrderedList(props: {
   onRemove?(item: string): void;
   render?(item: string): ReactNode;
 }) {
-  const [dragging, setDragging] = useState<number>();
-  const move = (from: number, to: number) => {
-    if (to < 0 || to >= props.items.length || from === to) return;
-    const next = [...props.items];
-    const [it] = next.splice(from, 1);
-    next.splice(to, 0, it as string);
-    props.onChange(next);
-  };
+  const { dragging, moveTo, dragProps } = useReorder(props.items, props.onChange);
   return (
     <Field label={props.label}>
       <ol className="flex flex-wrap gap-2">
         {props.items.map((it, i) => (
           <li
             key={it}
-            draggable
-            onDragStart={() => setDragging(i)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => dragging !== undefined && move(dragging, i)}
-            onDragEnd={() => setDragging(undefined)}
-            className={`badge badge-lg h-auto gap-1 border-2 border-pop bg-secondary py-1 ps-1 pe-1 text-secondary-content shadow-pop-sm ${dragging === i ? "opacity-50" : ""}`}
+            {...dragProps(it)}
+            className={`badge badge-lg h-auto gap-1 border-2 border-pop bg-secondary py-1 ps-1 pe-1 text-secondary-content shadow-pop-sm ${dragging === it ? "opacity-50" : ""}`}
           >
             <GripVertical aria-hidden className="size-4 cursor-grab opacity-60" />
             <span className="font-semibold tabular-nums">{i + 1}.</span>
             <span>{props.render ? props.render(it) : it}</span>
             <span className="flex">
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs btn-square"
-                aria-label={`Move ${it} up`}
-                onClick={() => move(i, i - 1)}
-              >
-                <ChevronUp className="size-4" />
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-xs btn-square"
-                aria-label={`Move ${it} down`}
-                onClick={() => move(i, i + 1)}
-              >
-                <ChevronDown className="size-4" />
-              </button>
+              <ReorderControls name={it} index={i} count={props.items.length} onMove={(to) => moveTo(it, to)} />
               {props.onRemove && props.items.length > 1 && (
                 <button
                   type="button"

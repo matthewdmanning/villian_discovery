@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 /** UI components must use semantic tokens (ui/src/index.css), never raw colors or Tailwind palette names. */
 
-const ROOT = "ui/src";
+const ROOTS = ["ui/src", "extension/src"];
 const files = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? files(join(dir, e.name)) : /\.(tsx?|css)$/.test(e.name) ? [join(dir, e.name)] : [],
@@ -22,7 +22,7 @@ const RAW = [
 
 describe("ui semantic tokens", () => {
   it("components use no raw colors", () => {
-    const bad = files(ROOT)
+    const bad = ROOTS.flatMap(files)
       .filter((f) => !f.endsWith("index.css"))
       .flatMap((f) =>
         readFileSync(f, "utf8")

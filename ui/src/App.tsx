@@ -34,7 +34,7 @@ const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; sho
   cards: { icon: CreditCard, short: "Cards", view: Cards },
   books: { icon: BookOpen, short: "Books", view: Books },
   shelf: { icon: BookOpen, short: "Shelf", view: Shelf },
-  tags: { icon: TagsIcon, short: "Tags", view: TagsScreen },
+  tags: { icon: TagsIcon, short: "Lists", view: TagsScreen },
   settings: { icon: SlidersHorizontal, short: "Rules", view: Settings },
   search: { icon: Search, short: "Search", view: SearchScreen },
   results: { icon: ListChecks, short: "Results", view: Results },

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { summarizeBooks } from "../ui/src/components/SyncBook.tsx";
+import { summarizeBooks } from "../ui/src/lib/sync-books.ts";
 
 const row = (groupId, field, value) => ({
   bookId: groupId,
