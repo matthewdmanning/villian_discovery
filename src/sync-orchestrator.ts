@@ -25,6 +25,8 @@ export function createSyncOrchestrator(input: {
   readSettings: () => Promise<unknown>;
   writeSettings: (settings: unknown) => Promise<void>;
   journal?: SyncJournal;
+  onPreview?: (plan: SyncPlan, adapters: SyncAdapters) => Promise<void>;
+  onApply?: (plan: SyncPlan, report: SyncApplyReport, adapters: SyncAdapters) => Promise<void>;
 }): SyncOrchestrator {
   const journal = input.journal ?? createMemoryJournal();
   const plans = new Map<string, SyncPlan>();
@@ -40,28 +42,33 @@ export function createSyncOrchestrator(input: {
         return resolveSyncSettings(overrides);
       }),
     previewSync: async (options = {}) => {
-      if (options.matches) matches = options.matches;
+      const adapters = await input.adapters();
       const plan = await previewSync({
         context: input.context,
         settings: await input.readSettings(),
-        adapters: await input.adapters(),
-        options: { ...options, matches },
+        adapters,
+        options: { ...options, matches: options.matches ?? matches },
       });
+      matches = plan.options.matches ?? {};
       plans.set(plan.id, plan);
+      await input.onPreview?.(plan, adapters);
       return plan;
     },
     applySync: async (planId, approvals) => {
       const plan = plans.get(planId);
       if (!plan) throw new Error("Preview is unavailable or settings changed; preview again");
-      return applySync({
+      const adapters = await input.adapters();
+      const report = await applySync({
         context: input.context,
         settings: await input.readSettings(),
         readSettings: input.readSettings,
         plan,
-        adapters: await input.adapters(),
+        adapters,
         journal,
         approvals,
       });
+      await input.onApply?.(plan, report, adapters);
+      return report;
     },
   };
 }

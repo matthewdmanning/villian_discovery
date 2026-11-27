@@ -1,17 +1,29 @@
 import { z } from "zod";
+import { ConfigSchema } from "./config.js";
 import {
   type BookSnapshot,
   isMetadataFieldInScope,
   matchSnapshotGroups,
   reconcileSnapshotsDetailed,
   type SnapshotField,
+  type SnapshotGroup,
   type SnapshotValue,
   type SyncField,
   type SyncProvider,
+  syncEditionScore,
 } from "./sync.js";
 import { resolveSyncSettings, type SyncSettings } from "./sync-config.js";
 
 export type SyncContext = { userId: string; connectionId: string };
+export type FableCatalogMatch = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  author?: string;
+  isbn?: string;
+  format?: BookSnapshot["format"];
+  automatic?: boolean;
+};
 export type SyncOperation = {
   id: string;
   bookId: string;
@@ -25,7 +37,15 @@ export type SyncOperation = {
   removal: boolean;
   blocked?: string;
   /** Set when the target app has no record of this book yet: the book to find or create there. */
-  create?: { title: string; author?: string; isbn?: string };
+  create?: {
+    title: string;
+    author?: string;
+    isbn?: string;
+    format?: BookSnapshot["format"];
+    minTitleScore?: number;
+    catalogId?: string;
+    catalogConfirmed?: true;
+  };
 };
 export interface SyncAdapter {
   readonly verified: boolean;
@@ -36,6 +56,7 @@ export interface SyncAdapter {
   readonly createFields?: readonly string[];
   /** Convert the app's native records into shared-schema snapshots that use only `fields`. */
   read(context: SyncContext): Promise<BookSnapshot[]>;
+  searchCatalog?(book: BookSnapshot, minTitleScore: number): Promise<FableCatalogMatch[]>;
   /** Verified adapters must call assertCurrent immediately before submitting a conditional before-value/version write. */
   write(context: SyncContext, operation: SyncOperation, assertCurrent: () => Promise<void>): Promise<void>;
 }
@@ -44,6 +65,8 @@ export type SyncPreviewOptions = {
   resolutions?: Record<string, SyncProvider> | undefined;
   editions?: Record<string, string> | undefined;
   matches?: Record<string, string> | undefined;
+  catalogSelections?: Record<string, string> | undefined;
+  minTitleScore?: number | undefined;
 };
 export type SyncPlan = {
   id: string;
@@ -54,6 +77,9 @@ export type SyncPlan = {
   operations: SyncOperation[];
   conflicts: { message: string; libbyBookIds: string[]; fableBookIds: string[] }[];
   snapshots: Record<SyncProvider, BookSnapshot[]>;
+  catalogMatches: Record<string, FableCatalogMatch[] | null>;
+  /** Display-only records from earlier complete Shelf reads. */
+  pendingReturned?: { bookId: string; title: string; progress?: number }[];
   options: SyncPreviewOptions;
   capabilities: string;
   schemas: Record<SyncProvider, string[]>;
@@ -76,9 +102,12 @@ const OptionsSchema = z
     resolutions: z.record(z.string(), z.enum(["libby", "fable"])).optional(),
     editions: z.record(z.string(), z.string()).optional(),
     matches: z.record(z.string(), z.string().min(1)).optional(),
+    catalogSelections: z.record(z.string(), z.string().min(1)).optional(),
+    minTitleScore: z.number().min(0).max(1).optional(),
   })
   .strict();
 export type SyncApprovals = z.infer<typeof ApprovalSchema>;
+const DEFAULT_MIN_TITLE_SCORE = ConfigSchema.shape.matching.parse({}).minTitleScore;
 
 /** Use this function to compare normalized JSON deterministically across object-key order. */
 function stable(value: unknown): string {
@@ -109,6 +138,7 @@ function capabilities(adapters: SyncAdapters): string {
           schema: [...adapters[provider].fields].sort(),
           fields: [...adapters[provider].writableFields].sort(),
           create: [...(adapters[provider].createFields ?? [])].sort(),
+          catalogSearch: !!adapters[provider].searchCatalog,
         },
       ]),
     ),
@@ -145,7 +175,15 @@ export function syncDecisionKey(row: Pick<SyncField, "bookId" | "field">): strin
 }
 
 /** Use this function to propose adding a Libby book that Fable lacks: a checked-out book with progress above 0 is Currently Reading. */
-function proposeCreate(libby: BookSnapshot[], adapters: SyncAdapters, planId: string): SyncOperation | undefined {
+function proposeCreate(
+  group: SnapshotGroup,
+  adapters: SyncAdapters,
+  planId: string,
+  catalogId?: string,
+  catalogConfirmed = false,
+  minTitleScore = DEFAULT_MIN_TITLE_SCORE,
+): SyncOperation | undefined {
+  const { libby } = group;
   const source = libby[0]!;
   const checkedOut = libby.some((book) => book.fields.checkedOut?.value === true);
   const progress = Math.max(0, ...libby.map((book) => Number(book.fields.readingProgress?.value) || 0));
@@ -153,7 +191,7 @@ function proposeCreate(libby: BookSnapshot[], adapters: SyncAdapters, planId: st
   const operation: SyncOperation = {
     id: JSON.stringify([planId, "fable", source.bookId, "readingStatus"]),
     bookId: source.bookId,
-    groupId: source.bookId,
+    groupId: group.groupId,
     title: source.title,
     field: "readingStatus",
     target: "fable",
@@ -165,6 +203,9 @@ function proposeCreate(libby: BookSnapshot[], adapters: SyncAdapters, planId: st
       title: source.title,
       ...(source.author ? { author: source.author } : {}),
       ...(source.isbn ? { isbn: source.isbn } : {}),
+      ...(source.format ? { format: source.format } : {}),
+      ...(catalogId ? { catalogId, minTitleScore } : {}),
+      ...(catalogConfirmed ? { catalogConfirmed: true } : {}),
     },
   };
   if (!adapters.fable.verified || !adapters.libby.verified) operation.blocked = "Provider contracts are not verified";
@@ -181,6 +222,7 @@ function buildPlan(
   adapters: SyncAdapters,
   options: SyncPreviewOptions,
   id: string = crypto.randomUUID(),
+  catalogMatches: SyncPlan["catalogMatches"] = {},
 ): SyncPlan {
   const selected = structuredClone(snapshots);
   const matches = options.matches ?? {};
@@ -268,15 +310,50 @@ function buildPlan(
     }
   }
   const unmatched = [];
+  const existingCatalogIds = new Set(result.fable.flatMap((book) => (book.providerId ? [book.providerId] : [])));
+  const proposedCatalogIds = new Set<string>();
   for (const group of result.groups.filter((candidate) => candidate.libby.length && !candidate.fable.length)) {
-    const create = proposeCreate(group.libby, adapters, id);
-    if (create) operations.push(create);
-    else
+    const libbyBookIds = group.libby.map((book) => book.bookId);
+    const source = group.libby[0]!;
+    const catalog = catalogMatches[source.bookId];
+    const requested = options.catalogSelections?.[source.bookId];
+    if (requested && (!catalog?.some((book) => book.id === requested) || existingCatalogIds.has(requested))) {
+      throw new Error(`The Fable catalog selection for ${source.title} is no longer available`);
+    }
+    if (
+      !requested &&
+      result.conflicts.some((conflict) => conflict.libbyBookIds.some((bookId) => libbyBookIds.includes(bookId)))
+    )
+      continue;
+    const minTitleScore = options.minTitleScore ?? DEFAULT_MIN_TITLE_SCORE;
+    const fableBookIds = result.fable
+      .map((book) => ({ book, score: syncEditionScore(source, book) }))
+      .filter(
+        ({ book, score }) =>
+          score !== undefined &&
+          score > 0 &&
+          (score >= minTitleScore || catalog?.some((match) => match.id === book.providerId)),
+      )
+      .sort((left, right) => right.score! - left.score!)
+      .map(({ book }) => book)
+      .map((book) => book.bookId);
+    const catalogId = requested ?? (!fableBookIds.length ? catalog?.find((book) => book.automatic)?.id : undefined);
+    const knownCatalog = Object.hasOwn(catalogMatches, source.bookId);
+    const create =
+      catalogId || (!knownCatalog && !fableBookIds.length)
+        ? proposeCreate(group, adapters, id, catalogId, !!requested, minTitleScore)
+        : undefined;
+    if (create) {
+      if (catalogId && proposedCatalogIds.has(catalogId)) continue;
+      if (catalogId) proposedCatalogIds.add(catalogId);
+      operations.push(create);
+    } else {
       unmatched.push({
-        message: `No matched destination for ${group.title}; it is not checked out with progress, so no Fable book is added`,
-        libbyBookIds: group.libby.map((book) => book.bookId),
-        fableBookIds: [],
+        message: `No matched destination for ${group.title}`,
+        libbyBookIds,
+        fableBookIds,
       });
+    }
   }
   return {
     id,
@@ -287,6 +364,7 @@ function buildPlan(
     operations,
     conflicts: [...result.conflicts, ...unmatched],
     snapshots: structuredClone(snapshots),
+    catalogMatches: structuredClone(catalogMatches),
     options: structuredClone(options),
     capabilities: capabilities(adapters),
     schemas: { libby: [...adapters.libby.fields], fable: [...adapters.fable.fields] },
@@ -302,19 +380,57 @@ export async function previewSync(input: {
 }): Promise<SyncPlan> {
   const context = ContextSchema.parse(input.context);
   const settings = resolveSyncSettings(input.settings);
-  return buildPlan(
-    context,
-    settings,
-    await readBoth(input.adapters, context),
-    input.adapters,
-    OptionsSchema.parse(input.options ?? {}),
-  );
+  const snapshots = await readBoth(input.adapters, context);
+  const options = OptionsSchema.parse(input.options ?? {});
+  const libbyById = new Map(snapshots.libby.map((book) => [book.bookId, book]));
+  if (options.matches) {
+    const fableById = new Map(snapshots.fable.map((book) => [book.bookId, book]));
+    options.matches = Object.fromEntries(
+      Object.entries(options.matches).filter(([libbyId, fableId]) => {
+        const source = libbyById.get(libbyId);
+        const target = fableById.get(fableId);
+        return source && target && syncEditionScore(source, target) !== undefined;
+      }),
+    );
+  }
+  for (const [bookId, catalogId] of Object.entries(options.catalogSelections ?? {})) {
+    const source = libbyById.get(bookId);
+    if (!source) {
+      delete options.catalogSelections?.[bookId];
+      continue;
+    }
+    const saved = snapshots.fable.find((book) => book.providerId === catalogId);
+    if (saved) {
+      if (syncEditionScore(source, saved) !== undefined)
+        options.matches = { ...options.matches, [bookId]: saved.bookId };
+      delete options.catalogSelections?.[bookId];
+    }
+  }
+  const fable = input.adapters.fable;
+  const search = fable.searchCatalog?.bind(fable);
+  const catalogMatches: SyncPlan["catalogMatches"] = {};
+  if (search) {
+    const { groups } = matchSnapshotGroups(snapshots.libby, snapshots.fable, settings.matching, options.matches);
+    const loans = groups.flatMap((group) =>
+      group.fable.length ? [] : group.libby.filter((book) => book.fields.checkedOut?.value === true),
+    );
+    await Promise.all(
+      loans.map(async (book) => {
+        catalogMatches[book.bookId] = await search(book, options.minTitleScore ?? DEFAULT_MIN_TITLE_SCORE).catch(
+          () => null,
+        );
+      }),
+    );
+  }
+  return buildPlan(context, settings, snapshots, input.adapters, options, undefined, catalogMatches);
 }
 
 /** Use this function to normalize snapshot record ordering before checking a preview for stale data. */
 function snapshotKey(snapshots: Record<SyncProvider, BookSnapshot[]>): string {
   return stable({
-    libby: [...snapshots.libby].sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
+    libby: snapshots.libby
+      .map(({ loanUrl: _loanUrl, narrators: _narrators, ...book }) => book)
+      .sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
     fable: [...snapshots.fable].sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
   });
 }
@@ -333,6 +449,9 @@ function createdBooks(
   snapshots: Record<SyncProvider, BookSnapshot[]>,
   matching: SyncSettings["matching"],
 ): BookSnapshot[] {
+  if (operation.create?.catalogId) {
+    return snapshots.fable.filter((book) => book.providerId === operation.create?.catalogId);
+  }
   const { groups } = matchSnapshotGroups(snapshots.libby, snapshots.fable, matching);
   return groups.find((group) => group.libby.some((book) => book.bookId === operation.bookId))?.fable ?? [];
 }
@@ -429,6 +548,7 @@ export async function applySync(input: {
       input.adapters,
       input.plan.options,
       input.plan.id,
+      input.plan.catalogMatches,
     );
     if (stable(original.operations) !== stable(input.plan.operations))
       throw new Error("Preview was modified; create a new preview");

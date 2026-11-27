@@ -124,7 +124,7 @@ async function adapters() {
   const [client, get] = await Promise.all([libby().catch(() => undefined), fableGet().catch(() => undefined)]);
   if (!client && !get) throw new Error("Connect Libby or log in to Fable first");
   return {
-    libby: client ? libbyAdapter(client) : disconnectedAdapter(),
+    libby: client ? libbyAdapter(client, undefined, publicCatalog) : disconnectedAdapter(),
     fable: get ? fableAdapter(get) : disconnectedAdapter(),
   };
 }

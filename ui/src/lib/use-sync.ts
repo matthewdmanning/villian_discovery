@@ -9,6 +9,7 @@ import { useCooldown } from "./use-cooldown.ts";
 export function useSync() {
   const {
     api,
+    config,
     syncResult,
     setSyncResult,
     syncBusy: busy,
@@ -62,7 +63,7 @@ export function useSync() {
     setBusy(true);
     setError(undefined);
     try {
-      const plan = await api.previewSync(options);
+      const plan = await api.previewSync({ ...options, minTitleScore: config.matching.minTitleScore });
       setSyncResult({
         rows: plan.rows,
         plan,
@@ -161,9 +162,11 @@ export function useSync() {
     apply,
     remaining,
     visibleOperations,
+    operations,
     missingApproval,
     selectOperations,
     outcomeOf,
     resultSummary,
+    setError,
   };
 }

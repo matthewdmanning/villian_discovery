@@ -539,6 +539,26 @@ describe("sync plan preview and apply", () => {
     const { plan } = await preview(snapshots);
     expect(plan.conflicts).toHaveLength(0);
   });
+
+  it("offers each unmatched checked-out book its own relevant Fable editions", async () => {
+    const { plan } = await preview({
+      libby: [
+        { bookId: "loan-a", title: "Alchemised", author: "SenLinYu", fields: { checkedOut: field(true) } },
+        { bookId: "loan-b", title: "Piranesi", fields: { checkedOut: field(true) } },
+      ],
+      fable: [
+        { bookId: "other", title: "Unrelated Book", author: "SenLinYu", fields: {} },
+        { bookId: "alchemised", title: "Alchemised: A Novel", author: "SenLinYu", fields: {} },
+        { bookId: "piranesi", title: "Piranesi", author: "Susanna Clarke", fields: {} },
+      ],
+    });
+    expect(plan.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ libbyBookIds: ["loan-a"], fableBookIds: ["alchemised"] }),
+        expect.objectContaining({ libbyBookIds: ["loan-b"], fableBookIds: ["piranesi"] }),
+      ]),
+    );
+  });
 });
 
 describe("edition choices", () => {

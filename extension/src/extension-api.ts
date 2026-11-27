@@ -1,5 +1,5 @@
 import type { Config } from "../../src/config.ts";
-import { type AudiobookRow, type CatalogReader, listAudiobookLoans } from "../../src/libby-audiobooks.ts";
+import type { CatalogReader } from "../../src/libby-audiobooks.ts";
 import { listLibraryAvailability } from "../../src/libby-list-availability.ts";
 import { readLists } from "../../src/libby-lists.ts";
 import { listShelf } from "../../src/libby-shelf.ts";
@@ -15,15 +15,17 @@ import { Runner, selectCards } from "../../src/runner.ts";
 import { disconnectedAdapter, fableAdapter, libbyAdapter } from "../../src/sync-adapters.ts";
 import { resolveSyncSettings } from "../../src/sync-config.ts";
 import { createSyncOrchestrator } from "../../src/sync-orchestrator.ts";
-import type { SyncContext } from "../../src/sync-plan.ts";
+import type { SyncAdapter, SyncContext } from "../../src/sync-plan.ts";
 import { ThunderClient } from "../../src/thunder-client.ts";
 import type { LibraryApi } from "../../ui/src/lib/api.ts";
 import { createFableGet, createFablePost, isFableSignedIn } from "./fable-get.ts";
 import { libbyClient, libbyProblem } from "./libby-session.ts";
+import { shelfHistory } from "./sync-shelf-history.ts";
 
 const SETTINGS_KEY = "syncSettings";
 export const LIBBY_TAGS_CACHE_KEY = "libbyTags";
 const context: SyncContext = { userId: "local", connectionId: "libby-and-fable" };
+const observedShelf = new WeakMap<SyncAdapter, string>();
 const publicCatalog: CatalogReader = new ThunderClient({
   timeoutMs: 8_000,
   retries: 0,
@@ -52,13 +54,6 @@ async function activeLibbyAccount() {
 export async function connections() {
   const [libby, fable] = await Promise.all([libbyClient().then(Boolean), isFableSignedIn().catch(() => false)]);
   return { libby, fable, libbyProblem: libby ? "" : libbyProblem() };
-}
-
-/** Use this function to list the audiobooks Libby has checked out; it throws when Libby is signed out or a read fails, so that never reads as no books. */
-export async function audiobooks(): Promise<AudiobookRow[]> {
-  const client = await libbyClient();
-  if (!client) throw new Error(libbyProblem() || "Sign in to Libby first");
-  return listAudiobookLoans(client, publicCatalog);
 }
 
 /** Use this function to read, validate and cache Libby tags for the signed-in account. */
@@ -93,8 +88,19 @@ export async function openInLibby(url: string) {
 async function adapters() {
   const [client, fable] = await Promise.all([libbyClient(), isFableSignedIn().catch(() => false)]);
   if (!client && !fable) throw new Error("Sign in to Libby or Fable first");
+  const libby = client
+    ? libbyAdapter(
+        client,
+        (state) => {
+          if (state.cards?.length && Array.isArray(state.loans))
+            observedShelf.set(libby, `pendingShelf:${libbyAccountKey(state.cards)}`);
+          else observedShelf.delete(libby);
+        },
+        publicCatalog,
+      )
+    : disconnectedAdapter();
   return {
-    libby: client ? libbyAdapter(client) : disconnectedAdapter(),
+    libby,
     fable: fable ? fableAdapter(createFableGet(), createFablePost()) : disconnectedAdapter(),
   };
 }
@@ -108,6 +114,30 @@ const sync = createSyncOrchestrator({
   adapters,
   readSettings: loadSettings,
   writeSettings: async (settings) => chrome.storage.local.set({ [SETTINGS_KEY]: settings }),
+  async onPreview(plan, { libby }) {
+    const key = observedShelf.get(libby);
+    if (!key) return;
+    await navigator.locks
+      .request(key, async () => {
+        const entries = shelfHistory((await chrome.storage.local.get(key))[key], plan);
+        const current = new Set(plan.snapshots.libby.map((book) => book.bookId));
+        plan.pendingReturned = entries
+          .filter(({ loanIds }) => !loanIds.some((id) => current.has(id)))
+          .map(({ bookId, title, progress }) => ({ bookId, title, ...(progress !== undefined ? { progress } : {}) }));
+        await chrome.storage.local.set({ [key]: entries });
+      })
+      .catch(() => undefined);
+  },
+  async onApply(plan, report, { libby }) {
+    const key = observedShelf.get(libby);
+    if (!key) return;
+    await navigator.locks
+      .request(key, async () => {
+        const entries = shelfHistory((await chrome.storage.local.get(key))[key], plan, report);
+        await chrome.storage.local.set({ [key]: entries });
+      })
+      .catch(() => undefined);
+  },
 });
 
 /** Use this function to build the production Runner over the authenticated Libby client and public Thunder catalog. Inputs are the client and validated UI config; dependencies are `Runner`, `ThunderClient`, and `silentLogger`. */

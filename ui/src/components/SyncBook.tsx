@@ -35,7 +35,7 @@ export function ReadingStatus({ status }: { status: StatusKey }) {
 }
 
 /** Use this component to show a progress percentage over a small bar filled to that value. */
-function ProgressValue({ value }: { value: number }) {
+export function ProgressValue({ value }: { value: number }) {
   const percent = Math.min(Math.max(value, 0), 100);
   return (
     <span className="relative inline-block w-14 overflow-hidden rounded-field bg-base-300/60 text-center align-middle">
@@ -59,8 +59,16 @@ function fills(book: BookSummary, field: "progress" | "rating"): boolean {
   return book[field] !== undefined || book.rows.some((row) => row.field === name && row.conflict);
 }
 
-/** Use this component to list books under "Checked out" first, then "Not checked out"; empty sections are omitted. */
-export function BookSections({ books, render }: { books: BookSummary[]; render(book: BookSummary): ReactNode }) {
+/** Use this component to list checked-out books first. Pass `pending` when the second section only has unsynced books. */
+export function BookSections({
+  books,
+  pending = false,
+  render,
+}: {
+  books: BookSummary[];
+  pending?: boolean;
+  render(book: BookSummary): ReactNode;
+}) {
   const columns = {
     progress: books.some((book) => fills(book, "progress")),
     rating: books.some((book) => fills(book, "rating")),
@@ -70,12 +78,13 @@ export function BookSections({ books, render }: { books: BookSummary[]; render(b
       <div className="space-y-4">
         {[
           ["Checked out", books.filter((book) => book.checkedOut)] as const,
-          ["Not checked out", books.filter((book) => !book.checkedOut)] as const,
+          [pending ? "Pending sync" : "Not checked out", books.filter((book) => !book.checkedOut)] as const,
         ].map(
           ([title, section]) =>
             section.length > 0 && (
               <section key={title} aria-label={title}>
                 <h2 className="font-display text-xl font-bold">{title}</h2>
+                {title === "Pending sync" && <p className="text-sm opacity-70">No longer checked out</p>}
                 <ul className="divide-y divide-base-300">{section.map(render)}</ul>
               </section>
             ),
@@ -95,6 +104,8 @@ export function BookLine({
   statusCell,
   details,
   open,
+  pending,
+  action,
 }: {
   book: BookSummary;
   lead?: ReactNode;
@@ -104,6 +115,8 @@ export function BookLine({
   statusCell?: ReactNode;
   details?: ReactNode;
   open?: boolean;
+  pending?: boolean | undefined;
+  action?: ReactNode;
 }) {
   const columns = useContext(ColumnsContext);
   const fields = [
@@ -134,20 +147,27 @@ export function BookLine({
     <>
       <span className="flex min-w-0 items-center gap-2">
         {lead}
-        <span className="truncate pr-1 font-display text-lg font-semibold italic">{book.title}</span>
+        <span className="min-w-0">
+          <span className="block truncate pr-1 font-display text-lg font-semibold italic">{book.title}</span>
+          {pending && <span className="badge badge-warning badge-sm">Needs sync</span>}
+        </span>
       </span>
       {fields}
     </>
   );
+  const highlight = pending ? "rounded-field border-s-4 border-warning bg-warning/10 ps-2" : "";
   if (!details)
     return (
-      <li className={grid} style={style}>
-        {cells}
-        <span />
+      <li className={highlight}>
+        <div className={grid} style={style}>
+          {cells}
+          <span />
+        </div>
+        {action}
       </li>
     );
   return (
-    <li>
+    <li className={highlight}>
       <details className="group" open={open}>
         <summary className={`${grid} cursor-pointer list-none [&::-webkit-details-marker]:hidden`} style={style}>
           {cells}
@@ -155,6 +175,7 @@ export function BookLine({
         </summary>
         <ul className="pb-2 pl-10 text-sm">{details}</ul>
       </details>
+      {action}
     </li>
   );
 }

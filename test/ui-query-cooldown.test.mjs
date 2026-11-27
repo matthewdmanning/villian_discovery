@@ -28,9 +28,8 @@ function StoreProbe() {
 const flush = () => act(async () => {});
 const tick = (ms) => act(async () => vi.advanceTimersByTime(ms));
 const click = (el) => act(async () => el.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-/** The button whose label, before any countdown, is `label`. */
-const button = (label) =>
-  [...container.querySelectorAll("button")].find((el) => el.textContent.trim().split(/\d+s/)[0]?.trim() === label);
+/** The button whose stable visible label is `label`. */
+const button = (label) => [...container.querySelectorAll("button")].find((el) => el.textContent.trim() === label);
 
 async function mount(screen, api = {}) {
   const fake = {
@@ -68,12 +67,15 @@ describe("refresh cooldown on screens", () => {
     const api = await mount(Cards);
     const refresh = () => button("Refresh cards");
     expect(refresh().disabled).toBe(true);
-    expect(refresh().title).toBe("Available again in 10 s");
+    expect(refresh().textContent.trim()).toBe("Refresh cards");
+    expect(refresh().getAttribute("title")).toBeNull();
+    expect(refresh().hasAttribute("aria-describedby")).toBe(false);
+    expect(container.textContent).not.toContain("Available again");
     await tick(9_000);
-    expect(refresh().textContent).toContain("1s");
+    expect(refresh().textContent.trim()).toBe("Refresh cards");
     await tick(1_000);
     expect(refresh().disabled).toBe(false);
-    expect(refresh().title).toBe("");
+    expect(refresh().textContent.trim()).toBe("Refresh cards");
     await click(refresh());
     expect(api.cards).toHaveBeenCalledTimes(2);
   });
@@ -97,6 +99,19 @@ describe("refresh cooldown on screens", () => {
     expect(api.cards).toHaveBeenCalledTimes(2);
   });
 
+  it("reloads cards after an externally observed account change despite a failed-load cooldown", async () => {
+    const api = await mount(Cards, {
+      cards: vi.fn().mockRejectedValueOnce(new Error("Sign in first")).mockResolvedValue([card]),
+    });
+    expect(store.cardsCooldown).toBe(10);
+    await act(async () => store.refreshCards());
+    expect(api.cards).toHaveBeenCalledTimes(1);
+    await act(async () => store.forceRefreshCards());
+    expect(api.cards).toHaveBeenCalledTimes(2);
+    expect(store.cards).toEqual([card]);
+    expect(store.cardsError).toBeUndefined();
+  });
+
   it("gives the shelf a Refresh button with the same cooldown", async () => {
     const api = await mount(Shelf);
     expect(button("Refresh").disabled).toBe(true);
@@ -111,7 +126,10 @@ describe("refresh cooldown on screens", () => {
     expect(api.previewSync).toHaveBeenCalledTimes(1);
     const preview = () => button("Preview changes");
     expect(preview().disabled).toBe(true);
-    expect(preview().textContent).toContain("10s");
+    expect(preview().textContent.trim()).toBe("Preview changes");
+    expect(preview().getAttribute("title")).toBeNull();
+    expect(preview().hasAttribute("aria-describedby")).toBe(false);
+    expect(container.textContent).not.toContain("Available again");
     await tick(10_000);
     expect(preview().disabled).toBe(false);
     await click(preview());

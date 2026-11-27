@@ -219,17 +219,21 @@ try {
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
   // The comparison runs on its own when Sync opens.
   await page.getByRole("status").filter({ hasText: "Last compared" }).waitFor();
-  // Right after a preview, the button waits out its cooldown and says so.
+  // Right after a preview, the button waits out its cooldown without changing its label.
   const cooling = page.getByRole("button", { name: "Preview changes", exact: true });
   assert.equal(await cooling.isDisabled(), true);
-  assert.match(await cooling.getAttribute("title"), /^Available again in \d+ s$/);
-  assert.match(await cooling.textContent(), /\d+s/);
+  assert.equal(await cooling.textContent(), "Preview changes");
+  assert.equal(await cooling.getAttribute("title"), null);
+  assert.equal(await cooling.getAttribute("aria-describedby"), null);
   const openTab = (name) => page.getByRole("tab", { name, exact: true }).click();
   const bookItem = (book) => page.locator("main li").filter({ has: page.locator("span.truncate", { hasText: book }) });
   const squash = (text) => text.replace(/\s+/g, " ").trim();
   const bookLine = async (book) => {
     const summary = bookItem(book).locator("summary");
-    return squash(await ((await summary.count()) ? summary : bookItem(book)).textContent());
+    return squash(await ((await summary.count()) ? summary : bookItem(book)).textContent()).replace(
+      /Needs sync\s*/g,
+      "",
+    );
   };
   await openTab("Library");
   await bookItem("Piranesi").waitFor();
@@ -248,7 +252,7 @@ try {
   assert.match(squash(await bookItem("Piranesi").textContent()), /shelves: ?Libby: Favorites ?or ?Fable: Book club/);
   assert.equal(await page.locator("svg.lucide-triangle-alert").count(), 0);
   assert.match(await bookLine("Dune"), /^Dune ?100%.*Finished$/);
-  await openTab("Changes");
+  await openTab("Shelf");
   assert.match(await bookLine("Dune"), /^Dune ?100% \(\+80%\).*Finished$/);
   assert.equal(await bookItem("Dune").locator("summary").count(), 0);
   assert.equal(await page.locator("svg.lucide-triangle-alert").count(), 0);
@@ -260,26 +264,27 @@ try {
   await page.getByText("Advanced", { exact: true }).click();
   assert.equal(await page.getByLabel("Allow decrease in progress", { exact: true }).isChecked(), false);
   await showAll.selectOption("yes");
+  await openTab("Shelf");
   await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
-  await openTab("Changes");
   await bookItem("Dune").locator("summary").click();
   await duneNotes.waitFor();
   await openTab("Settings");
   await showAll.selectOption("no");
+  await openTab("Shelf");
   await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
-  await openTab("Changes");
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
   await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
-  await page.getByText("No applicable changes in this preview.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), true);
   await openTab("Library");
   assert.match(await bookLine("Piranesi"), /^Piranesi ?65%/);
   await openTab("Settings");
   await page.getByLabel("Removals", { exact: true }).selectOption("fields-memberships");
+  await openTab("Shelf");
   await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
   await openTab("Library");
   await page.getByRole("button", { name: "Use Libby shelves for Piranesi", exact: true }).click();
-  await openTab("Changes");
+  await openTab("Shelf");
   const removal = page.getByRole("checkbox", { name: "Apply shelves to Fable for Piranesi", exact: true });
   await removal.check();
   assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), true);
@@ -298,8 +303,8 @@ try {
   assert.equal(await advanced.getByLabel("Shared metadata", { exact: true }).count(), 1);
   await page.getByRole("button", { name: "Reset to defaults", exact: true }).click();
   assert.equal(await page.getByLabel("Removals", { exact: true }).inputValue(), "none");
+  await openTab("Shelf");
   await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
-  await openTab("Changes");
   const comparisonStatus = await page.getByRole("status").filter({ hasText: "Last compared" }).textContent();
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
