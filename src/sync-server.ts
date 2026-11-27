@@ -182,7 +182,7 @@ const routes: Record<string, Handler> = {
   },
   "GET /api/login/device-code": async () => ({ code: deviceCode }),
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
-  "GET /api/shelf": async () => listShelf(await libby(), publicCatalog),
+  "GET /api/shelf": async () => listShelf(await libby(), publicCatalog, logger),
   "GET /api/lists": async () => readLists(await libby()),
   "POST /api/lists/availability": async (input) => listAvailability((input as { titleId: string })?.titleId),
   "GET /api/tags": async () => (await libby()).tags(),
