@@ -4,6 +4,7 @@ import type { SyncApprovals, SyncPreviewOptions } from "../../../src/sync-plan.t
 import { useStore } from "./store.tsx";
 import { isAppConflict } from "./sync-format.ts";
 import { summarizeSyncResult } from "./sync-state.ts";
+import { useCooldown } from "./use-cooldown.ts";
 
 export function useSync() {
   const {
@@ -18,6 +19,8 @@ export function useSync() {
   const review: SyncApprovals = syncResult?.review ?? { selected: [], removals: [] };
   const [settings, setSettings] = useState<SyncSettings>();
   const saved = settings !== undefined;
+  // Each preview reads both apps in full; a manual re-run waits out the cooldown.
+  const { remaining: cooldown, start: startCooldown } = useCooldown();
 
   useEffect(() => {
     let active = true;
@@ -75,6 +78,7 @@ export function useSync() {
       setError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       setBusy(false);
+      startCooldown();
     }
   }
 
@@ -146,6 +150,7 @@ export function useSync() {
     api,
     syncResult,
     busy,
+    cooldown,
     error,
     review,
     settings,

@@ -32,7 +32,7 @@ export function useLists() {
     useCallback(() => api.lists(), [api]),
     { keepStale: true },
   );
-  const { data, revision, reload } = lists;
+  const { data, revision, reload, cooldown } = lists;
   const error = lists.error !== undefined;
   const busy = lists.loading;
   const [draft, setDraft] = useState<ListQuery>(emptyQuery);
@@ -118,6 +118,7 @@ export function useLists() {
     busy,
     revision,
     reload,
+    cooldown,
     sort,
     setSort,
     items,

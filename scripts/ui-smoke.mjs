@@ -16,6 +16,16 @@ try {
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
+  // A controllable clock lets the run step past each 10 s refresh cooldown instead of waiting it out.
+  await page.clock.install();
+  /** Step the clock past refresh cooldowns until the button is enabled, then click. An auto-preview restarts one. */
+  const afterCooldown = async (locator) => {
+    for (let step = 0; step < 20 && !(await locator.isEnabled()); step++) {
+      await page.clock.fastForward(10_000);
+      await page.waitForTimeout(50);
+    }
+    await locator.click();
+  };
   await page.goto(process.env.UI_URL ?? "http://127.0.0.1:5173");
   const nav = page.locator("aside");
   await nav.getByRole("button", { name: "Library cards", exact: true }).click();
@@ -169,9 +179,9 @@ try {
   });
   await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
   await nav.getByRole("button", { name: "Library cards", exact: true }).click();
-  await page.getByRole("button", { name: "Refresh cards", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Refresh cards", exact: true }));
   await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Retry", exact: true }));
   await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
   await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
   await chooseMethod("phone code");
@@ -209,6 +219,11 @@ try {
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
   // The comparison runs on its own when Sync opens.
   await page.getByRole("status").filter({ hasText: "Last compared" }).waitFor();
+  // Right after a preview, the button waits out its cooldown and says so.
+  const cooling = page.getByRole("button", { name: "Preview changes", exact: true });
+  assert.equal(await cooling.isDisabled(), true);
+  assert.match(await cooling.getAttribute("title"), /^Available again in \d+ s$/);
+  assert.match(await cooling.textContent(), /\d+s/);
   const openTab = (name) => page.getByRole("tab", { name, exact: true }).click();
   const bookItem = (book) => page.locator("main li").filter({ has: page.locator("span.truncate", { hasText: book }) });
   const squash = (text) => text.replace(/\s+/g, " ").trim();
@@ -245,23 +260,23 @@ try {
   await page.getByText("Advanced", { exact: true }).click();
   assert.equal(await page.getByLabel("Allow decrease in progress", { exact: true }).isChecked(), false);
   await showAll.selectOption("yes");
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
   await openTab("Changes");
   await bookItem("Dune").locator("summary").click();
   await duneNotes.waitFor();
   await openTab("Settings");
   await showAll.selectOption("no");
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
   await openTab("Changes");
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
   await page.getByText("No applicable changes in this preview.", { exact: true }).waitFor();
   await openTab("Library");
   assert.match(await bookLine("Piranesi"), /^Piranesi ?65%/);
   await openTab("Settings");
   await page.getByLabel("Removals", { exact: true }).selectOption("fields-memberships");
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
   await openTab("Library");
   await page.getByRole("button", { name: "Use Libby shelves for Piranesi", exact: true }).click();
   await openTab("Changes");
@@ -272,7 +287,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), false);
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
   await openTab("Library");
   await bookItem("Piranesi").waitFor();
   assert.match(squash(await bookItem("Piranesi").textContent()), /shelves: ?Favorites/);
@@ -283,7 +298,7 @@ try {
   assert.equal(await advanced.getByLabel("Shared metadata", { exact: true }).count(), 1);
   await page.getByRole("button", { name: "Reset to defaults", exact: true }).click();
   assert.equal(await page.getByLabel("Removals", { exact: true }).inputValue(), "none");
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
   await openTab("Changes");
   const comparisonStatus = await page.getByRole("status").filter({ hasText: "Last compared" }).textContent();
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
@@ -294,7 +309,7 @@ try {
       throw new Error("Injected sync failure");
     };
   });
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
   await page.getByRole("alert").filter({ hasText: "Injected sync failure" }).waitFor();
   assert.equal(await page.getByRole("status").filter({ hasText: "Last compared" }).textContent(), comparisonStatus);
   await page.setViewportSize({ width: 390, height: 844 });
