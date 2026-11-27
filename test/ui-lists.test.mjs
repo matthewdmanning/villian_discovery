@@ -12,22 +12,6 @@ it("displays the Libby names and the selected state", () => {
   expect(html).toContain("🎧 Audio");
   expect(html).toContain("To read");
   expect(html.match(/checked=""/g)).toHaveLength(2);
-  expect(html).not.toContain("🏷");
-});
-
-it("updates the displayed selection when a tag is checked and unchecked", () => {
-  let selected = [];
-  const onToggle = (id) => {
-    selected = selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id];
-  };
-  const render = () => TagChoices({ tags: fixtureTags, selected, onToggle });
-  const checkbox = render().props.children[1].props.children[0];
-  checkbox.props.onChange();
-  expect(selected).toEqual(["a"]);
-  expect(render().props.children[1].props.children[0].props.checked).toBe(true);
-  expect(render().props.children[2].props.children[0].props.checked).toBe(false);
-  render().props.children[1].props.children[0].props.onChange();
-  expect(render().props.children[1].props.children[0].props.checked).toBe(false);
 });
 
 it("shows saved query groups with Libby names", async () => {

@@ -246,3 +246,14 @@ it("keeps missing card usage unknown and flags a known full limit", () => {
     isFull: true,
   });
 });
+
+it("reports card usage when only the count or only the limit is known", () => {
+  expect(cardUsage({ ...cards[0], counts: { hold: 2 } }, "hold")).toEqual({ used: 2, limit: undefined, isFull: false });
+  expect(cardUsage({ ...cards[0], limits: { hold: 2 } }, "hold")).toEqual({ used: undefined, limit: 2, isFull: false });
+  expect(cardUsage({ ...cards[0], counts: { loan: 6 }, limits: { loan: 5 } }, "loan").isFull).toBe(true);
+  expect(cardUsage({ ...cards[0], counts: { loan: 0 }, limits: { loan: 5 } }, "loan")).toEqual({
+    used: 0,
+    limit: 5,
+    isFull: false,
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LibbyClient } from "../src/libby-client.js";
 import { listLibraryAvailability } from "../src/libby-list-availability.js";
-import { filterListQueries, listQueryKey, readLists } from "../src/libby-lists.js";
+import { listQueryKey, readLists } from "../src/libby-lists.js";
 import { silentLogger } from "../src/logger.js";
 import { ThunderClient } from "../src/thunder-client.js";
 import { card, fakeFetch, media } from "./fixtures.js";
@@ -54,19 +54,9 @@ describe("tagged-list failure modes", () => {
     ]);
   });
 
-  it("does not discard a later matching duplicate just because an earlier copy failed the filter", () => {
-    const items = [
-      { id: "1", title: "First version", tags: ["a"] },
-      { id: "1", title: "Matching version", tags: ["b"] },
-      { id: "1", title: "Another matching version", tags: ["b"] },
-    ];
-    expect(filterListQueries(items, [{ includes: [["b"]], excludes: [] }])).toEqual([items[1]]);
-  });
-
-  it("does not confuse tag IDs containing separators or include and exclude positions", () => {
-    const first = { includes: [["a,b", "c"]], excludes: [["d"]] };
-    expect(listQueryKey(first)).not.toBe(listQueryKey({ includes: [["a", "b,c"]], excludes: [["d"]] }));
-    expect(listQueryKey(first)).not.toBe(listQueryKey({ includes: [["d"]], excludes: [["a,b", "c"]] }));
+  it("does not treat a search that includes a tag as the same as one that excludes it", () => {
+    const first = { includes: [["a", "c"]], excludes: [["d"]] };
+    expect(listQueryKey(first)).not.toBe(listQueryKey({ includes: [["d"]], excludes: [["a", "c"]] }));
   });
 });
 

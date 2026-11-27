@@ -109,3 +109,39 @@ describe("demoApi.run", () => {
     expect(shorter[0]).toMatchObject({ status: "borrowed", loanDays: 7 });
   });
 });
+
+describe("liveApi lists", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("reads lists with GET and asks about one title with POST", async () => {
+    const fetch = vi.fn().mockImplementation(async () => new Response("[]"));
+    vi.stubGlobal("fetch", fetch);
+    const { liveApi } = await import("../ui/src/lib/live-api.ts");
+    await liveApi.lists();
+    await liveApi.listAvailability("42");
+    expect(fetch.mock.calls[0][0]).toBe("/api/lists");
+    expect(fetch.mock.calls[0][1].method).toBe("GET");
+    expect(fetch.mock.calls[1][0]).toBe("/api/lists/availability");
+    expect(fetch.mock.calls[1][1]).toMatchObject({ method: "POST", body: JSON.stringify({ titleId: "42" }) });
+  });
+  it("surfaces the server's message when a list call fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"error":"Connect Libby first"}', { status: 400 })));
+    const { liveApi } = await import("../ui/src/lib/live-api.ts");
+    await expect(liveApi.lists()).rejects.toThrow("Connect Libby first");
+  });
+});
+
+describe("demoApi lists", () => {
+  it("returns tagged titles whose tags all exist", async () => {
+    const { tags, items } = await demoApi.lists();
+    const known = new Set(tags.map((tag) => tag.uuid));
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) for (const tag of item.tags) expect(known.has(tag)).toBe(true);
+  });
+  it("reports availability for every demo card, including one with a wait", async () => {
+    const [cards, rows] = await Promise.all([demoApi.cards(""), demoApi.listAvailability("7")]);
+    expect(rows.map((row) => row.card.cardId)).toEqual(cards.map((card) => card.cardId));
+    expect(rows.every((row) => row.status === "ok" && row.media.id === "7")).toBe(true);
+    expect(rows.some((row) => row.media.isAvailable)).toBe(true);
+    expect(rows.some((row) => !row.media.isAvailable && row.media.estimatedWaitDays > 0)).toBe(true);
+  });
+});
