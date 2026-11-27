@@ -1,3 +1,5 @@
 Lists
 
-1. Tags should be in a icon box. Clicking brings up a 
+1. Combine Search and Tags. Name it Search.
+2. Tags should be in a icon box. Clicking brings up a popup of some kind -- modal? -- that allow the user to select tags not currently selected. Exclude tags selected in either Include or Exclude.
+2. The list has the same format as 
