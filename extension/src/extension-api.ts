@@ -1,5 +1,6 @@
 import type { Config } from "../../src/config.ts";
 import { type AudiobookRow, type CatalogReader, listAudiobookLoans } from "../../src/libby-audiobooks.ts";
+import { readLists } from "../../src/libby-lists.ts";
 import { listShelf } from "../../src/libby-shelf.ts";
 import type { LibbyTag } from "../../src/libby-tags-cache.ts";
 import {
@@ -125,6 +126,11 @@ function createRunner(client: Awaited<ReturnType<typeof libbyClient>>, config: C
 /** The UI's API over the signed-in Chrome profile; sync reads both apps and never writes. */
 export const extensionApi: LibraryApi = {
   tags,
+  lists: async () => {
+    const client = await libbyClient();
+    if (!client) throw new Error(libbyProblem() || "Connect Libby first");
+    return readLists(client);
+  },
   demo: false,
   status: async () => ({ connected: (await connections()).libby }),
   login: async (_tokenFile, { signal }) => {

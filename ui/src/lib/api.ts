@@ -1,6 +1,7 @@
 import type { PairingOptions } from "../../../src/auth.js";
 import type { BookRequest } from "../../../src/input.js";
 import { LibbyClient } from "../../../src/libby-client.js";
+import type { ListsData } from "../../../src/libby-lists.ts";
 import { type ShelfData, unavailableShelf } from "../../../src/libby-shelf.ts";
 import { silentLogger } from "../../../src/logger.js";
 import type { BookResult, ResultStatus } from "../../../src/runner.js";
@@ -33,6 +34,7 @@ export interface LibraryApi {
   cards(tokenFile: string): Promise<LibbyCard[]>;
   shelf(): Promise<ShelfData>;
   tags(): Promise<unknown>;
+  lists(): Promise<ListsData>;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
   previewSync(options?: SyncPreviewOptions): Promise<SyncPlan>;
@@ -157,9 +159,28 @@ export const demoApi: LibraryApi = {
     await wait(250);
     return unavailableShelf("Shelf data is unavailable in demo mode; connect a real Libby account.");
   },
+  async lists() {
+    await wait(250);
+    return {
+      tags: [
+        { uuid: "want-to-read", name: "Want to read" },
+        { uuid: "favorites", name: "Favorites" },
+      ],
+      items: [
+        { id: "1", title: "The Night Circus", author: "Erin Morgenstern", tags: ["want-to-read", "favorites"] },
+        { id: "2", title: "Piranesi", author: "Susanna Clarke", tags: ["want-to-read"] },
+        { id: "3", title: "Kindred", author: "Octavia E. Butler", tags: ["favorites"] },
+      ],
+    };
+  },
   async tags() {
     await wait(250);
-    return { tags: [{ name: "Want to read" }, { name: "Favorites" }] };
+    return {
+      tags: [
+        { uuid: "want-to-read", name: "Want to read" },
+        { uuid: "favorites", name: "Favorites" },
+      ],
+    };
   },
   async search(book, config) {
     await wait(500);

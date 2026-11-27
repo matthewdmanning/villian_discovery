@@ -77,6 +77,13 @@ export class LibbyClient {
     return this.tagsHttp.request("tags", { signal });
   }
 
+  /** Read the titles in a tag using the same path as Libby. */
+  taggings(tag: { uuid: string; name: string }, signal?: AbortSignal): Promise<unknown> {
+    const bytes = new TextEncoder().encode(tag.name);
+    const encoded = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+    return this.tagsHttp.request(`tag/${enc(tag.uuid)}/${enc(encoded)}`, { query: { enc: 1 }, signal });
+  }
+
   /** Reading position of one loan, as a percent of the book (0-100); undefined when Libby has no position for it. */
   async loanProgress(args: { cardId: string; titleId: string; mediaType: string }): Promise<number | undefined> {
     const data = await this.http.request<{ position?: { percentageOfBook?: unknown } }>(

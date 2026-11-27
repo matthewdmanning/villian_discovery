@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * Local server for the live UI: serves the built UI (`ui/dist`), Libby sign-in and cards, and a read-only
  * sync preview of Libby and Fable. `npm run live` builds everything, starts it, and opens the browser.
@@ -21,6 +22,7 @@ import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discover
 import { createClients } from "./index.js";
 import type { BookRequest } from "./input.js";
 import { LibbyClient } from "./libby-client.js";
+import { readLists } from "./libby-lists.js";
 import { listShelf } from "./libby-shelf.js";
 import { createLogger } from "./logger.js";
 import { Runner, selectCards } from "./runner.js";
@@ -169,6 +171,7 @@ const routes: Record<string, Handler> = {
   "GET /api/login/device-code": async () => ({ code: deviceCode }),
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
   "GET /api/shelf": async () => listShelf(await libby(), publicCatalog),
+  "GET /api/lists": async () => readLists(await libby()),
   "GET /api/tags": async () => (await libby()).tags(),
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };

@@ -79,7 +79,7 @@
     },
     {
       "id": "tags",
-      "title": "Tags",
+      "title": "Lists",
       "cli": "",
       "enabled": true,
       "regions": [{ "id": "tags", "components": [{ "type": "output", "label": "Libby tags" }] }]
