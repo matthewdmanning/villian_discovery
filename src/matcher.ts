@@ -47,9 +47,23 @@ export function scoreMatch(book: BookRequest, media: ThunderMedia, o: MatchOptio
   if (book.isbn && !book.title) {
     return isbnMatch ? { media, titleScore: 1, authorScore: undefined, isbnMatch } : undefined;
   }
+  const { author, matchMode } = book;
+  if (matchMode === "keywords") {
+    const title = [media.title, media.subtitle].filter(Boolean).join(" ");
+    if (book.title && !containsKeywords(title, book.title)) return undefined;
+    if (author && !mediaAuthors(media).some((name) => containsKeywords(name, author))) return undefined;
+    return { media, titleScore: 1, authorScore: author ? 1 : undefined, isbnMatch };
+  }
   const titleScore = book.title ? titleSimilarity(book.title, media, o.ignoreSubtitle) : 1;
-  const authorScore = book.author ? authorSimilarity(book.author, media) : undefined;
+  const authorScore = author ? authorSimilarity(author, media) : undefined;
   if (isbnMatch) return { media, titleScore, authorScore, isbnMatch };
+  const text = matchMode === "text" ? book.title : undefined;
+  if (
+    text &&
+    [media.title, media.subtitle ?? "", ...mediaAuthors(media)].some((value) => containsKeywords(value, text))
+  ) {
+    return { media, titleScore, authorScore, isbnMatch };
+  }
   if (titleScore < o.minTitleScore) return undefined;
   if (authorScore !== undefined && authorScore < o.minAuthorScore) return undefined;
   return { media, titleScore, authorScore, isbnMatch };
@@ -161,6 +175,15 @@ export function normalizeName(s: string, includeInitials = false): string {
 
 function fold(s: string): string {
   return s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/&/g, " and ");
+}
+
+export function containsKeywords(value: string, query: string): boolean {
+  const normalize = (s: string) =>
+    fold(s)
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim();
+  const keywords = normalize(query);
+  return Boolean(keywords && normalize(value).includes(keywords));
 }
 
 /** Sørensen–Dice coefficient over character bigrams. 1 = identical. */

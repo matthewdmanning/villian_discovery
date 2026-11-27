@@ -127,7 +127,7 @@ function fakeMedia(book: BookRequest, card: LibbyCard, type: string): ThunderMed
   const available = r > 0.55 ? Math.ceil((r - 0.55) * 4) : 0;
   return {
     id: book.titleId ?? String(5_000_000 + Math.floor(r * 999_999)),
-    title: book.title ?? (book.isbn ? `ISBN ${book.isbn}` : `Title ${book.titleId}`),
+    title: book.title ?? (book.isbn ? `ISBN ${book.isbn}` : book.titleId ? `Title ${book.titleId}` : "Demo title"),
     firstCreatorName: book.author ?? "Unknown",
     type: { id: type },
     isAvailable: available > 0,
@@ -237,7 +237,8 @@ function demoFetch(config: Config, books: BookRequest[]): typeof fetch {
       const book = books.find(
         (candidate) =>
           (identifier !== null && candidate.isbn === identifier) ||
-          (!!candidate.title && query === [candidate.title, candidate.author].filter(Boolean).join(" ")),
+          ((candidate.title || candidate.matchMode === "keywords") &&
+            query === [candidate.title, candidate.author].filter(Boolean).join(" ")),
       );
       if (!card || !book) return Response.json({ items: [] });
       const mediaTypes = (url.searchParams.get("mediaTypes")?.split(",").filter(Boolean) ?? config.mediaTypes).filter(

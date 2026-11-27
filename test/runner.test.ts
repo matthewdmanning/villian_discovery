@@ -143,6 +143,38 @@ describe("Runner", () => {
     expect(qs[1]!.get("query")).toBe("Dune");
   });
 
+  it("finds catalog entries using plain keywords and optional title or author fields", async () => {
+    const { runner, calls } = setup([
+      {
+        match: /thunder/,
+        respond: () => ({
+          body: {
+            items: [
+              media({ id: "111", creators: projectAuthors }),
+              media({ id: "222", title: "Artemis", creators: projectAuthors }),
+              media({
+                id: "333",
+                title: "Andy Weir: A Biography",
+                firstCreatorName: "Somebody Else",
+                creators: [{ name: "Andy Weir", role: "Narrator" }],
+              }),
+            ],
+          },
+        }),
+      },
+    ]);
+
+    const searchIds = async (book: Parameters<Runner["searchMatches"]>[0]) =>
+      (await runner.searchMatches(book, [card()])).map(({ media }) => media.id);
+    expect(await searchIds({ raw: "Hail", title: "Hail", matchMode: "text" })).toEqual(["111"]);
+    expect(await searchIds({ raw: "Weir", title: "Weir", matchMode: "text" })).toEqual(["333", "111", "222"]);
+    expect(
+      await searchIds({ raw: "title:Hail author:Weir", title: "Hail", author: "Weir", matchMode: "keywords" }),
+    ).toEqual(["111"]);
+    expect(await searchIds({ raw: "author:Weir", author: "Weir", matchMode: "keywords" })).toEqual(["111", "222"]);
+    expect(calls.map(({ url }) => url.searchParams.get("query"))).toEqual(["Hail", "Weir", "Hail Weir", "Weir"]);
+  });
+
   it.each([false, true])(
     "previews other editions at every selected library (audiobook only: %s)",
     async (audioOnly) => {

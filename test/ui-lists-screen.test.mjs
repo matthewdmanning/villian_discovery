@@ -4,7 +4,7 @@ import { act, createElement } from "../ui/node_modules/react/index.js";
 import { createRoot } from "../ui/node_modules/react-dom/client.js";
 import { demoApi } from "../ui/src/lib/api.ts";
 import { StoreProvider } from "../ui/src/lib/store.tsx";
-import { TagsScreen } from "../ui/src/screens/Tags.tsx";
+import { SearchScreen } from "../ui/src/screens/Search.tsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -37,8 +37,16 @@ const group = (name) =>
   [...container.querySelectorAll("fieldset")].find(
     (fieldset) => fieldset.querySelector("legend")?.textContent === name,
   );
-const checkbox = (fieldset, label) =>
-  [...fieldset.querySelectorAll("label")].find((el) => el.textContent === label).querySelector("input");
+const tagTrigger = (fieldset) => fieldset.querySelector('button[aria-haspopup="dialog"]');
+const tagChoice = (label) =>
+  [...container.querySelectorAll("dialog[open] button")].find((el) => el.textContent.trim() === label);
+const pickTag = async (legend, label, section = group(legend)) => {
+  await click(tagTrigger(section));
+  await click(tagChoice(label));
+  await click(tagChoice("Done"));
+};
+const removeTag = (legend, label, section = group(legend)) =>
+  click(section.querySelector(`button[aria-label="Remove ${label}"]`));
 const button = (label) => container.querySelector(`button[aria-label="${label}"]`);
 const buttonText = (label) => [...container.querySelectorAll("button")].find((el) => el.textContent.trim() === label);
 
@@ -50,7 +58,7 @@ async function mount(api = {}) {
     ...api,
   };
   await act(async () => {
-    root.render(createElement(StoreProvider, { api: fake }, createElement(TagsScreen)));
+    root.render(createElement(StoreProvider, { api: fake }, createElement(SearchScreen)));
   });
   await flush();
   return fake;
@@ -81,14 +89,40 @@ describe("Lists screen", () => {
 
   it("filters to titles with every included tag and drops excluded ones", async () => {
     await mount();
-    await click(checkbox(group("Includes"), "Favorites"));
+    await pickTag("Includes", "Favorites");
     expect(titles()).toEqual(["Alpha", "Zulu"]);
-    await click(checkbox(group("Includes"), "To read"));
+    await pickTag("Includes", "To read");
     expect(titles()).toEqual(["Zulu"]);
-    await click(checkbox(group("Exclude"), "To read"));
-    expect(text()).toContain("No items found.");
-    await click(checkbox(group("Includes"), "To read"));
+    await removeTag("Includes", "To read");
+    await pickTag("Exclude", "To read");
     expect(titles()).toEqual(["Alpha"]);
+  });
+
+  it("excludes titles with any of the selected exclude tags", async () => {
+    await mount();
+    await pickTag("Exclude", "Favorites");
+    await pickTag("Exclude", "Audio");
+    expect(titles()).toEqual(["Gamma"]);
+  });
+
+  it("removes selected tags and keeps picker choices disjoint across Include/Exclude", async () => {
+    await mount();
+    await pickTag("Includes", "Favorites");
+    await pickTag("Exclude", "To read");
+    expect(group("Includes").textContent).toContain("Favorites");
+    expect(group("Exclude").textContent).toContain("To read");
+
+    await click(tagTrigger(group("Includes")));
+    expect(tagChoice("Favorites")).toBeUndefined();
+    expect(tagChoice("To read")).toBeUndefined();
+    await click(container.querySelector('dialog button[aria-label="Close tag picker"]'));
+
+    await removeTag("Includes", "Favorites");
+    expect(group("Includes").textContent).not.toContain("Favorites");
+    await click(tagTrigger(group("Exclude")));
+    expect(tagChoice("To read")).toBeUndefined();
+    expect(tagChoice("Favorites")).not.toBeUndefined();
+    await click(container.querySelector('dialog button[aria-label="Close tag picker"]'));
   });
 
   it("shows the load error, then recovers when Refresh succeeds", async () => {
@@ -185,10 +219,10 @@ describe("Lists screen with saved searches", () => {
 
   it("unions saved searches and ignores an empty unsaved one", async () => {
     await mount();
-    await click(checkbox(group("Includes"), "Favorites"));
+    await pickTag("Includes", "Favorites");
     await addQuery();
     expect(titles()).toEqual(["Alpha", "Zulu"]);
-    await click(checkbox(group("Includes"), "Audio"));
+    await pickTag("Includes", "Audio");
     expect(titles()).toEqual(["Alpha", "Beta", "Zulu"]);
     await addQuery();
     expect(container.querySelectorAll('button[aria-label="Edit query"]')).toHaveLength(2);
@@ -197,30 +231,33 @@ describe("Lists screen with saved searches", () => {
 
   it("rejects an identical saved search, in any tag order, until it changes", async () => {
     await mount();
-    await click(checkbox(group("Includes"), "Favorites"));
-    await click(checkbox(group("Includes"), "To read"));
+    await pickTag("Includes", "Favorites");
+    await pickTag("Includes", "To read");
     await addQuery();
-    await click(checkbox(group("Includes"), "To read"));
-    await click(checkbox(group("Includes"), "Favorites"));
+    await pickTag("Includes", "To read");
+    await pickTag("Includes", "Favorites");
     await addQuery();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Identical to an existing search");
     expect(container.querySelectorAll('button[aria-label="Edit query"]')).toHaveLength(1);
-    await click(checkbox(group("Includes"), "Audio"));
+    await pickTag("Includes", "Audio");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
   it("edits a saved search, refuses to make it a duplicate, and cancels cleanly", async () => {
     await mount();
-    await click(checkbox(group("Includes"), "Favorites"));
+    await pickTag("Includes", "Favorites");
     await addQuery();
-    await click(checkbox(group("Includes"), "Audio"));
+    await pickTag("Includes", "Audio");
     await addQuery();
     expect(titles()).toEqual(["Alpha", "Beta", "Zulu"]);
 
     await click(container.querySelectorAll('button[aria-label="Edit query"]')[1]);
     const editing = [...container.querySelectorAll("fieldset")].filter((fieldset) => fieldset.querySelector("legend"));
-    await click(checkbox(editing[2], "Favorites"));
-    await click(checkbox(editing[2], "Audio"));
+    const editingIncludes = editing
+      .filter((fieldset) => fieldset.querySelector("legend")?.textContent === "Includes")
+      .at(-1);
+    await removeTag("Includes", "Audio", editingIncludes);
+    await pickTag("Includes", "Favorites", editingIncludes);
     await click(button("Save query"));
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Identical to an existing search");
     await click(button("Cancel editing query"));
@@ -230,9 +267,9 @@ describe("Lists screen with saved searches", () => {
 
   it("removes a saved search and updates the results", async () => {
     await mount();
-    await click(checkbox(group("Includes"), "Audio"));
+    await pickTag("Includes", "Audio");
     await addQuery();
-    await click(checkbox(group("Includes"), "Favorites"));
+    await pickTag("Includes", "Favorites");
     await addQuery();
     await click(container.querySelectorAll('button[aria-label="Remove query"]')[0]);
     expect(titles()).toEqual(["Alpha", "Zulu"]);
@@ -252,12 +289,12 @@ describe("Lists screen with Boolean groups", () => {
   it("matches titles in any OR group and requires every tag within a group", async () => {
     await mount();
     const includes = group("Includes");
-    await click(checkbox(includes, "Favorites"));
-    await click(checkbox(includes, "To read"));
+    await pickTag("Includes", "Favorites", includes);
+    await pickTag("Includes", "To read", includes);
     expect(titles()).toEqual(["Zulu"]);
     await click([...includes.querySelectorAll("button")].find((el) => el.textContent === "Add OR group"));
-    const second = group("Includes").querySelectorAll("div")[1];
-    await click(checkbox(second, "Audio"));
+    const second = group("Includes").querySelectorAll(":scope > div")[1];
+    await pickTag("Includes", "Audio", second);
     expect(titles()).toEqual(["Beta", "Zulu"]);
     await click([...group("Includes").querySelectorAll("button")].find((el) => el.textContent === "Remove group"));
     // The first group (Favorites AND To read) is gone; only the Audio group remains.
@@ -284,5 +321,62 @@ describe("Lists screen persistence", () => {
     expect(titles()).toHaveLength(4);
     get.mockRestore();
     set.mockRestore();
+  });
+});
+
+describe("Unified search", () => {
+  const match = (title, author = "Author") => ({
+    card: { cardId: "1", advantageKey: "first", library: { name: "First" } },
+    titleScore: 1,
+    media: { id: title, title, author, type: { id: "ebook", name: "Ebook" }, isAvailable: true },
+  });
+  const submit = async (value) => {
+    const input = container.querySelector('input[aria-label="Search books"]');
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+      setter.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await click(buttonText("Search"));
+    await flush();
+  };
+
+  it("passes plain text and author fields through catalog search", async () => {
+    const search = vi.fn(async () => [match("Project Hail Mary", "Andy Weir")]);
+    const api = await mount({ search });
+    await submit("Project Hail Mary");
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({ raw: "Project Hail Mary", title: "Project Hail Mary", matchMode: "text" }),
+      expect.anything(),
+    );
+    await submit("author:Andy Weir");
+    expect(search).toHaveBeenLastCalledWith(
+      { raw: "author:Andy Weir", author: "Andy Weir", matchMode: "keywords" },
+      expect.anything(),
+    );
+    expect(api.search).toHaveBeenCalledTimes(2);
+    expect(text()).toContain("Project Hail Mary");
+  });
+
+  it("narrows tagged results by text and searches the catalog when the filter is removed", async () => {
+    const search = vi.fn(async () => [match("Zulu, the biography")]);
+    await mount({ search });
+    await pickTag("Includes", "Favorites");
+    await submit("adams");
+    expect(titles()).toEqual(["Zulu"]);
+    expect(search).not.toHaveBeenCalled();
+    await removeTag("Includes", "Favorites");
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(titles()).toEqual(["Zulu, the biography"]);
+  });
+
+  it("uses catalog title IDs to apply an ISBN query to a tagged list", async () => {
+    const search = vi.fn(async () => [{ ...match("Zulu"), media: { ...match("Zulu").media, id: "1" } }]);
+    await mount({ search });
+    await pickTag("Includes", "Favorites");
+    await submit("9780593135204");
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ isbn: "9780593135204" }), expect.anything());
+    expect(titles()).toEqual(["Zulu"]);
   });
 });

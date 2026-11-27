@@ -272,8 +272,8 @@ export class Runner {
       const perPage = this.cfg.matching.perPage;
       if (book.isbn) items = await thunder.searchLibrary(libraryKey, { identifier: book.isbn, mediaTypes, perPage });
       const accepted = bestMatch(book, items, { ...this.cfg.matching, mediaTypes: this.cfg.mediaTypes });
-      if (!accepted && book.title) {
-        const query = [book.title, book.author].filter(Boolean).join(" ");
+      const query = [book.title, book.author].filter(Boolean).join(" ");
+      if (!accepted && query && (book.title || book.matchMode === "keywords")) {
         items = await thunder.searchLibrary(libraryKey, { query, mediaTypes, perPage });
       }
     }

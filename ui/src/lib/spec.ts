@@ -1,17 +1,7 @@
 import raw from "../../../docs/wireframes/libby-ui.wireframe.json";
 
 /** Typed view of docs/wireframes/libby-ui.wireframe.json. The UI follows its options and screen list. */
-export type ScreenId =
-  | "connect"
-  | "cards"
-  | "books"
-  | "shelf"
-  | "tags"
-  | "settings"
-  | "search"
-  | "results"
-  | "sync"
-  | "player";
+export type ScreenId = "connect" | "cards" | "books" | "shelf" | "settings" | "search" | "results" | "sync" | "player";
 
 export interface SpecComponent {
   type: string;
