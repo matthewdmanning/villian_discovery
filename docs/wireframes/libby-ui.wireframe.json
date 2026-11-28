@@ -10,6 +10,52 @@
   },
   "screens": [
     {
+      "id": "sync",
+      "title": "Sync",
+      "cli": "",
+      "enabled": true,
+      "regions": [
+        {
+          "id": "rules",
+          "components": [
+            {
+              "type": "rule",
+              "label": "Libby determines reading progress, checked-out status, and finished books."
+            },
+            {
+              "type": "rule",
+              "label": "For other fields, the most recent edit wins. Missing or tied timestamps need review."
+            },
+            {
+              "type": "button",
+              "label": "Sync",
+              "action": "sync-preview",
+              "primary": true
+            },
+            { "type": "button", "label": "Apply selected changes", "action": "sync-apply", "confirm": true },
+            {
+              "type": "rule",
+              "label": "Finished wins. Otherwise Currently Reading requires a checked-out Libby book with progress above zero."
+            },
+            {
+              "type": "rule",
+              "label": "Removals default to off. Every removal needs explicit review."
+            }
+          ]
+        },
+        {
+          "id": "comparison",
+          "components": [
+            {
+              "type": "table",
+              "label": "Library",
+              "columns": ["book", "field", "libby", "fable", "value", "source"]
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "connect",
       "title": "Connect Libby",
       "cli": "login",
@@ -267,52 +313,6 @@
           "components": [
             { "type": "button", "label": "Run for real", "action": "run", "primary": true, "confirm": true },
             { "type": "button", "label": "Export report", "action": "export", "binds": "output.reportFile" }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "sync",
-      "title": "Sync libraries",
-      "cli": "",
-      "enabled": true,
-      "regions": [
-        {
-          "id": "rules",
-          "components": [
-            {
-              "type": "rule",
-              "label": "Libby determines reading progress, checked-out status, and finished books."
-            },
-            {
-              "type": "rule",
-              "label": "For other fields, the most recent edit wins. Missing or tied timestamps need review."
-            },
-            {
-              "type": "button",
-              "label": "Preview changes",
-              "action": "sync-preview",
-              "primary": true
-            },
-            { "type": "button", "label": "Apply selected changes", "action": "sync-apply", "confirm": true },
-            {
-              "type": "rule",
-              "label": "Finished wins. Otherwise Currently Reading requires a checked-out Libby book with progress above zero."
-            },
-            {
-              "type": "rule",
-              "label": "Removals default to off. Every removal needs explicit review."
-            }
-          ]
-        },
-        {
-          "id": "comparison",
-          "components": [
-            {
-              "type": "table",
-              "label": "Library",
-              "columns": ["book", "field", "libby", "fable", "value", "source"]
-            }
           ]
         }
       ]

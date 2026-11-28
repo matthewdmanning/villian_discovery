@@ -54,6 +54,7 @@ export const liveApi: LibraryApi = {
   shelf: () => call("GET", "shelf"),
   tags: () => call("GET", "tags"),
   lists: () => call("GET", "lists"),
+  pastCheckouts: () => call("GET", "past-checkouts"),
   listAvailability: (titleId) => call("POST", "lists/availability", { titleId }),
   lookupIsbn: (isbn) => call("POST", "isbn", { isbn }),
   search: (book, config) => call("POST", "search", { book, config }),

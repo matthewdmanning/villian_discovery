@@ -23,7 +23,7 @@ import { createClients } from "./index.js";
 import type { BookRequest } from "./input.js";
 import { LibbyClient } from "./libby-client.js";
 import { createCardCache, listLibraryAvailability } from "./libby-list-availability.js";
-import { readLists } from "./libby-lists.js";
+import { readLists, readPastCheckouts } from "./libby-lists.js";
 import { listShelf } from "./libby-shelf.js";
 import { createLogger } from "./logger.js";
 import { createQueryCooldown, withCooldown } from "./query-cooldown.js";
@@ -189,6 +189,7 @@ const apiRoutes: Record<string, Handler> = {
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
   "GET /api/shelf": async () => listShelf(await libby(), publicCatalog, logger),
   "GET /api/lists": async () => readLists(await libby()),
+  "GET /api/past-checkouts": async () => readPastCheckouts(await libby()),
   "POST /api/lists/availability": async (input) => listAvailability((input as { titleId: string })?.titleId),
   "GET /api/tags": async () => (await libby()).tags(),
   "POST /api/isbn": async (input) => {
@@ -224,6 +225,7 @@ const routes = withCooldown(
       "GET /api/cards",
       "GET /api/shelf",
       "GET /api/lists",
+      "GET /api/past-checkouts",
       "POST /api/lists/availability",
       "GET /api/tags",
       "POST /api/isbn",

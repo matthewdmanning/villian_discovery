@@ -206,21 +206,25 @@ try {
   await page.getByRole("button", { name: "Refresh cards", exact: true }).waitFor();
   assert.deepEqual(errors, [], "browser errors or duplicate React keys");
 
-  await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
+  const syncButton = () => page.locator("main").getByRole("button", { name: "Sync", exact: true });
+  await nav.getByRole("button", { name: "Sync", exact: true }).click();
   // The comparison runs on its own when Sync opens.
   await page.getByRole("status").filter({ hasText: "Last compared" }).waitFor();
-  // Right after a preview, Preview changes can run again: repeated reads are throttled where they are made.
-  const previewAgain = page.getByRole("button", { name: "Preview changes", exact: true });
+  // Right after a preview, Sync can run again: repeated reads are throttled where they are made.
+  const previewAgain = syncButton();
   assert.equal(await previewAgain.isDisabled(), false);
-  assert.equal(await previewAgain.textContent(), "Preview changes");
+  assert.equal(await previewAgain.textContent(), "Sync");
   assert.equal(await previewAgain.getAttribute("title"), null);
   const openTab = (name) => page.getByRole("tab", { name, exact: true }).click();
-  const bookItem = (book) => page.locator("main li").filter({ has: page.locator("span.truncate", { hasText: book }) });
+  const bookItem = (book) =>
+    page
+      .locator('main section:not([aria-label="Past checkouts"]) li')
+      .filter({ has: page.locator("span.truncate", { hasText: book }) });
   const squash = (text) => text.replace(/\s+/g, " ").trim();
   const bookLine = async (book) => {
     const summary = bookItem(book).locator("summary");
     return squash(await ((await summary.count()) ? summary : bookItem(book)).textContent()).replace(
-      /Needs sync\s*/g,
+      /\s*\(needs sync\)/g,
       "",
     );
   };
@@ -242,8 +246,18 @@ try {
   assert.equal(await page.locator("svg.lucide-triangle-alert").count(), 0);
   assert.match(await bookLine("Dune"), /^Dune ?100%.*Finished$/);
   await openTab("Shelf");
-  assert.match(await bookLine("Dune"), /^Dune ?100% \(\+80%\).*Finished$/);
-  assert.equal(await bookItem("Dune").locator("summary").count(), 0);
+  assert.match(
+    await bookLine("Dune"),
+    /^Dune ?Frank Herbert · Narrated by Scott Brick · 9 days left ?100% ?\+80%.*Finished$/,
+  );
+  // Dune's pulldown holds only its review box: progress stays on the line.
+  await bookItem("Dune").locator("summary").click();
+  assert.equal(await bookItem("Dune").getByRole("textbox", { name: "Review of Dune", exact: true }).count(), 1);
+  assert.doesNotMatch(squash(await bookItem("Dune").locator("details > ul").textContent()), /progress/i);
+  await bookItem("Dune").locator("summary").click();
+  const pastCheckouts = page.getByRole("region", { name: "Past checkouts" });
+  await pastCheckouts.getByText("Kindred", { exact: true }).waitFor();
+  assert.match(squash(await pastCheckouts.textContent()), /Piranesi.*In Progress.*Kindred.*Not in Fable/);
   assert.equal(await page.locator("svg.lucide-triangle-alert").count(), 0);
   const duneNotes = page.getByRole("checkbox", { name: "Apply notes to Libby for Dune", exact: true });
   assert.equal(await duneNotes.count(), 0);
@@ -254,23 +268,23 @@ try {
   assert.equal(await page.getByLabel("Allow decrease in progress", { exact: true }).isChecked(), false);
   await showAll.selectOption("yes");
   await openTab("Shelf");
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await syncButton().click();
   await bookItem("Dune").locator("summary").click();
   await duneNotes.waitFor();
   await openTab("Settings");
   await showAll.selectOption("no");
   await openTab("Shelf");
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await syncButton().click();
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await syncButton().click();
   assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), true);
   await openTab("Library");
   assert.match(await bookLine("Piranesi"), /^Piranesi ?65%/);
   await openTab("Settings");
   await page.getByLabel("Removals", { exact: true }).selectOption("fields-memberships");
   await openTab("Shelf");
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await syncButton().click();
   await openTab("Library");
   await page.getByRole("button", { name: "Use Libby shelves for Piranesi", exact: true }).click();
   await openTab("Shelf");
@@ -281,7 +295,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), false);
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await syncButton().click();
   await openTab("Library");
   await bookItem("Piranesi").waitFor();
   assert.match(squash(await bookItem("Piranesi").textContent()), /shelves: ?Favorites/);
@@ -293,23 +307,23 @@ try {
   await page.getByRole("button", { name: "Reset to defaults", exact: true }).click();
   assert.equal(await page.getByLabel("Removals", { exact: true }).inputValue(), "none");
   await openTab("Shelf");
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await syncButton().click();
   const comparisonStatus = await page.getByRole("status").filter({ hasText: "Last compared" }).textContent();
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
-  await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
+  await nav.getByRole("button", { name: "Sync", exact: true }).click();
   assert.equal(await page.getByRole("status").filter({ hasText: "Last compared" }).textContent(), comparisonStatus);
   await page.evaluate(() => {
     window.testDemoApi.previewSync = async () => {
       throw new Error("Injected sync failure");
     };
   });
-  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
+  await syncButton().click();
   await page.getByRole("alert").filter({ hasText: "Injected sync failure" }).waitFor();
   assert.equal(await page.getByRole("status").filter({ hasText: "Last compared" }).textContent(), comparisonStatus);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('nav[aria-label="Screens"]').last().getByRole("button", { name: "Books", exact: true }).click();
   await page.locator('nav[aria-label="Screens"]').last().getByRole("button", { name: "Sync", exact: true }).click();
-  await page.getByRole("heading", { name: "Sync libraries", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Sync", exact: true }).waitFor({ state: "attached" });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 
   // Phone audiobook bookmarks: full-screen sheet, draft until Save, back asks before discarding.

@@ -79,7 +79,7 @@ export function useSync() {
     }
   }
 
-  // Compare automatically when Sync opens and after each settings change; a failure waits for "Preview changes".
+  // Compare automatically when Sync opens and after each settings change; a failure waits for "Sync".
   // biome-ignore lint/correctness/useExhaustiveDependencies: sync reads current state; rerun only when these change.
   useEffect(() => {
     if (saved && !syncResult && !busy && !error) void sync();

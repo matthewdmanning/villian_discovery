@@ -17,12 +17,15 @@ export function Screen({
   children,
   nested = false,
   compactLayout = false,
+  hideTitle = false,
 }: {
   id: ScreenId;
   actions?: ReactNode;
   children: ReactNode;
   nested?: boolean;
   compactLayout?: boolean;
+  /** Keep the title for screen readers only, when the navigation already names the screen. */
+  hideTitle?: boolean;
 }) {
   const s = screen(id);
   const Title = nested ? "h2" : "h1";
@@ -31,7 +34,7 @@ export function Screen({
       aria-labelledby={`${id}-title`}
       className={`mx-auto w-full max-w-5xl ${compactLayout ? "space-y-2 text-sm" : compact ? "space-y-4" : "space-y-6"}`}
     >
-      <header className={compactLayout ? "sr-only" : "flex flex-wrap items-center justify-between gap-3"}>
+      <header className={compactLayout || hideTitle ? "sr-only" : "flex flex-wrap items-center justify-between gap-3"}>
         <Title id={`${id}-title`} className="text-2xl font-semibold sm:text-3xl">
           {s?.title}
         </Title>

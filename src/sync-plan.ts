@@ -457,10 +457,15 @@ function snapshotKey(snapshots: Record<SyncProvider, BookSnapshot[]>): string {
   return stable({
     // Display data and catalog-filled ISBNs come from best-effort lookups that can fail on one read and not
     // the next. A loan's edition is fixed by its title ID, so they never signal a change in the library.
+    // Loan end dates (a renewal moves them) and page links are display data too.
     libby: snapshots.libby
-      .map(({ loanUrl: _loanUrl, narrators: _narrators, isbn: _isbn, ...book }) => withoutEditionLink(book))
+      .map(({ loanUrl: _loanUrl, narrators: _narrators, isbn: _isbn, expiresAt: _expiresAt, ...book }) =>
+        withoutEditionLink(book),
+      )
       .sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
-    fable: snapshots.fable.map(withoutEditionLink).sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
+    fable: snapshots.fable
+      .map(({ pageUrl: _pageUrl, ...book }) => withoutEditionLink(book))
+      .sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
   });
 }
 

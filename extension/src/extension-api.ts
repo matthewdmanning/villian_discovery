@@ -3,7 +3,7 @@ import type { Config } from "../../src/config.ts";
 import type { BookRequest } from "../../src/input.ts";
 import type { CatalogReader } from "../../src/libby-audiobooks.ts";
 import { listLibraryAvailability } from "../../src/libby-list-availability.ts";
-import { readLists } from "../../src/libby-lists.ts";
+import { readLists, readPastCheckouts } from "../../src/libby-lists.ts";
 import { listShelf } from "../../src/libby-shelf.ts";
 import type { LibbyTag } from "../../src/libby-tags-cache.ts";
 import {
@@ -181,6 +181,11 @@ export const extensionApi: LibraryApi = {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");
     return readLists(client);
+  }),
+  pastCheckouts: cachedRead(reads, "pastCheckouts", async () => {
+    const client = await libbyClient();
+    if (!client) throw new Error(libbyProblem() || "Connect Libby first");
+    return readPastCheckouts(client);
   }),
   demo: false,
   status: async () => ({ connected: (await connections()).libby }),

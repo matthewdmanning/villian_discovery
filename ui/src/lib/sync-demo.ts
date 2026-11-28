@@ -39,7 +39,13 @@ function demoAdapter(provider: "libby" | "fable"): SyncAdapter {
     writableFields,
     async read(owner) {
       if (journalKey(owner, "") !== journalKey(context, "")) throw new Error("Demo account changed");
-      return structuredClone(snapshots[provider]);
+      const books = structuredClone(snapshots[provider]);
+      // Demo loans always have nine days left.
+      if (provider === "libby")
+        for (const book of books)
+          if (book.fields.checkedOut?.value === true)
+            book.expiresAt = new Date(Date.now() + 9 * 86_400_000).toISOString();
+      return books;
     },
     async write(owner, operation, assertCurrent) {
       await assertCurrent();

@@ -4,11 +4,20 @@ Sync follows **Preview → Review conflicts → Apply**. The browser demo uses s
 
 The web app and Chrome extension share sync preview, apply, and settings coordination. Each keeps its own sign-in and settings storage; saving settings invalidates previous previews.
 
-The first Sync tab, **Shelf**, shows current Libby checkouts. **Needs sync** marks a book with pending changes or a match to review. **Pending sync** appears below the checkouts and above the preview and apply buttons. In Chrome it also shows loans that the extension previously saw with pending sync and that have since left the Shelf. These saved records are reminders, and the extension only offers writes supported by the current provider data.
+**Sync** is the first screen in the navigation. Its first tab, **Shelf**, shows current Libby checkouts:
+
+- A yellow background marks a book with unsynced changes or a match to review; synced books are muted. After a successful sync, the highlight and the progress change (shown beside the progress bar) clear.
+- Under each title: author, narrators, and days left on the loan when Libby gives its end date.
+- **Open in Libby** and **Open in Fable** (when Fable gives the book's page) sit below the line.
+- The pulldown holds the book's other changes and a **Review** box: one row that grows as you type. **Post to Fable** opens the book's Fable page and pastes the review into Fable's review box (Chrome extension); elsewhere it copies the review and opens the page. Nothing is posted until you post it on Fable. Progress never repeats in the pulldown.
+- **Past checkouts** sits right below the checkouts: Libby's loan history has no endpoint this tool uses, so Libby's automatic **Borrowed** tag stands in. Each title shows its Fable state (matched by title and author) and, when in Fable, a link. It scrolls after three rows. Without that tag, it says how to turn tagging on.
+- **Pending sync** comes last. In Chrome it shows loans that the extension previously saw with pending sync and that have since left the Shelf. These saved records are reminders, and the extension only offers writes supported by the current provider data.
+
+The **Sync** button compares both apps again; **Apply selected changes** applies the chosen ones. Loan end dates and Fable page links are display data: a change in them never makes a preview stale.
 
 `SyncScreen` renders the shared Shelf and review controls; `useSync` coordinates settings, preview, approvals, apply, and errors over `LibraryApi`. The store retains the comparison across screen navigation. Preview requests include the current Rules title-match threshold. Preview and apply summaries stay in the shared `sync-state` helper. The extension uses the shared Lists screen and supplies its own Open in Libby action. Its compact connection controls show probe failures explicitly; an observed account change reloads cards immediately, even during the refresh cooldown.
 
-Refresh and Preview controls keep their normal labels while temporarily disabled. Cooldown timers, tooltips, and countdown announcements are not displayed; request throttling still applies in the app and extension.
+Refresh and Sync controls keep their normal labels while temporarily disabled. Cooldown timers, tooltips, and countdown announcements are not displayed; request throttling still applies in the app and extension.
 
 ## User settings and fallback file
 

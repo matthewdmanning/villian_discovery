@@ -19,6 +19,7 @@ import type { MediaFormat, ShelfItem, SyncResponse, ThunderMedia } from "./types
 export interface FableEntry {
   book?: FableBook & {
     id?: string;
+    url?: unknown;
     reading_progress?: { current_percentage?: number | null } | null;
     user_rating?: unknown;
   };
@@ -108,6 +109,23 @@ function loanIsbn(item: ShelfItem | ThunderMedia, format = bookFormat(item.type)
   return undefined;
 }
 
+/** Use this function to read a loan's `expireDate` as an ISO time; anything unparseable stays unknown. */
+function loanExpiry(loan: ShelfItem): string | undefined {
+  const time = typeof loan.expireDate === "string" ? Date.parse(loan.expireDate) : Number.NaN;
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+}
+
+/** Use this function to keep a fable.co book page link; any other URL is dropped. */
+function fablePageUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "fable.co" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Use this function to convert Libby's account state into snapshots: every current loan is a checked-out book. `progress` maps a loan ID to its percent read; a loan without an entry has unknown progress. */
 export function libbySnapshots(state: SyncResponse, progress: ReadonlyMap<string, number> = new Map()): BookSnapshot[] {
   const books = new Map<string, BookSnapshot>();
@@ -116,8 +134,11 @@ export function libbySnapshots(state: SyncResponse, progress: ReadonlyMap<string
     const author = typeof loan.firstCreatorName === "string" ? loan.firstCreatorName : undefined;
     const format = bookFormat(loan.type);
     const isbn = loanIsbn(loan);
+    const expiresAt = loanExpiry(loan);
     const known = books.get(loan.id);
     if (known) {
+      // The latest end date wins: the book stays readable until its last loan ends.
+      if (expiresAt && (!known.expiresAt || expiresAt > known.expiresAt)) known.expiresAt = expiresAt;
       // The same title on another card is the same book: fill gaps, never add a second snapshot.
       if (!known.author && author) known.author = author;
       if (!known.isbn && isbn) known.isbn = isbn;
@@ -135,6 +156,7 @@ export function libbySnapshots(state: SyncResponse, progress: ReadonlyMap<string
       ...(format ? { format } : {}),
       providerId: loan.id,
       ...(state.cards?.some((card) => card.cardId === loan.cardId) ? { loanUrl: loanUrl(loan.cardId, loan.id) } : {}),
+      ...(expiresAt ? { expiresAt } : {}),
       fields: { checkedOut: { value: true }, ...present({ readingProgress: field(percent) }) },
     });
   }
@@ -164,6 +186,7 @@ export function fableSnapshots(lists: { list: FableList; entries: FableEntry[] }
       const author = book.authors?.[0]?.name?.trim();
       const isbn = book.isbn?.trim() || book.display_isbn?.trim();
       const format = fableBookFormat(book);
+      const pageUrl = fablePageUrl(book.url);
       books.set(id, {
         shelves: [list.name],
         snapshot: {
@@ -173,6 +196,7 @@ export function fableSnapshots(lists: { list: FableList; entries: FableEntry[] }
           ...(isbn ? { isbn } : {}),
           ...(format ? { format } : {}),
           providerId: id,
+          ...(pageUrl ? { pageUrl } : {}),
           fields: present({
             readingProgress: field(progress?.current_percentage ?? undefined),
             readingStatus: field(status),

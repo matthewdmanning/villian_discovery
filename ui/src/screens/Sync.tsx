@@ -1,20 +1,34 @@
 import { Check, CircleCheck, CircleX, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { isbn13 } from "../../../src/matcher.ts";
 import type { SyncField, SyncProvider } from "../../../src/sync.ts";
 import { SYNC_FALLBACKS } from "../../../src/sync-config.ts";
 import { syncDecisionKey } from "../../../src/sync-plan.ts";
+import { PastCheckouts } from "../components/PastCheckouts.tsx";
 import { BookLine, BookSections, ProgressValue, ReadingStatus, Stars } from "../components/SyncBook.tsx";
 import { APP_NAMES, AppValue, SyncChange } from "../components/SyncChange.tsx";
+import { copyAndOpen, FableReview, type PostReview } from "../components/SyncReview.tsx";
 import { SyncSettingsPanel } from "../components/SyncSettings.tsx";
 import { Empty, Panel, RefreshButton, Screen } from "../components/ui.tsx";
-import { type BookSummary, hasValue, LINE_FIELDS, summarizeBooks } from "../lib/sync-books.ts";
+import { labelForAction } from "../lib/spec.ts";
+import { type BookSummary, hasValue, LINE_FIELDS, summarizeBooks, toStatusKey } from "../lib/sync-books.ts";
 import { displaySyncValue as displayValue, SYNC_FIELD_LABELS as labels } from "../lib/sync-format.ts";
+import { useResource } from "../lib/use-resource.ts";
 import { useSync } from "../lib/use-sync.ts";
 
 const TABS = ["Shelf", "Library", "Settings"] as const;
+const DAY_MS = 86_400_000;
 
+export { toStatusKey } from "../lib/sync-books.ts";
 export { summarizeSyncResult } from "../lib/sync-state.ts";
+
+/** Use this function to say how long a loan ending at `expiresAt` has left, counting whole days from `now`. */
+export function loanTimeLeft(expiresAt: string | undefined, now = Date.now()): string | undefined {
+  const end = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  if (!Number.isFinite(end)) return undefined;
+  const days = Math.ceil((end - now) / DAY_MS);
+  return days <= 0 ? "Due today" : days === 1 ? "1 day left" : `${days} days left`;
+}
 /** Use this function to extract an ISBN from a book snapshot or its provider identifier. Inputs: `book` — snapshot identifiers. Dependencies: None. */
 export function extractIsbn(book: {
   isbn?: string | undefined;
@@ -41,21 +55,15 @@ export function hasExactIsbnMatch(
   return Boolean(bookIsbn && candidates.some((candidate) => normalizeIsbn(extractIsbn(candidate)) === bookIsbn));
 }
 
-/** Use this function to map provider reading status values to the shelf display status. Inputs: `value` — provider status. Dependencies: None. */
-export function toStatusKey(value: unknown): "unopened" | "progress" | "dnf" | "finished" | undefined {
-  if (value === "finished") return "finished";
-  if (value === "currently-reading") return "progress";
-  if (value === "dnf" || value === "did-not-finish") return "dnf";
-  if (value === "unopened") return "unopened";
-  return undefined;
-}
-
 /** Use this screen to compare Libby and Fable through the store's API and retain the last successful reconciliation in the store. */
 export function SyncScreen({
   openLoan,
+  postReview = copyAndOpen,
   compactLayout = false,
 }: {
   openLoan?: (url: string) => Promise<void>;
+  /** Take a review to the book's Fable page; outside the extension it is copied and the page opens. */
+  postReview?: PostReview;
   compactLayout?: boolean;
 } = {}) {
   const {
@@ -80,6 +88,12 @@ export function SyncScreen({
     setError,
   } = useSync();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Shelf");
+  const libbyConnected = Boolean(syncResult?.plan.schemas.libby.length);
+  const loadPastCheckouts = useCallback(
+    () => (libbyConnected ? api.pastCheckouts() : Promise.resolve(undefined)),
+    [api, libbyConnected],
+  );
+  const past = useResource(loadPastCheckouts, { keepStale: true });
 
   /** Use this function to show one app's side of a conflict; ordinary metadata sides are buttons that resolve the conflict with a new preview, while Libby-authoritative fields cannot be overridden. */
   function conflictSide(row: SyncField, provider: SyncProvider) {
@@ -199,6 +213,7 @@ export function SyncScreen({
   return (
     <Screen
       id="sync"
+      hideTitle
       compactLayout={compactLayout}
       actions={
         tab === "Shelf" && (
@@ -214,7 +229,7 @@ export function SyncScreen({
               ) : (
                 <RefreshCw className={compactLayout ? "size-4" : "size-5"} />
               )}
-              Preview changes
+              {labelForAction("sync", "sync-preview", "Sync")}
             </RefreshButton>
             <button
               type="button"
@@ -229,7 +244,10 @@ export function SyncScreen({
       }
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="tablist" className={`tabs tabs-box w-fit ${compactLayout ? "tabs-sm" : ""}`}>
+        <div
+          role="tablist"
+          className={`tabs tabs-box w-fit font-display font-semibold ${compactLayout ? "" : "tabs-lg"}`}
+        >
           {TABS.map((name) => (
             <button
               key={name}
@@ -502,22 +520,60 @@ export function SyncScreen({
             <BookSections
               books={shelfBooks}
               pending
+              afterCheckedOut={
+                libbyConnected && (
+                  <PastCheckouts
+                    data={past.data}
+                    error={past.error}
+                    loading={past.loading && !past.data}
+                    reload={past.reload}
+                    checkedOut={
+                      new Set(
+                        syncResult.plan.snapshots.libby.flatMap((book) => (book.providerId ? [book.providerId] : [])),
+                      )
+                    }
+                    fable={syncResult.plan.snapshots.fable}
+                  />
+                )
+              }
               render={(book) => {
                 const retained = returnedBooks.has(book.groupId);
                 const bookOperations = visibleOperations.filter((operation) => operation.groupId === book.groupId);
                 const lineOperations = bookOperations.filter(
                   (operation) => LINE_FIELDS.has(operation.field) && !operation.removal && !operation.blocked,
                 );
-                const detailOperations = bookOperations.filter((operation) => !lineOperations.includes(operation));
+                // Progress shows on the line, so its change never repeats in the pulldown.
+                const progress = bookOperations.find(
+                  (operation) => operation.field === "readingProgress" && !operation.removal,
+                );
+                const detailOperations = bookOperations.filter(
+                  (operation) => !lineOperations.includes(operation) && operation !== progress,
+                );
                 const selectable = lineOperations.filter(
                   (operation) => !operation.blocked && outcomeOf(operation.id) !== "success",
                 );
-                const progress = lineOperations.find((operation) => operation.field === "readingProgress");
+                const progressSynced = progress !== undefined && outcomeOf(progress.id) === "success";
                 const before = progress?.before?.value;
-                const loans = book.checkedOut ? (bookGroups.get(book.groupId)?.libby ?? []) : [];
+                const group = bookGroups.get(book.groupId);
+                const loans = book.checkedOut ? (group?.libby ?? []) : [];
                 const loan = loans.find((entry) => entry.loanUrl)?.loanUrl;
+                const fablePage = group?.fable.find((entry) => entry.pageUrl)?.pageUrl;
+                const author = [...(group?.libby ?? []), ...(group?.fable ?? [])].find((entry) => entry.author)?.author;
                 const narrators = [...new Set(loans.flatMap((entry) => entry.narrators ?? []))];
-                const conflictingFields = book.rows.filter((row) => row.conflict && row.libby && row.fable);
+                const expiresAt = loans
+                  .flatMap((entry) => (entry.expiresAt ? [entry.expiresAt] : []))
+                  .sort()
+                  .at(-1);
+                const byline = [
+                  author,
+                  narrators.length ? `Narrated by ${narrators.join(", ")}` : undefined,
+                  loanTimeLeft(expiresAt),
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
+                const conflictingFields = book.rows.filter(
+                  (row) => row.conflict && row.libby && row.fable && row.field !== "readingProgress",
+                );
                 const ratingOp = bookOperations.find((operation) => operation.field === "rating");
                 const beforeRating = typeof ratingOp?.before?.value === "number" ? ratingOp.before.value : undefined;
                 const afterRating = typeof ratingOp?.after === "number" ? ratingOp.after : undefined;
@@ -561,23 +617,28 @@ export function SyncScreen({
                       <ReadingStatus status={afterStatus} />
                     </span>
                   ) : undefined;
+                // After a successful sync the line shows the new progress and no change.
                 const progressCell =
-                  book.progress === undefined && typeof progress?.after === "number" ? (
+                  (book.progress === undefined || progressSynced) && typeof progress?.after === "number" ? (
                     <ProgressValue value={progress.after} />
                   ) : undefined;
+                const reviewBox = fablePage && !retained && (
+                  <FableReview key="review" title={book.title} pageUrl={fablePage} post={postReview} />
+                );
+                const links = (openLoan && loan) || fablePage;
                 return (
                   <BookLine
                     key={book.groupId}
                     book={book}
+                    byline={byline || undefined}
                     pending={retained || pendingGroups.has(book.groupId)}
                     action={
                       retained ? (
                         <p className="pb-2 text-sm opacity-70">
                           Last seen on your Shelf. Sync is unavailable after return.
                         </p>
-                      ) : narrators.length || (openLoan && loan) ? (
+                      ) : links ? (
                         <div className="flex flex-wrap items-center gap-x-3 pb-2 text-sm">
-                          {narrators.length > 0 && <p className="opacity-70">Narrated by {narrators.join(", ")}</p>}
                           {openLoan && loan && (
                             <button
                               type="button"
@@ -587,12 +648,17 @@ export function SyncScreen({
                               Open in Libby<span className="sr-only">: {book.title}</span>
                             </button>
                           )}
+                          {fablePage && (
+                            <a className="link" href={fablePage} target="_blank" rel="noreferrer">
+                              Open in Fable<span className="sr-only">: {book.title}</span>
+                            </a>
+                          )}
                         </div>
                       ) : undefined
                     }
                     progressCell={progressCell}
                     progressChange={
-                      typeof progress?.after === "number"
+                      typeof progress?.after === "number" && !progressSynced
                         ? progress.after - (typeof before === "number" ? before : 0)
                         : undefined
                     }
@@ -625,8 +691,9 @@ export function SyncScreen({
                       </>
                     }
                     details={
-                      detailOperations.length || conflictingFields.length
+                      detailOperations.length || conflictingFields.length || reviewBox
                         ? [
+                            reviewBox,
                             ...conflictingFields.map(fieldDetail),
                             ...detailOperations.map((operation) => (
                               <SyncChange
