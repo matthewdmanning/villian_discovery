@@ -25,6 +25,41 @@ describe("listShelf", () => {
     expect(shelf.returned.status).toBe("unavailable");
   });
 
+  it("keeps one row per card and title, and warns about Libby's repeats", async () => {
+    const warnings: string[] = [];
+    const loan = { id: "loan-1", cardId: "card-1", title: "Loan" };
+    const shelf = await listShelf(
+      {
+        sync: async () => ({
+          cards: [
+            { cardId: "card-1", advantageKey: "library" },
+            { cardId: "card-2", advantageKey: "library" },
+          ],
+          loans: [loan, { ...loan, title: "Loan again" }, { ...loan, cardId: "card-2" }],
+          holds: [],
+        }),
+      } as never,
+      undefined,
+      { warn: (message: string) => warnings.push(message) },
+    );
+    // The same title on another card is a separate loan and stays.
+    expect(itemsOf(shelf.checkedOut).map((item) => [item.cardId, item.title])).toEqual([
+      ["card-1", "Loan"],
+      ["card-2", "Loan"],
+    ]);
+    expect(warnings).toEqual(["Libby returned 1 duplicate checked-out item(s); kept the first of each: card-1:loan-1"]);
+  });
+
+  it("stays quiet when Libby sends no repeats", async () => {
+    const warnings: string[] = [];
+    await listShelf(
+      { sync: async () => ({ loans: [{ id: "a", cardId: "c", title: "A" }], holds: [] }) } as never,
+      undefined,
+      { warn: (message: string) => warnings.push(message) },
+    );
+    expect(warnings).toEqual([]);
+  });
+
   it("does not treat missing loan or hold arrays as empty shelves", async () => {
     const shelf = await listShelf({ sync: async () => ({}) } as never);
     const malformed = await listShelf({ sync: async () => ({ loans: {}, holds: "not-a-list" }) } as never);

@@ -54,9 +54,23 @@ describe("useSync", () => {
   it("previews once when settings load and keeps that result", async () => {
     const api = await mount();
     expect(api.previewSync).toHaveBeenCalledTimes(1);
+    expect(api.previewSync).toHaveBeenCalledWith({ minTitleScore: 0.85 });
     expect(hook.syncResult.plan.id).toBe("plan-1");
     await flush();
     expect(api.previewSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("injects the configured title threshold without dropping match choices", async () => {
+    const previewSync = vi.fn(async () => planOf([]));
+    const api = await mount({ previewSync });
+    await act(async () => hook.sync({ matches: { libby: "fable" }, minTitleScore: 0.1 }));
+    expect(api.previewSync).toHaveBeenLastCalledWith({ matches: { libby: "fable" }, minTitleScore: 0.85 });
+  });
+
+  it("lets loan-link actions report errors through shared sync state", async () => {
+    await mount();
+    await act(async () => hook.setError("Popup blocked"));
+    expect(hook.error).toBe("Popup blocked");
   });
 
   it("selects reviewable changes but not blocked or removal ones, and counts every unblocked one", async () => {

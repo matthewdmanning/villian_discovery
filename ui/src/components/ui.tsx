@@ -16,20 +16,22 @@ export function Screen({
   actions,
   children,
   nested = false,
+  compactLayout = false,
 }: {
   id: ScreenId;
   actions?: ReactNode;
   children: ReactNode;
   nested?: boolean;
+  compactLayout?: boolean;
 }) {
   const s = screen(id);
   const Title = nested ? "h2" : "h1";
   return (
     <section
       aria-labelledby={`${id}-title`}
-      className={`mx-auto w-full max-w-5xl ${compact ? "space-y-4" : "space-y-6"}`}
+      className={`mx-auto w-full max-w-5xl ${compactLayout ? "space-y-2 text-sm" : compact ? "space-y-4" : "space-y-6"}`}
     >
-      <header className="flex flex-wrap items-center justify-between gap-3">
+      <header className={compactLayout ? "sr-only" : "flex flex-wrap items-center justify-between gap-3"}>
         <Title id={`${id}-title`} className="text-2xl font-semibold sm:text-3xl">
           {s?.title}
         </Title>
@@ -144,6 +146,22 @@ export function Segmented<T extends string>(props: {
         ))}
       </div>
     </Field>
+  );
+}
+
+/** A button that runs an external query again; disabled while that query runs. */
+export function RefreshButton(props: {
+  onClick(): void;
+  busy?: boolean;
+  disabled?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  const { onClick, busy = false, disabled = false, className = "btn btn-ghost btn-sm", children } = props;
+  return (
+    <button type="button" className={className} disabled={busy || disabled} onClick={onClick}>
+      {children}
+    </button>
   );
 }
 

@@ -328,3 +328,51 @@ Dependencies: The project types and helpers referenced by this function in ui/sr
 Use this function to resolve ordinary metadata conflicts by generating a new preview; Libby-authoritative fields cannot be overridden.
 Inputs: The typed parameters provide the source values, user context, or UI controls described above.
 Dependencies: The project types and helpers referenced by this function in ui/src/screens/Sync.tsx.
+
+## `extractIsbn` - ui/src/screens/Sync.tsx
+
+Use this function to read ISBN evidence from a snapshot or an isbn-prefixed identifier.
+Inputs: `book` - snapshot ISBN, book ID, and work ID.
+Dependencies: None.
+
+## `normalizeIsbn` - ui/src/screens/Sync.tsx
+
+Use this function to normalize optional ISBN input for an exact edition indicator.
+Inputs: `isbn` - raw ISBN text.
+Dependencies: `isbn13`.
+
+## `hasExactIsbnMatch` - ui/src/screens/Sync.tsx
+
+Use this function to show when a source book has exact ISBN evidence among candidate editions.
+Inputs: `book` - source identifiers; `candidates` - candidate edition identifiers.
+Dependencies: `extractIsbn`, `normalizeIsbn`.
+
+## `toStatusKey` - ui/src/screens/Sync.tsx
+
+Use this function to translate provider reading statuses into Shelf display statuses.
+Inputs: `value` - provider reading status.
+Dependencies: None.
+
+## `formatEdition` - ui/src/screens/Sync.tsx
+
+Use this function to label a candidate edition in the match picker.
+Inputs: `edition` - title, subtitle, author, format, and ISBN metadata.
+Dependencies: `formatLabels`.
+
+## `searchFableBooks` - src/sync-adapters.ts
+
+Use this function to offer authenticated Fable catalog editions for a Libby checkout.
+Inputs: `get` - authenticated transport; `book` - source title, author, format, and ISBN; `minTitleScore` - suggestion threshold.
+Dependencies: `isbn13`, `fableBookFormat`, `syncEditionScore`, `normalizeTitle`, `normalizeName`.
+
+## `syncEditionScore` - src/sync.ts
+
+Use this function to score a compatible Fable candidate against a Libby checkout.
+Inputs: `book` - source title, format, and ISBN; `candidate` - candidate edition evidence and optional subtitle.
+Dependencies: `isbn13`, `titleSimilarity`.
+
+## `shelfHistory` - extension/src/sync-shelf-history.ts
+
+Use this function to retain previously observed pending checkouts as display-only reminders after return.
+Inputs: `stored` - untrusted local history; `plan` - complete current comparison; `report` - optional verified apply outcomes.
+Dependencies: `historySchema`, `SyncPlan`, `SyncApplyReport`.

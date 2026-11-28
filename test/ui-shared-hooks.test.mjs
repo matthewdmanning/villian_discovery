@@ -138,7 +138,7 @@ describe("useResource", () => {
     const fast = deferred();
     const load = vi.fn().mockReturnValueOnce(slow.promise).mockReturnValueOnce(fast.promise);
     await mount(load);
-    await act(async () => hook.reload());
+    await act(async () => hook.forceReload());
     await act(async () => fast.resolve("new"));
     await act(async () => slow.resolve("old"));
     expect(hook).toMatchObject({ loading: false, data: "new" });
@@ -148,6 +148,29 @@ describe("useResource", () => {
     await mount(async () => "a");
     await mount(async () => "b");
     expect(hook.data).toBe("b");
+  });
+
+  it("ignores reload while loading, but forceReload supersedes the running load", async () => {
+    const pending = deferred();
+    const load = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue("again");
+    await mount(load);
+    await act(async () => hook.reload());
+    expect(load).toHaveBeenCalledTimes(1);
+    await act(async () => hook.forceReload());
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(hook.data).toBe("again");
+    await act(async () => pending.resolve("stale"));
+    expect(hook.data).toBe("again");
+  });
+
+  it("reloads right away after a load finishes", async () => {
+    const load = vi.fn().mockRejectedValueOnce(new Error("Down")).mockResolvedValue("up");
+    await mount(load);
+    expect(hook.error).toBe("Down");
+    await act(async () => hook.reload());
+    expect(hook).toMatchObject({ data: "up", error: undefined, loading: false });
+    await act(async () => hook.reload());
+    expect(load).toHaveBeenCalledTimes(3);
   });
 
   it("never reports an empty error message", () => {

@@ -6,5 +6,5 @@ Keep a signed-in Libby tab open. Open Libby Shelf from Chrome's Extensions menu 
 
 The **Lists** tab shows tagged titles from Libby. Choose tags under Includes and Exclude to filter the list, and use Refresh to reload it.
 
-The **Shelf** tab lists current checkouts and holds. Returned history is unavailable until a reliable Libby source is verified.
-Audiobook narrator credits appear in the side panel, Shelf, and expanded Search results when available from Libby or the OverDrive catalog.
+The side panel opens on the Sync **Shelf** tab. It lists current checkouts with their Libby links and highlights books that need sync. Previously observed loans with pending sync appear below current checkouts after they leave the Shelf. The full app also shows holds. Complete returned history is unavailable.
+Audiobook narrator credits appear on the Shelf and in expanded Search results when available from Libby or the OverDrive catalog.

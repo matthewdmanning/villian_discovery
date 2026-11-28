@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ResourceOptions = {
   /** Keep the last loaded value while reloading and after a failed reload. Default: clear it. */
@@ -12,7 +12,13 @@ export type Resource<T> = {
   loading: boolean;
   /** Bumped by `reload`; key children on it to reset their state per load. */
   revision: number;
+  /**
+   * Load again, unless a load is already running. Repeated external reads are throttled where they are made
+   * (the server's and the extension's query cooldown), so this never needs to wait.
+   */
   reload(): void;
+  /** Load again even while a load runs, superseding it; for when the account changed. */
+  forceReload(): void;
 };
 
 type State<T> = Pick<Resource<T>, "data" | "error" | "loading">;
@@ -31,7 +37,12 @@ export function errorMessage(reason: unknown): string {
 export function useResource<T>(load: () => Promise<T>, { keepStale = false }: ResourceOptions = {}): Resource<T> {
   const [state, setState] = useState<State<T>>({ data: undefined, error: undefined, loading: true });
   const [revision, setRevision] = useState(0);
-  const reload = useCallback(() => setRevision((value) => value + 1), []);
+  const blocked = useRef(false);
+  blocked.current = state.loading;
+  const forceReload = useCallback(() => setRevision((value) => value + 1), []);
+  const reload = useCallback(() => {
+    if (!blocked.current) forceReload();
+  }, [forceReload]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision intentionally triggers an explicit reload.
   useEffect(() => {
@@ -39,15 +50,12 @@ export function useResource<T>(load: () => Promise<T>, { keepStale = false }: Re
     setState((prev) => ({ data: keepStale ? prev.data : undefined, error: undefined, loading: true }));
     load().then(
       (data) => {
-        if (current) setState({ data, error: undefined, loading: false });
+        if (!current) return;
+        setState({ data, error: undefined, loading: false });
       },
       (reason: unknown) => {
-        if (current)
-          setState((prev) => ({
-            data: keepStale ? prev.data : undefined,
-            error: errorMessage(reason),
-            loading: false,
-          }));
+        if (!current) return;
+        setState((prev) => ({ data: keepStale ? prev.data : undefined, error: errorMessage(reason), loading: false }));
       },
     );
     return () => {
@@ -55,5 +63,5 @@ export function useResource<T>(load: () => Promise<T>, { keepStale = false }: Re
     };
   }, [load, keepStale, revision]);
 
-  return { ...state, revision, reload };
+  return { ...state, revision, reload, forceReload };
 }

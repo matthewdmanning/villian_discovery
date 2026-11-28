@@ -26,6 +26,10 @@ export interface FableBook {
   authors?: { name?: string }[];
   isbn?: string;
   display_isbn?: string;
+  format?: unknown;
+  book_format?: unknown;
+  media_type?: unknown;
+  audiobook?: unknown;
 }
 export interface FableList {
   id: string;

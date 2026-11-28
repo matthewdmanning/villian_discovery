@@ -46,7 +46,7 @@ const mobileOnly = options.layout === "mobile";
 const desk = mobileOnly ? "hidden" : "hidden lg:flex";
 const phone = mobileOnly ? "" : "lg:hidden";
 
-export function App() {
+export function App({ openLoan }: { openLoan?: (url: string) => Promise<void> } = {}) {
   const { screen, go, api } = useStore();
   const [theme, toggleTheme] = useTheme();
   const activeScreen = screen === "results" ? "search" : screen;
@@ -135,7 +135,7 @@ export function App() {
         <main
           className={`flex-1 px-safe ${compact ? "py-5" : "py-6 sm:py-10"} pb-dock ${mobileOnly ? "" : "lg:pb-safe"} ${mobileOnly ? "mx-auto w-full max-w-md" : ""}`}
         >
-          <View />
+          {activeScreen === "sync" && openLoan ? <SyncScreen openLoan={openLoan} /> : <View />}
           {options.navigation === "wizard" && (
             <div className="mx-auto mt-8 flex w-full max-w-5xl justify-between">
               <button

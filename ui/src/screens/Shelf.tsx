@@ -1,6 +1,6 @@
 import { BookOpen, RefreshCw } from "lucide-react";
 import { useCallback, useState } from "react";
-import { Empty, Panel, Screen } from "../components/ui.tsx";
+import { Empty, Panel, RefreshButton, Screen } from "../components/ui.tsx";
 import type { ShelfData, ShelfEntry, ShelfTab } from "../lib/api.ts";
 import { useStore } from "../lib/store.tsx";
 import { useResource } from "../lib/use-resource.ts";
@@ -70,30 +70,31 @@ export function Shelf() {
       {!loading && error && (
         <div className="space-y-3" role="alert">
           <p>Could not load shelf: {error}</p>
-          <button type="button" className="btn btn-primary" onClick={reload}>
+          <RefreshButton className="btn btn-primary" onClick={reload}>
             <RefreshCw className="size-4" /> Retry
-          </button>
+          </RefreshButton>
         </div>
       )}
       {!loading && !error && data && (
         <Panel>
-          <div
-            role="tablist"
-            aria-label="Shelf sections"
-            className="tabs tabs-box mb-4 w-fit max-w-full overflow-x-auto"
-          >
-            {TABS.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={active === key}
-                className={`tab whitespace-nowrap ${active === key ? "tab-active" : ""}`}
-                onClick={() => setActive(key)}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div role="tablist" aria-label="Shelf sections" className="tabs tabs-box w-fit max-w-full overflow-x-auto">
+              {TABS.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active === key}
+                  className={`tab whitespace-nowrap ${active === key ? "tab-active" : ""}`}
+                  onClick={() => setActive(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <RefreshButton onClick={reload}>
+              <RefreshCw className="size-4" /> Refresh
+            </RefreshButton>
           </div>
           <TabContent tab={data[active]} kind={active} />
         </Panel>

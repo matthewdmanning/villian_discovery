@@ -6,7 +6,7 @@ import { type ListSort, sortListItems } from "../lib/list-results.ts";
 import type { useLists } from "../lib/use-lists.ts";
 import { ListResult } from "./ListResult.tsx";
 import { QueryFields } from "./TagQueryFields.tsx";
-import { Panel } from "./ui.tsx";
+import { Panel, RefreshButton } from "./ui.tsx";
 
 type Lists = ReturnType<typeof useLists>;
 
@@ -162,9 +162,9 @@ export function TaggedResults({ lists, items }: { lists: Lists; items: ListItem[
             <option value="author">Author A–Z</option>
           </select>
         </label>
-        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={reload}>
+        <RefreshButton busy={busy} onClick={reload}>
           Refresh
-        </button>
+        </RefreshButton>
       </div>
       {busy && <p role="status">Loading…</p>}
       {error && (

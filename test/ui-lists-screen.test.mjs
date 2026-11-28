@@ -143,8 +143,17 @@ describe("Lists screen", () => {
     expect(container.querySelector('[role="status"]').textContent).toBe("Loading…");
     expect(buttonText("Refresh").disabled).toBe(true);
     await act(async () => finish({ tags, items }));
-    expect(buttonText("Refresh").disabled).toBe(false);
     expect(titles()).toHaveLength(4);
+  });
+
+  it("lets Refresh ask again as soon as a load finishes", async () => {
+    const api = await mount();
+    const refresh = () => buttonText("Refresh");
+    expect(refresh().disabled).toBe(false);
+    expect(refresh().getAttribute("title")).toBeNull();
+    await click(refresh());
+    await click(refresh());
+    expect(api.lists).toHaveBeenCalledTimes(3);
   });
 
   it("ignores a response that arrives after the screen is closed", async () => {

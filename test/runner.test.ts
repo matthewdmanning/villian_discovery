@@ -226,6 +226,22 @@ describe("Runner", () => {
     },
   );
 
+  it("searches each library once and offers every card at that library", async () => {
+    const { runner, calls } = setup([{ match: /thunder/, respond: () => ({ body: { items: [media()] } }) }]);
+    const cards = [
+      card(),
+      card({ cardId: "200", advantageKey: "lib2" }),
+      card({ cardId: "300", advantageKey: "lib1" }),
+    ];
+    const found = await runner.findCandidates({ raw: "x", title: "Project Hail Mary", author: "Andy Weir" }, cards);
+    expect(found.map(({ card }) => [card.advantageKey, card.cardId])).toEqual([
+      ["lib1", "100"],
+      ["lib1", "300"],
+      ["lib2", "200"],
+    ]);
+    expect(calls.map(({ url }) => url.pathname.split("/")[3])).toEqual(["lib1", "lib2"]);
+  });
+
   it("does not confirm cross-ISBN editions without an authoritative ISBN match", async () => {
     const isbn = "9780593135204";
     const { runner, calls } = setup([

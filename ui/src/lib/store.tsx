@@ -38,6 +38,8 @@ interface Store {
   cardsLoading: boolean;
   cardsError?: string;
   refreshCards(): void;
+  /** Reload cards immediately after an observed account change. */
+  forceRefreshCards(): void;
   login(options: LoginOptions): Promise<void>;
   books: BookRequest[];
   setBooks(b: BookRequest[]): void;
@@ -80,11 +82,12 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
   const tokenFile = resolved.config.auth.tokenFile;
   const cardsResource = useResource(useCallback(() => api.cards(tokenFile), [api, tokenFile]));
   const cards = cardsResource.data ?? NO_CARDS;
-  const { loading: cardsLoading, error: cardsError, reload: refreshCards } = cardsResource;
+  const { loading: cardsLoading, error: cardsError, reload: refreshCards, forceReload: reloadCards } = cardsResource;
   const login = async (options: LoginOptions) => {
     await api.login(tokenFile, options);
     options.signal?.throwIfAborted();
-    refreshCards();
+    // A new sign-in changes the account: supersede any load still running for the old one.
+    reloadCards();
   };
   const [books, setBooks] = useState<BookRequest[]>([]);
   const [draft, setDraftState] = useState<BookDraft>({ text: "", format: "auto", edits: {} });
@@ -134,6 +137,7 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     cardsLoading,
     ...(cardsError && { cardsError }),
     refreshCards,
+    forceRefreshCards: reloadCards,
     login,
     books,
     setBooks,

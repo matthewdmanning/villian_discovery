@@ -151,6 +151,16 @@ export function toIsbn13(isbn: string): string | undefined {
   return core + ((10 - (sum % 10)) % 10);
 }
 
+/** ISBN-13 for any spelling of an ISBN: hyphens, spaces, an `isbn:` prefix and ISBN-10 all compare equal. */
+export function isbn13(value: string): string | undefined {
+  return toIsbn13(
+    value
+      .replace(/^isbn:/i, "")
+      .replace(/[\s-]/g, "")
+      .toUpperCase(),
+  );
+}
+
 const ARTICLES = /^(the|a|an)\s+/;
 
 export function normalizeTitle(s: string, ignoreSubtitle: boolean): string {

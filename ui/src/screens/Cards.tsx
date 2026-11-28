@@ -1,5 +1,5 @@
 import { GripVertical, TriangleAlert } from "lucide-react";
-import { Panel, ReorderControls, Screen, sz } from "../components/ui.tsx";
+import { Panel, RefreshButton, ReorderControls, Screen, sz } from "../components/ui.tsx";
 import type { LibbyCard } from "../lib/api.ts";
 import { cardSelected, cardUsage, libraryOrder, toggleCard } from "../lib/cards.ts";
 import { useStore } from "../lib/store.tsx";
@@ -60,18 +60,18 @@ export function Cards() {
     return (
       <Screen id="cards">
         <p role="alert">Could not load cards: {cardsError}</p>
-        <button type="button" className="btn btn-primary" onClick={refreshCards}>
+        <RefreshButton className="btn btn-primary" onClick={refreshCards}>
           Retry
-        </button>
+        </RefreshButton>
       </Screen>
     );
   if (!cards.length)
     return (
       <Screen id="cards">
         <p>No library cards found. Connect Libby or add a card in Libby, then refresh.</p>
-        <button type="button" className="btn btn-primary" onClick={refreshCards}>
+        <RefreshButton className="btn btn-primary" onClick={refreshCards}>
           Refresh cards
-        </button>
+        </RefreshButton>
       </Screen>
     );
 
@@ -79,9 +79,7 @@ export function Cards() {
     <Screen id="cards">
       <Panel>
         <div className="mb-3 flex justify-end">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={refreshCards}>
-            Refresh cards
-          </button>
+          <RefreshButton onClick={refreshCards}>Refresh cards</RefreshButton>
         </div>
         <p className="mb-3 text-sm opacity-70">
           Highest priority first. Drag a card or use the arrows. At least one card must stay selected.

@@ -539,4 +539,51 @@ describe("sync plan preview and apply", () => {
     const { plan } = await preview(snapshots);
     expect(plan.conflicts).toHaveLength(0);
   });
+
+  it("offers each unmatched checked-out book its own relevant Fable editions", async () => {
+    const { plan } = await preview({
+      libby: [
+        { bookId: "loan-a", title: "Alchemised", author: "SenLinYu", fields: { checkedOut: field(true) } },
+        { bookId: "loan-b", title: "Piranesi", fields: { checkedOut: field(true) } },
+      ],
+      fable: [
+        { bookId: "other", title: "Unrelated Book", author: "SenLinYu", fields: {} },
+        { bookId: "alchemised", title: "Alchemised: A Novel", author: "SenLinYu", fields: {} },
+        { bookId: "piranesi", title: "Piranesi", author: "Susanna Clarke", fields: {} },
+      ],
+    });
+    expect(plan.conflicts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ libbyBookIds: ["loan-a"], fableBookIds: ["alchemised"] }),
+        expect.objectContaining({ libbyBookIds: ["loan-b"], fableBookIds: ["piranesi"] }),
+      ]),
+    );
+  });
+});
+
+describe("edition choices", () => {
+  it("still apply when the group ID changed since the choice was made", async () => {
+    const snapshots = pair({ readingProgress: field(20) }, { readingProgress: field(10) });
+    snapshots.libby.push({
+      ...structuredClone(snapshots.libby[0]!),
+      bookId: "libby-2",
+      fields: { readingProgress: field(60) },
+    });
+    const adapters: SyncAdapters = {
+      libby: makeAdapter("libby", snapshots.libby),
+      fable: makeAdapter("fable", snapshots.fable),
+    };
+    const progress = async (editions?: Record<string, string>) =>
+      (
+        await previewSync({
+          context,
+          settings: SYNC_FALLBACKS,
+          adapters,
+          ...(editions ? { options: { editions } } : {}),
+        })
+      ).operations.find((operation) => operation.field === "readingProgress")?.after;
+    // A group ID from before "libby-2" joined the group no longer exists.
+    expect(await progress()).not.toBe(20);
+    expect(await progress({ "group:fable-1|libby-1": "libby-1" })).toBe(20);
+  });
 });
