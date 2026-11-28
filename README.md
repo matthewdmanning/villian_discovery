@@ -141,7 +141,7 @@ Lower level: `LibbyClient`, `ThunderClient`, `Runner`, `planBook` (pure), `bestM
 cd ui && npm install && npm run dev
 ```
 
-Runs on built-in demo data (`demo` badge): nothing reaches Libby.
+Runs on built-in demo data (`demo` badge): nothing reaches Libby. Screenshots of every screen and key state: [docs/screenshots](docs/screenshots/README.md).
 
 Visible screens: **Sync**, **Shelf**, **Search**, **Audiobook player**. **Library cards** sit in Sync's **Settings** tab. The Connect Libby screen is gone; sign in with `libby-shelf login`. The Book list screen is hidden and the Rules screen is deprecated; set run rules in `libby.config.json`. Audiobook player bookmark tags accept emoji.
 

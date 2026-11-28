@@ -10,6 +10,7 @@
     "test:watch": "vitest",
     "test:libby": "node scripts/libby-smoke.mjs",
     "test:ui": "node scripts/ui-smoke.mjs",
+    "screenshots": "node scripts/ui-screenshots.mjs",
     "start": "node dist/cli.js",
     "live": "npm run build && npm run build --prefix ui -- --mode live && node dist/sync-server.js",
     "prepare": "husky && npm run build",
