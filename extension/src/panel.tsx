@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { StoreProvider, useStore } from "../../ui/src/lib/store.tsx";
 import { useTheme } from "../../ui/src/lib/theme.ts";
 import { SyncScreen } from "../../ui/src/screens/Sync.tsx";
-import { connections, extensionApi, openInLibby } from "./extension-api.ts";
+import { connections, extensionApi, forgetCachedReads, openInLibby } from "./extension-api.ts";
 import { FABLE_SIGN_IN_URL } from "./fable-get.ts";
 import { LIBBY_URL } from "./libby-session.ts";
 
@@ -49,7 +49,10 @@ export function Connections() {
     };
   }, []);
   useEffect(() => {
-    if (state?.libby !== undefined) forceRefreshCards();
+    if (state?.libby === undefined) return;
+    // The account may have changed in the Libby tab, so reads kept for the old one no longer apply.
+    forgetCachedReads();
+    forceRefreshCards();
   }, [state?.libby, forceRefreshCards]);
   return (
     <div>

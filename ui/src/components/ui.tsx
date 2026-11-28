@@ -149,21 +149,17 @@ export function Segmented<T extends string>(props: {
   );
 }
 
-/**
- * A button for an external query. While `cooldown` seconds remain it is disabled,
- * so repeated clicks cannot flood Libby, Fable or a library catalog.
- */
-export function CooldownButton(props: {
+/** A button that runs an external query again; disabled while that query runs. */
+export function RefreshButton(props: {
   onClick(): void;
-  cooldown: number;
   busy?: boolean;
   disabled?: boolean;
   className?: string;
   children: ReactNode;
 }) {
-  const { onClick, cooldown, busy = false, disabled = false, className = "btn btn-ghost btn-sm", children } = props;
+  const { onClick, busy = false, disabled = false, className = "btn btn-ghost btn-sm", children } = props;
   return (
-    <button type="button" className={className} disabled={busy || cooldown > 0 || disabled} onClick={onClick}>
+    <button type="button" className={className} disabled={busy || disabled} onClick={onClick}>
       {children}
     </button>
   );

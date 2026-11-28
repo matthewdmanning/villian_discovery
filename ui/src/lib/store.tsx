@@ -40,8 +40,6 @@ interface Store {
   refreshCards(): void;
   /** Reload cards immediately after an observed account change. */
   forceRefreshCards(): void;
-  /** Seconds until `refreshCards` asks Libby again. */
-  cardsCooldown: number;
   login(options: LoginOptions): Promise<void>;
   books: BookRequest[];
   setBooks(b: BookRequest[]): void;
@@ -84,17 +82,11 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
   const tokenFile = resolved.config.auth.tokenFile;
   const cardsResource = useResource(useCallback(() => api.cards(tokenFile), [api, tokenFile]));
   const cards = cardsResource.data ?? NO_CARDS;
-  const {
-    loading: cardsLoading,
-    error: cardsError,
-    reload: refreshCards,
-    forceReload: reloadCards,
-    cooldown: cardsCooldown,
-  } = cardsResource;
+  const { loading: cardsLoading, error: cardsError, reload: refreshCards, forceReload: reloadCards } = cardsResource;
   const login = async (options: LoginOptions) => {
     await api.login(tokenFile, options);
     options.signal?.throwIfAborted();
-    // A new sign-in changes the account, so the cooldown does not apply.
+    // A new sign-in changes the account: supersede any load still running for the old one.
     reloadCards();
   };
   const [books, setBooks] = useState<BookRequest[]>([]);
@@ -146,7 +138,6 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     ...(cardsError && { cardsError }),
     refreshCards,
     forceRefreshCards: reloadCards,
-    cardsCooldown,
     login,
     books,
     setBooks,

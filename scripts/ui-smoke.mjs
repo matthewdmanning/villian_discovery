@@ -16,16 +16,6 @@ try {
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
-  // A controllable clock lets the run step past each 10 s refresh cooldown instead of waiting it out.
-  await page.clock.install();
-  /** Step the clock past refresh cooldowns until the button is enabled, then click. An auto-preview restarts one. */
-  const afterCooldown = async (locator) => {
-    for (let step = 0; step < 20 && !(await locator.isEnabled()); step++) {
-      await page.clock.fastForward(10_000);
-      await page.waitForTimeout(50);
-    }
-    await locator.click();
-  };
   await page.goto(process.env.UI_URL ?? "http://127.0.0.1:5173");
   const nav = page.locator("aside");
   await nav.getByRole("button", { name: "Library cards", exact: true }).click();
@@ -179,9 +169,9 @@ try {
   });
   await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
   await nav.getByRole("button", { name: "Library cards", exact: true }).click();
-  await afterCooldown(page.getByRole("button", { name: "Refresh cards", exact: true }));
+  await page.getByRole("button", { name: "Refresh cards", exact: true }).click();
   await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
-  await afterCooldown(page.getByRole("button", { name: "Retry", exact: true }));
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
   await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
   await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
   await chooseMethod("phone code");
@@ -219,12 +209,11 @@ try {
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
   // The comparison runs on its own when Sync opens.
   await page.getByRole("status").filter({ hasText: "Last compared" }).waitFor();
-  // Right after a preview, the button waits out its cooldown without changing its label.
-  const cooling = page.getByRole("button", { name: "Preview changes", exact: true });
-  assert.equal(await cooling.isDisabled(), true);
-  assert.equal(await cooling.textContent(), "Preview changes");
-  assert.equal(await cooling.getAttribute("title"), null);
-  assert.equal(await cooling.getAttribute("aria-describedby"), null);
+  // Right after a preview, Preview changes can run again: repeated reads are throttled where they are made.
+  const previewAgain = page.getByRole("button", { name: "Preview changes", exact: true });
+  assert.equal(await previewAgain.isDisabled(), false);
+  assert.equal(await previewAgain.textContent(), "Preview changes");
+  assert.equal(await previewAgain.getAttribute("title"), null);
   const openTab = (name) => page.getByRole("tab", { name, exact: true }).click();
   const bookItem = (book) => page.locator("main li").filter({ has: page.locator("span.truncate", { hasText: book }) });
   const squash = (text) => text.replace(/\s+/g, " ").trim();
@@ -265,23 +254,23 @@ try {
   assert.equal(await page.getByLabel("Allow decrease in progress", { exact: true }).isChecked(), false);
   await showAll.selectOption("yes");
   await openTab("Shelf");
-  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await bookItem("Dune").locator("summary").click();
   await duneNotes.waitFor();
   await openTab("Settings");
   await showAll.selectOption("no");
   await openTab("Shelf");
-  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
-  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), true);
   await openTab("Library");
   assert.match(await bookLine("Piranesi"), /^Piranesi ?65%/);
   await openTab("Settings");
   await page.getByLabel("Removals", { exact: true }).selectOption("fields-memberships");
   await openTab("Shelf");
-  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await openTab("Library");
   await page.getByRole("button", { name: "Use Libby shelves for Piranesi", exact: true }).click();
   await openTab("Shelf");
@@ -292,7 +281,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Apply demo changes", exact: true }).isDisabled(), false);
   await page.getByRole("button", { name: "Apply demo changes", exact: true }).click();
   await page.getByRole("status").filter({ hasText: "Applied" }).waitFor();
-  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await openTab("Library");
   await bookItem("Piranesi").waitFor();
   assert.match(squash(await bookItem("Piranesi").textContent()), /shelves: ?Favorites/);
@@ -304,7 +293,7 @@ try {
   await page.getByRole("button", { name: "Reset to defaults", exact: true }).click();
   assert.equal(await page.getByLabel("Removals", { exact: true }).inputValue(), "none");
   await openTab("Shelf");
-  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   const comparisonStatus = await page.getByRole("status").filter({ hasText: "Last compared" }).textContent();
   await nav.getByRole("button", { name: "Book list", exact: true }).click();
   await nav.getByRole("button", { name: "Sync libraries", exact: true }).click();
@@ -314,7 +303,7 @@ try {
       throw new Error("Injected sync failure");
     };
   });
-  await afterCooldown(page.getByRole("button", { name: "Preview changes", exact: true }));
+  await page.getByRole("button", { name: "Preview changes", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "Injected sync failure" }).waitFor();
   assert.equal(await page.getByRole("status").filter({ hasText: "Last compared" }).textContent(), comparisonStatus);
   await page.setViewportSize({ width: 390, height: 844 });

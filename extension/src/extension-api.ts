@@ -1,4 +1,5 @@
 import type { Config } from "../../src/config.ts";
+import type { BookRequest } from "../../src/input.ts";
 import type { CatalogReader } from "../../src/libby-audiobooks.ts";
 import { listLibraryAvailability } from "../../src/libby-list-availability.ts";
 import { readLists } from "../../src/libby-lists.ts";
@@ -11,13 +12,14 @@ import {
   storeTagsForAccount,
 } from "../../src/libby-tags-cache.ts";
 import { silentLogger } from "../../src/logger.ts";
+import { cachedRead, clearsCache, createQueryCooldown } from "../../src/query-cooldown.ts";
 import { Runner, selectCards } from "../../src/runner.ts";
 import { disconnectedAdapter, fableAdapter, libbyAdapter } from "../../src/sync-adapters.ts";
 import { resolveSyncSettings } from "../../src/sync-config.ts";
 import { createSyncOrchestrator } from "../../src/sync-orchestrator.ts";
 import type { SyncAdapter, SyncContext } from "../../src/sync-plan.ts";
 import { ThunderClient } from "../../src/thunder-client.ts";
-import type { LibraryApi } from "../../ui/src/lib/api.ts";
+import type { LibraryApi, LoginOptions } from "../../ui/src/lib/api.ts";
 import { createFableGet, createFablePost, isFableSignedIn } from "./fable-get.ts";
 import { libbyClient, libbyProblem } from "./libby-session.ts";
 import { shelfHistory } from "./sync-shelf-history.ts";
@@ -155,51 +157,59 @@ function createRunner(client: Awaited<ReturnType<typeof libbyClient>>, config: C
 }
 
 /** The UI's API over the signed-in Chrome profile; sync reads both apps and never writes. */
+// The extension has no local server, so its reads share results here, like the server's routes do.
+const reads = createQueryCooldown();
+
+/** Forget kept reads, so the next one reaches Libby or Fable; call when the signed-in account changes. */
+export function forgetCachedReads() {
+  reads.clear();
+}
+
 export const extensionApi: LibraryApi = {
-  tags,
-  listAvailability: async (titleId) => {
+  tags: cachedRead(reads, "tags", tags),
+  listAvailability: cachedRead(reads, "listAvailability", async (titleId: string) => {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");
     return listLibraryAvailability(titleId, client, publicCatalog);
-  },
-  lists: async () => {
+  }),
+  lists: cachedRead(reads, "lists", async () => {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");
     return readLists(client);
-  },
+  }),
   demo: false,
   status: async () => ({ connected: (await connections()).libby }),
-  login: async (_tokenFile, { signal }) => {
+  login: clearsCache(reads, async (_tokenFile: string, { signal }: LoginOptions) => {
     await chrome.tabs.create({ url: "https://libbyapp.com/" });
     // The tab's own sign-in finishes this call: poll until an identity with cards appears.
     while (!(await libbyClient())) {
       signal?.throwIfAborted();
       await new Promise((resolve) => setTimeout(resolve, 2_000));
     }
-  },
-  cards: async () => {
+  }),
+  cards: cachedRead(reads, "cards", async () => {
     const client = await libbyClient();
     if (!client) throw new Error("Connect Libby first");
     return (await client.sync()).cards ?? [];
-  },
-  shelf: async () => {
+  }),
+  shelf: cachedRead(reads, "shelf", async () => {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");
     return listShelf(client, publicCatalog);
-  },
-  search: async (book, config) => {
+  }),
+  search: cachedRead(reads, "search", async (book: BookRequest, config: Config) => {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");
     const cards = (await client.sync()).cards ?? [];
     return createRunner(client, config).searchMatches(book, selectCards(cards, config));
-  },
-  run: async (books, config) => {
+  }),
+  run: clearsCache(reads, async (books: BookRequest[], config: Config) => {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");
     return createRunner(client, config).run(books);
-  },
-  previewSync: sync.previewSync,
-  applySync: sync.applySync,
+  }),
+  previewSync: cachedRead(reads, "previewSync", sync.previewSync),
+  applySync: clearsCache(reads, sync.applySync),
   getSyncSettings: sync.getSettings,
-  saveSyncSettings: sync.saveSettings,
+  saveSyncSettings: clearsCache(reads, sync.saveSettings),
 };

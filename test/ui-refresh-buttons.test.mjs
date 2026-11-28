@@ -11,6 +11,7 @@ import { SyncScreen } from "../ui/src/screens/Sync.tsx";
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
+// Repeated external reads are throttled by the server and extension caches; the screens never make users wait.
 const card = { cardId: "1", cardName: "Main", advantageKey: "lib" };
 const shelf = {
   checkedOut: { status: "available", items: [] },
@@ -26,10 +27,13 @@ function StoreProbe() {
   return null;
 }
 const flush = () => act(async () => {});
-const tick = (ms) => act(async () => vi.advanceTimersByTime(ms));
 const click = (el) => act(async () => el.dispatchEvent(new MouseEvent("click", { bubbles: true })));
-/** The button whose stable visible label is `label`. */
 const button = (label) => [...container.querySelectorAll("button")].find((el) => el.textContent.trim() === label);
+function deferred() {
+  let resolve;
+  const promise = new Promise((yes) => (resolve = yes));
+  return { promise, resolve };
+}
 
 async function mount(screen, api = {}) {
   const fake = {
@@ -50,7 +54,6 @@ async function mount(screen, api = {}) {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
   localStorage.clear();
   container = document.createElement("div");
   document.body.append(container);
@@ -59,81 +62,57 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
-  vi.useRealTimers();
 });
 
-describe("refresh cooldown on screens", () => {
-  it("counts down on Refresh cards and asks Libby again only once it ends", async () => {
+const plain = (el) => ({
+  disabled: el.disabled,
+  title: el.getAttribute("title"),
+  describedBy: el.getAttribute("aria-describedby"),
+});
+
+describe("refresh buttons", () => {
+  it("lets Refresh cards ask again as soon as a load finishes", async () => {
     const api = await mount(Cards);
-    const refresh = () => button("Refresh cards");
-    expect(refresh().disabled).toBe(true);
-    expect(refresh().textContent.trim()).toBe("Refresh cards");
-    expect(refresh().getAttribute("title")).toBeNull();
-    expect(refresh().hasAttribute("aria-describedby")).toBe(false);
-    expect(container.textContent).not.toContain("Available again");
-    await tick(9_000);
-    expect(refresh().textContent.trim()).toBe("Refresh cards");
-    await tick(1_000);
-    expect(refresh().disabled).toBe(false);
-    expect(refresh().textContent.trim()).toBe("Refresh cards");
-    await click(refresh());
-    expect(api.cards).toHaveBeenCalledTimes(2);
+    expect(plain(button("Refresh cards"))).toEqual({ disabled: false, title: null, describedBy: null });
+    await click(button("Refresh cards"));
+    await click(button("Refresh cards"));
+    expect(api.cards).toHaveBeenCalledTimes(3);
   });
 
-  it("applies the cooldown to Retry after a failed card load", async () => {
+  it("retries a failed card load right away", async () => {
     const api = await mount(Cards, {
       cards: vi.fn().mockRejectedValueOnce(new Error("down")).mockResolvedValue([card]),
     });
     expect(container.textContent).toContain("Could not load cards: down");
-    expect(button("Retry").disabled).toBe(true);
-    await tick(10_000);
     await click(button("Retry"));
     expect(api.cards).toHaveBeenCalledTimes(2);
     expect(container.textContent).not.toContain("Could not load cards");
   });
 
-  it("reloads cards right after sign-in, cooldown or not", async () => {
+  it("reloads cards after sign-in and after an observed account change", async () => {
     const api = await mount(Cards);
-    expect(store.cardsCooldown).toBe(10);
     await act(async () => store.login({ method: "browser" }));
     expect(api.cards).toHaveBeenCalledTimes(2);
-  });
-
-  it("reloads cards after an externally observed account change despite a failed-load cooldown", async () => {
-    const api = await mount(Cards, {
-      cards: vi.fn().mockRejectedValueOnce(new Error("Sign in first")).mockResolvedValue([card]),
-    });
-    expect(store.cardsCooldown).toBe(10);
-    await act(async () => store.refreshCards());
-    expect(api.cards).toHaveBeenCalledTimes(1);
     await act(async () => store.forceRefreshCards());
-    expect(api.cards).toHaveBeenCalledTimes(2);
-    expect(store.cards).toEqual([card]);
-    expect(store.cardsError).toBeUndefined();
+    expect(api.cards).toHaveBeenCalledTimes(3);
   });
 
-  it("gives the shelf a Refresh button with the same cooldown", async () => {
-    const api = await mount(Shelf);
-    expect(button("Refresh").disabled).toBe(true);
-    await tick(10_000);
+  it("disables the shelf's Refresh only while the shelf loads", async () => {
+    const next = deferred();
+    const api = await mount(Shelf, { shelf: vi.fn().mockResolvedValueOnce(shelf).mockReturnValueOnce(next.promise) });
+    expect(plain(button("Refresh"))).toEqual({ disabled: false, title: null, describedBy: null });
     await click(button("Refresh"));
     expect(api.shelf).toHaveBeenCalledTimes(2);
-    expect(button("Refresh").disabled).toBe(true);
+    expect(container.querySelector('[role="status"]').textContent).toBe("Loading shelf…");
+    await act(async () => next.resolve(shelf));
+    expect(button("Refresh").disabled).toBe(false);
   });
 
-  it("holds Preview changes for the cooldown after each preview", async () => {
+  it("lets Preview changes run again as soon as a preview finishes", async () => {
     const api = await mount(SyncScreen);
     expect(api.previewSync).toHaveBeenCalledTimes(1);
-    const preview = () => button("Preview changes");
-    expect(preview().disabled).toBe(true);
-    expect(preview().textContent.trim()).toBe("Preview changes");
-    expect(preview().getAttribute("title")).toBeNull();
-    expect(preview().hasAttribute("aria-describedby")).toBe(false);
-    expect(container.textContent).not.toContain("Available again");
-    await tick(10_000);
-    expect(preview().disabled).toBe(false);
-    await click(preview());
+    expect(plain(button("Preview changes"))).toEqual({ disabled: false, title: null, describedBy: null });
+    await click(button("Preview changes"));
     expect(api.previewSync).toHaveBeenCalledTimes(2);
-    expect(preview().disabled).toBe(true);
   });
 });

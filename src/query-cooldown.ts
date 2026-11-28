@@ -46,6 +46,29 @@ export function createQueryCooldown(ms: number = EXTERNAL_QUERY_COOLDOWN_MS, now
 export type QueryCooldown = ReturnType<typeof createQueryCooldown>;
 export type Route = (input: unknown) => Promise<unknown>;
 
+/** Share `read` through `cooldown`, keyed by `name` and the call's arguments. */
+export function cachedRead<A extends unknown[], T>(
+  cooldown: QueryCooldown,
+  name: string,
+  read: (...args: A) => Promise<T>,
+): (...args: A) => Promise<T> {
+  return (...args) => cooldown.run(`${name} ${JSON.stringify(args)}`, () => read(...args));
+}
+
+/** Run `write`, then forget every kept read, whether or not it succeeds: it may have changed what reads return. */
+export function clearsCache<A extends unknown[], T>(
+  cooldown: QueryCooldown,
+  write: (...args: A) => Promise<T>,
+): (...args: A) => Promise<T> {
+  return async (...args) => {
+    try {
+      return await write(...args);
+    } finally {
+      cooldown.clear();
+    }
+  };
+}
+
 /**
  * Wrap API routes: `reads` share results through `cooldown`, keyed by route and input;
  * `writes` forget every kept result once they finish, whether or not they succeed.
@@ -60,17 +83,9 @@ export function withCooldown<R extends Record<string, Route>>(
   const wrapped: Record<string, Route> = { ...routes };
   for (const name of policy.reads) {
     const route = routes[name]!;
-    wrapped[name] = (input) => cooldown.run(`${name} ${JSON.stringify(input ?? null)}`, () => route(input));
+    // A missing input and null are the same request.
+    wrapped[name] = (input) => cooldown.run(`${name} ${JSON.stringify([input ?? null])}`, () => route(input));
   }
-  for (const name of policy.writes) {
-    const route = routes[name]!;
-    wrapped[name] = async (input) => {
-      try {
-        return await route(input);
-      } finally {
-        cooldown.clear();
-      }
-    };
-  }
+  for (const name of policy.writes) wrapped[name] = clearsCache(cooldown, routes[name]!);
   return wrapped as R;
 }
