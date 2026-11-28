@@ -1,5 +1,5 @@
+import type { BookRecord } from "../../../src/book-metadata.ts";
 import { type BookRequest, parseBookLine } from "../../../src/input.ts";
-import type { IsbnBook } from "../../../src/isbn-lookup.ts";
 import type { ListItem } from "../../../src/libby-lists.ts";
 import { fuzzyKeywords, normalizeName, normalizeTitle } from "../../../src/matcher.ts";
 
@@ -48,7 +48,7 @@ export function matchesListSearch(item: ListItem, query: BookRequest): boolean {
 }
 
 /** Use title and author identity because Libby taggings carry no edition ISBN. */
-export function matchesIsbnBook(item: ListItem, book: IsbnBook): boolean {
+export function matchesIsbnBook(item: ListItem, book: Pick<BookRecord, "title" | "subtitle" | "authors">): boolean {
   const title = normalizeTitle(item.title, false);
   const bookTitle = normalizeTitle(book.title, false);
   const fullTitle = book.subtitle ? normalizeTitle(`${book.title} ${book.subtitle}`, false) : bookTitle;

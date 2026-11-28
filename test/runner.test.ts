@@ -1,8 +1,9 @@
 import { mkdtemp, open } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loginWithSetupCode, readTokenFile, signInToLibby, writeTokenFile } from "../src/auth.js";
+import type { BookMetadataSource } from "../src/book-metadata.js";
 import { parseConfig } from "../src/config.js";
 import type { BrowserSession } from "../src/discovery/browser.js";
 import { HttpError } from "../src/errors.js";
@@ -208,6 +209,86 @@ describe("Runner", () => {
       [card()],
     );
     expect(found.map(({ media }) => media.id)).toEqual(["111"]);
+  });
+
+  describe("book metadata fallback", () => {
+    const piranesi = media({ id: "555", title: "Piranesi", firstCreatorName: "Susanna Clarke", creators: [] });
+    const catalog = () => [
+      {
+        match: /thunder/,
+        respond: (url: URL) => ({
+          body: {
+            items:
+              url.searchParams.has("identifier") || url.searchParams.get("query") !== "Piranesi Susanna Clarke"
+                ? []
+                : [piranesi],
+          },
+        }),
+      },
+    ];
+    const metadataOf = (over: Partial<BookMetadataSource> = {}): BookMetadataSource => ({
+      id: "combined",
+      byIsbn: vi.fn(async () => ({
+        title: "Piranesi",
+        authors: ["Susanna Clarke"],
+        isbns: ["9781635575637"],
+        source: "open-library" as const,
+      })),
+      search: vi.fn(async () => [
+        { title: "Piranesi", authors: ["Susanna Clarke"], isbns: [], source: "open-library" as const },
+      ]),
+      ...over,
+    });
+    const withMetadata = (metadata: BookMetadataSource, cfgOver = {}) => {
+      const f = fakeFetch([syncRoute(), ...catalog()]);
+      const cfg = parseConfig({ delayMs: 0, logLevel: "silent", ...cfgOver });
+      const libby = new LibbyClient({ ...http, fetch: f.fetch, identityToken: "tok" });
+      const thunder = new ThunderClient({ ...http, fetch: f.fetch });
+      return { ...f, runner: new Runner(cfg, { libby, thunder, logger: silentLogger, metadata }) };
+    };
+    const isbnOnly = { raw: "9781635575637", isbn: "9781635575637" };
+
+    it("resolves an ISBN the catalog lacks to its title and author, then searches again", async () => {
+      const metadata = metadataOf();
+      const { runner } = withMetadata(metadata);
+      const matches = await runner.searchMatches(isbnOnly, [card()]);
+      expect(matches.map(({ media }) => media.id)).toEqual(["555"]);
+      expect(metadata.byIsbn).toHaveBeenCalledWith("9781635575637");
+    });
+
+    it("corrects a misspelled title only when the correction is close to what was asked", async () => {
+      const close = metadataOf();
+      const { runner } = withMetadata(close);
+      const book = { raw: "Piranesy by Susanna Clarke", title: "Piranesy", author: "Susanna Clarke" };
+      expect((await runner.searchMatches(book, [card()])).map(({ media }) => media.id)).toEqual(["555"]);
+      expect(close.search).toHaveBeenCalledWith({ title: "Piranesy", author: "Susanna Clarke" }, 1);
+      const different = metadataOf({
+        search: vi.fn(async () => [
+          { title: "Jonathan Strange", authors: ["Susanna Clarke"], isbns: [], source: "open-library" as const },
+        ]),
+      });
+      expect(await withMetadata(different).runner.searchMatches(book, [card()])).toEqual([]);
+    });
+
+    it("stays off when matching.bookMetadata is false, and a failed lookup only logs", async () => {
+      const off = metadataOf();
+      expect(
+        await withMetadata(off, { matching: { bookMetadata: false } }).runner.searchMatches(isbnOnly, [card()]),
+      ).toEqual([]);
+      expect(off.byIsbn).not.toHaveBeenCalled();
+      const down = metadataOf({
+        byIsbn: vi.fn(async () => {
+          throw new Error("Open Library could not be reached.");
+        }),
+      });
+      expect(await withMetadata(down).runner.searchMatches(isbnOnly, [card()])).toEqual([]);
+    });
+
+    it("uses the resolved title when borrowing from an ISBN-only list", async () => {
+      const { runner } = withMetadata(metadataOf(), { dryRun: true });
+      const [row] = await runner.run([isbnOnly]);
+      expect(row).toMatchObject({ input: "9781635575637", titleId: "555" });
+    });
   });
 
   it.each([false, true])(

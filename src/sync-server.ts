@@ -15,12 +15,12 @@ import { dirname, extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { loginWithDeviceCode, readTokenFile, signInToLibby, writeTokenFile } from "./auth.js";
+import { createBookMetadata } from "./book-metadata.js";
 import { type ConfigInput, configFromEnv, mergeConfig, parseConfig } from "./config.js";
 import { type BrowserSession, openBrowserSession, openSite } from "./discovery/browser.js";
 import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discovery/export-lists.js";
 import { createClients } from "./index.js";
 import type { BookRequest } from "./input.js";
-import { createIsbnLookup } from "./isbn-lookup.js";
 import { LibbyClient } from "./libby-client.js";
 import { createCardCache, listLibraryAvailability } from "./libby-list-availability.js";
 import { readLists } from "./libby-lists.js";
@@ -49,7 +49,7 @@ const config = parseConfig(mergeConfig(configFromEnv()));
 const logger = createLogger(config.logLevel);
 const http = { ...config.http, logger };
 const googleApiKey = process.env.GOOGLE_BOOKS_API_KEY?.trim();
-const lookupIsbn = createIsbnLookup(googleApiKey ? { googleApiKey } : {});
+const bookMetadata = createBookMetadata([], googleApiKey ? { googleApiKey } : {});
 const publicCatalog = new ThunderClient({
   ...http,
   timeoutMs: Math.min(http.timeoutMs, 8_000),
@@ -87,7 +87,8 @@ async function listAvailability(titleId: string) {
 async function liveRunner(settings: unknown) {
   const cfg = parseConfig(mergeConfig(settings as ConfigInput, { auth: config.auth, http: config.http }));
   const clients = await createClients(cfg, { logger });
-  return { cfg, libby: clients.libby, runner: new Runner(cfg, clients) };
+  // The server's own metadata source carries the optional Google Books key; the runner uses it only when enabled.
+  return { cfg, libby: clients.libby, runner: new Runner(cfg, { ...clients, metadata: bookMetadata }) };
 }
 
 /** Use this function to open the saved browser profile once; Libby and Fable share it because the profile allows one window. */
@@ -193,7 +194,7 @@ const apiRoutes: Record<string, Handler> = {
   "POST /api/isbn": async (input) => {
     const isbn = (input as { isbn?: unknown } | null)?.isbn;
     if (typeof isbn !== "string") throw new Error("Enter a valid ISBN-10 or ISBN-13.");
-    return lookupIsbn(isbn);
+    return bookMetadata.byIsbn(isbn);
   },
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };

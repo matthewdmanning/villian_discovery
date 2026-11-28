@@ -89,6 +89,11 @@ export const ConfigSchema = z
         allowPreRelease: z.boolean().default(true),
         /** Search results to examine per library. */
         perPage: z.number().int().min(1).max(100).default(24),
+        /**
+         * When the catalog finds nothing, ask public book metadata (Open Library, then Google Books) for an ISBN's
+         * title and author, or the spelling of a title, and search again. Sends only that ISBN, title or author.
+         */
+        bookMetadata: z.boolean().default(true),
       })
       .prefault({}),
 

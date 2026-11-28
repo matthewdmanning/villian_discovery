@@ -67,7 +67,7 @@ Per-book fields `format`, `action`, `libraries` override config for that book. S
 
 Per book:
 
-1. Search each selected library (Thunder catalog). Order: `titleId` lookup → ISBN identifier search → `title author` text search.
+1. Search each selected library (Thunder catalog). Order: `titleId` lookup → ISBN identifier search → `title author` text search. When nothing is found and `matching.bookMetadata` is on, public book metadata (Open Library, then Google Books) resolves an ISBN to its title and author, or a misspelled title to its correct spelling, and the search runs again. A corrected title must still match what was asked within a small typo tolerance.
 2. Match: ISBN match wins; else title similarity ≥ `minTitleScore` and author ≥ `minAuthorScore` (Dice bigrams; case, accents, articles, subtitles, name order ignored). Media type must be in `mediaTypes`; earlier type preferred among equally suitable editions. Matching editions remain available to the planner so an available accepted format can be borrowed.
 3. Skip if already on loan/hold (`skipExisting`).
 4. `action`:
@@ -87,38 +87,39 @@ Network/5xx retries apply to GET requests only. Account writes are never blindly
 
 Layers, later wins: defaults < config file (`-c`, else `./libby.config.json`) < env < CLI flags. Unknown keys rejected. Full example: `examples/libby.config.json`.
 
-| Key                                          | Default                 | Meaning                                                                  |
-| -------------------------------------------- | ----------------------- | ------------------------------------------------------------------------ |
-| `action`                                     | `auto`                  | `auto` \| `borrow` \| `hold`                                             |
-| `libraries`                                  | all cards               | library keys (`cards` shows them), priority order; also filters          |
-| `cards`                                      | all                     | card ids or names to use                                                 |
-| `mediaTypes`                                 | `["ebook","audiobook"]` | accepted types, preference order; also `magazine`                        |
-| `borrow.lendingPeriod`                       | `preference`            | `preference` (card setting) \| `max` \| days (snapped to offered option) |
-| `borrow.luckyDay`                            | `true`                  | allow Lucky Day copies                                                   |
-| `borrow.maxPerRun`                           | —                       | loan cap per run; then `auto` holds instead                              |
-| `hold.placement`                             | `best`                  | `best` \| `first` \| `all`                                               |
-| `hold.maxEstimatedWaitDays`                  | —                       | skip longer waits                                                        |
-| `hold.maxHoldsCount`                         | —                       | skip longer queues                                                       |
-| `hold.suspendDays`                           | `0`                     | deliver later after placing: 0–30, 60, 90                                |
-| `hold.emailAddress`                          | —                       | email stored on hold                                                     |
-| `hold.maxPerRun`                             | —                       | hold cap per run                                                         |
-| `matching.minTitleScore`                     | `0.85`                  | 0–1                                                                      |
-| `matching.minAuthorScore`                    | `0.6`                   | 0–1, when author given                                                   |
-| `matching.ignoreSubtitle`                    | `true`                  | compare main title only                                                  |
-| `matching.allowPreRelease`                   | `true`                  | allow pre-release titles                                                 |
-| `matching.perPage`                           | `24`                    | results examined per library                                             |
-| `skipExisting`                               | `true`                  | skip titles already on shelf                                             |
-| `respectCardLimits`                          | `true`                  | skip cards at limit                                                      |
-| `dryRun`                                     | `false`                 | plan only                                                                |
-| `delayMs`                                    | `750`                   | pause between books                                                      |
-| `failFast`                                   | `false`                 | stop on first error                                                      |
-| `http.timeoutMs` / `retries` / `retryBaseMs` | `30000` / `2` / `500`   | GET retries on network, 429, 5xx; honours `Retry-After`                  |
-| `http.userAgent`                             | Safari UA               | request UA                                                               |
-| `http.sentryBaseUrl` / `thunderBaseUrl`      | see below               | endpoint overrides                                                       |
-| `output.format`                              | `table`                 | `table` \| `json` \| `ndjson`                                            |
-| `output.reportFile`                          | —                       | also write JSON report                                                   |
-| `logLevel`                                   | `info`                  | logs go to stderr                                                        |
-| `auth.identityToken` / `auth.tokenFile`      | — / XDG path            | see Authenticate                                                         |
+| Key                                          | Default                 | Meaning                                                                                                                               |
+| -------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`                                     | `auto`                  | `auto` \| `borrow` \| `hold`                                                                                                          |
+| `libraries`                                  | all cards               | library keys (`cards` shows them), priority order; also filters                                                                       |
+| `cards`                                      | all                     | card ids or names to use                                                                                                              |
+| `mediaTypes`                                 | `["ebook","audiobook"]` | accepted types, preference order; also `magazine`                                                                                     |
+| `borrow.lendingPeriod`                       | `preference`            | `preference` (card setting) \| `max` \| days (snapped to offered option)                                                              |
+| `borrow.luckyDay`                            | `true`                  | allow Lucky Day copies                                                                                                                |
+| `borrow.maxPerRun`                           | —                       | loan cap per run; then `auto` holds instead                                                                                           |
+| `hold.placement`                             | `best`                  | `best` \| `first` \| `all`                                                                                                            |
+| `hold.maxEstimatedWaitDays`                  | —                       | skip longer waits                                                                                                                     |
+| `hold.maxHoldsCount`                         | —                       | skip longer queues                                                                                                                    |
+| `hold.suspendDays`                           | `0`                     | deliver later after placing: 0–30, 60, 90                                                                                             |
+| `hold.emailAddress`                          | —                       | email stored on hold                                                                                                                  |
+| `hold.maxPerRun`                             | —                       | hold cap per run                                                                                                                      |
+| `matching.minTitleScore`                     | `0.85`                  | 0–1                                                                                                                                   |
+| `matching.minAuthorScore`                    | `0.6`                   | 0–1, when author given                                                                                                                |
+| `matching.ignoreSubtitle`                    | `true`                  | compare main title only                                                                                                               |
+| `matching.allowPreRelease`                   | `true`                  | allow pre-release titles                                                                                                              |
+| `matching.perPage`                           | `24`                    | results examined per library                                                                                                          |
+| `matching.bookMetadata`                      | `true`                  | after a catalog miss, resolve the ISBN or title via Open Library/Google Books and search again; sends only that ISBN, title or author |
+| `skipExisting`                               | `true`                  | skip titles already on shelf                                                                                                          |
+| `respectCardLimits`                          | `true`                  | skip cards at limit                                                                                                                   |
+| `dryRun`                                     | `false`                 | plan only                                                                                                                             |
+| `delayMs`                                    | `750`                   | pause between books                                                                                                                   |
+| `failFast`                                   | `false`                 | stop on first error                                                                                                                   |
+| `http.timeoutMs` / `retries` / `retryBaseMs` | `30000` / `2` / `500`   | GET retries on network, 429, 5xx; honours `Retry-After`                                                                               |
+| `http.userAgent`                             | Safari UA               | request UA                                                                                                                            |
+| `http.sentryBaseUrl` / `thunderBaseUrl`      | see below               | endpoint overrides                                                                                                                    |
+| `output.format`                              | `table`                 | `table` \| `json` \| `ndjson`                                                                                                         |
+| `output.reportFile`                          | —                       | also write JSON report                                                                                                                |
+| `logLevel`                                   | `info`                  | logs go to stderr                                                                                                                     |
+| `auth.identityToken` / `auth.tokenFile`      | — / XDG path            | see Authenticate                                                                                                                      |
 
 Env: `LIBBY_IDENTITY_TOKEN`, `LIBBY_TOKEN_FILE`, `LIBBY_DRY_RUN`.
 
@@ -145,7 +146,7 @@ Runs on built-in demo data (`demo` badge): nothing reaches Libby. Demo pairing d
 
 Search shows your tagged books when you open it. Use the Include and Exclude tag buttons to filter the list. Enter text to search the library catalog, or narrow the tagged list when tag filters are selected. You can search by title, author, or ISBN, and use optional fields such as `title:Hail Mary author:Weir`. Fields filter the catalog by title and creator before it limits results. Plain text matches the phrase as typed and, for a line such as `Dune by Frank Herbert`, as title by author. Title and author matching tolerates small typos; ISBNs and title IDs must match exactly.
 
-With tag filters active, Search looks up the ISBN on Open Library and falls back to Google Books. The lookup sends only the ISBN and uses public book metadata to match title and author against your tagged books. The local server can use an optional `GOOGLE_BOOKS_API_KEY` environment variable for Google Books. The extension uses the keyless API.
+With tag filters active, Search resolves an ISBN to its title and author on Open Library, falling back to Google Books, shows what it resolved to, and matches that title and author against your tagged books. A catalog search that finds nothing also falls back to these services (see `matching.bookMetadata`). Lookups send only the ISBN, title or author, with no cookies or referrer. The local server can use an optional `GOOGLE_BOOKS_API_KEY` environment variable for Google Books; without a key, Google's shared keyless quota applies and can run out, in which case Open Library's answer is used alone. The extension uses the keyless API.
 
 Catalog results group editions with the same title and author so you can compare their formats and libraries. **Best match** ranks titles by their strongest visible edition, with exact ISBN hits first. In live Search, an ISBN lookup includes other editions when the full catalog title and all credited author IDs agree. Exact ISBN results stay visible if a library's alternate-edition lookup fails or the catalog cannot confirm the credits.
 Audiobook options in Search and audiobook entries on the Shelf show narrator credits when available.
@@ -164,18 +165,20 @@ The **Sync libraries** tab uses Preview → Review → Apply. Libby controls rea
 
 ## Endpoints used
 
-| Purpose                 | Request                                                                                   |
-| ----------------------- | ----------------------------------------------------------------------------------------- |
-| new identity            | `POST sentry.libbyapp.com/chip?client=dewey`                                              |
-| setup-code display/poll | `GET /chip/clone/code` (`role=pointer`, optional `code`)                                  |
-| optional input code     | `POST /chip/clone/code` (form `code`, `role=pointer`)                                     |
-| complete pairing        | `POST /chip/clone` (form `blessing`), then authenticated `POST /chip` to refresh identity |
-| account state           | `GET /chip/sync`                                                                          |
-| borrow                  | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}`    |
-| hold                    | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`                 |
-| suspend hold            | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                   |
-| search                  | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                             | identifier&mediaTypes&x-client-id=dewey` |
-| title lookup            | `GET .../v2/libraries/{key}/media/{titleId}`                                              |
+| Purpose                 | Request                                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| new identity            | `POST sentry.libbyapp.com/chip?client=dewey`                                                                                   |
+| setup-code display/poll | `GET /chip/clone/code` (`role=pointer`, optional `code`)                                                                       |
+| optional input code     | `POST /chip/clone/code` (form `code`, `role=pointer`)                                                                          |
+| complete pairing        | `POST /chip/clone` (form `blessing`), then authenticated `POST /chip` to refresh identity                                      |
+| account state           | `GET /chip/sync`                                                                                                               |
+| borrow                  | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}`                                         |
+| hold                    | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`                                                      |
+| suspend hold            | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                                                        |
+| search                  | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                                                                  | identifier&mediaTypes&x-client-id=dewey` |
+| title lookup            | `GET .../v2/libraries/{key}/media/{titleId}`                                                                                   |
+| ISBN metadata           | `GET openlibrary.org/api/books?bibkeys=ISBN:{isbn}&jscmd=data`, then `GET books.googleapis.com/books/v1/volumes?q=isbn:{isbn}` |
+| book search metadata    | `GET openlibrary.org/search.json?title&author`, then `GET books.googleapis.com/books/v1/volumes?q=intitle:…+inauthor:…`        |
 
 Sources: [ping/libby-calibre-plugin](https://github.com/ping/libby-calibre-plugin) (based on [lullius/pylibby](https://github.com/lullius/pylibby)), [mknabe/book-club](https://github.com/mknabe/book-club).
 

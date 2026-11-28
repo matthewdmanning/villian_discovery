@@ -1,10 +1,11 @@
+import type { BookMetadataSource } from "./book-metadata.js";
 import { type Config, MediaTypeSchema } from "./config.js";
 import { ConfigError, HttpError, MutationUncertainError } from "./errors.js";
 import { sleep } from "./http.js";
 import type { BookRequest } from "./input.js";
 import type { LibbyClient } from "./libby-client.js";
 import type { Logger } from "./logger.js";
-import { bestMatch, catalogEditionKey, mediaAuthors, rankedMatches } from "./matcher.js";
+import { bestMatch, catalogEditionKey, fuzzyKeywords, mediaAuthors, normalizeTitle, rankedMatches } from "./matcher.js";
 import { type Candidate, type Plan, planBook, type RunState } from "./planner.js";
 import type { ThunderClient } from "./thunder-client.js";
 import type { LibbyCard, SyncResponse, ThunderMedia } from "./types.js";
@@ -33,6 +34,8 @@ export interface RunnerDeps {
   libby: LibbyClient;
   thunder: ThunderClient;
   logger: Logger;
+  /** Public book metadata for catalog misses; used only when `matching.bookMetadata` is on. */
+  metadata?: BookMetadataSource;
 }
 
 export class Runner {
@@ -135,6 +138,10 @@ export class Runner {
     } else {
       candidates = await this.findCandidates(book, cards);
     }
+    if (!candidates.length) {
+      const resolved = await this.resolveBook(book);
+      if (resolved) candidates = await this.findCandidates(resolved, cards);
+    }
     return candidates.map(({ card, match }) => ({
       card,
       media: match.media,
@@ -150,7 +157,11 @@ export class Runner {
     state: RunState,
     emit: (row: BookResult) => void,
   ): Promise<void> {
-    const candidates = await this.findCandidates(book, cards);
+    let candidates = await this.findCandidates(book, cards);
+    if (!candidates.length) {
+      const resolved = await this.resolveBook(book);
+      if (resolved) candidates = await this.findCandidates(resolved, cards);
+    }
     let plan = planBook(book, candidates, state, this.cfg);
     this.deps.logger.debug(`plan: ${describePlan(plan)}`);
     if (this.cfg.dryRun) {
@@ -281,6 +292,42 @@ export class Runner {
       if (!accepted) items = await this.searchText(libraryKey, book, mediaTypes, perPage);
     }
     return items;
+  }
+
+  /**
+   * After a catalog miss, what public book metadata says to search for instead: an ISBN's title and author,
+   * or the corrected spelling of a title. Undefined when metadata is off, knows nothing better, or fails.
+   * A corrected title must still match the request within its typo tolerance, so it never swaps in a different book.
+   */
+  async resolveBook(book: BookRequest): Promise<BookRequest | undefined> {
+    const { metadata, logger } = this.deps;
+    if (!metadata || !this.cfg.matching.bookMetadata || book.titleId) return undefined;
+    const { isbn: _isbn, text: _text, ...request } = book;
+    try {
+      if (book.isbn && !book.title) {
+        const found = await metadata.byIsbn(book.isbn);
+        if (!found) return undefined;
+        logger.info(`ISBN ${book.isbn} is "${found.title}"${found.authors[0] ? ` by ${found.authors[0]}` : ""}`);
+        // The catalog has no copy with this ISBN; look for the same book under its title and author.
+        return { ...request, title: found.title, ...(found.authors[0] ? { author: found.authors[0] } : {}) };
+      }
+      if (!book.title) return undefined;
+      const [found] = await metadata.search({ title: book.title, ...(book.author ? { author: book.author } : {}) }, 1);
+      if (!found || normalizeTitle(found.title, false) === normalizeTitle(book.title, false)) return undefined;
+      if (!fuzzyKeywords(found.title, book.title)) return undefined;
+      const author = book.author && found.authors.find((name) => fuzzyKeywords(name, book.author!));
+      if (book.author && !author) return undefined;
+      logger.info(`Searching again for "${found.title}" (asked for "${book.title}")`);
+      return {
+        ...request,
+        title: found.title,
+        ...(author ? { author } : {}),
+        ...(book.matchMode === "text" ? { text: [found.title, author].filter(Boolean).join(" ") } : {}),
+      };
+    } catch (error) {
+      logger.warn(`Book metadata lookup failed: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    }
   }
 
   /**

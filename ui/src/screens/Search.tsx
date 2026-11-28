@@ -83,7 +83,9 @@ export function SearchScreen() {
       ? "No book metadata found for this ISBN."
       : isbnBook && !isbnBook.authors.length
         ? "The ISBN lookup returned no author to match against tagged books."
-        : undefined
+        : isbnBook
+          ? `ISBN ${isbn} is ${isbnBook.title}${isbnBook.subtitle ? `: ${isbnBook.subtitle}` : ""} by ${isbnBook.authors.join(", ")} (${isbnBook.source === "google-books" ? "Google Books" : "Open Library"}).`
+          : undefined
     : undefined;
   const items = useMemo(() => {
     if (!submitted) return lists.items;

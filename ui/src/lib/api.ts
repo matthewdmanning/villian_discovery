@@ -1,6 +1,6 @@
 import type { PairingOptions } from "../../../src/auth.js";
+import type { IsbnLookup } from "../../../src/book-metadata.js";
 import type { BookRequest } from "../../../src/input.js";
-import type { IsbnLookup } from "../../../src/isbn-lookup.js";
 import { LibbyClient } from "../../../src/libby-client.js";
 import type { ListLibraryAvailability } from "../../../src/libby-list-availability.ts";
 import type { ListsData } from "../../../src/libby-lists.ts";
@@ -180,7 +180,7 @@ export const demoApi: LibraryApi = {
   async lookupIsbn(isbn) {
     await wait(250);
     return isbn === "9781635575637" || isbn === "163557563X"
-      ? { title: "Piranesi", authors: ["Susanna Clarke"], source: "open-library" }
+      ? { title: "Piranesi", authors: ["Susanna Clarke"], isbns: ["9781635575637"], source: "open-library" }
       : null;
   },
   async listAvailability(titleId) {

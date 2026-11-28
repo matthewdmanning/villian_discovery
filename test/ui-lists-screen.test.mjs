@@ -409,7 +409,12 @@ describe("Unified search", () => {
 
   it("uses independent ISBN metadata to match title and author within the tagged list", async () => {
     const search = vi.fn(async () => []);
-    const lookupIsbn = vi.fn(async () => ({ title: "The Zulu", authors: ["Adams"], source: "open-library" }));
+    const lookupIsbn = vi.fn(async () => ({
+      title: "The Zulu",
+      authors: ["Adams"],
+      isbns: [],
+      source: "open-library",
+    }));
     await mount({
       lookupIsbn,
       search,
@@ -420,6 +425,8 @@ describe("Unified search", () => {
     expect(lookupIsbn).toHaveBeenCalledExactlyOnceWith("9780593135204");
     expect(search).not.toHaveBeenCalled();
     expect(titles()).toEqual(["Zulu"]);
+    // The resolved title and its source are named, so the match is explained.
+    expect(text()).toContain("ISBN 9780593135204 is The Zulu by Adams (Open Library).");
     await removeTag("Includes", "Favorites");
     expect(search).toHaveBeenCalledWith(expect.objectContaining({ isbn: "9780593135204" }), expect.anything());
   });

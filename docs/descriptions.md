@@ -373,6 +373,59 @@ Dependencies: `isbn13`, `titleSimilarity`.
 
 ## `shelfHistory` - extension/src/sync-shelf-history.ts
 
-Use this function to retain previously observed pending checkouts as display-only reminders after return.
-Inputs: `stored` - untrusted local history; `plan` - complete current comparison; `report` - optional verified apply outcomes.
+Use this function to retain previously observed pending checkouts as display-only reminders after return, for `RETURNED_REMINDER_MS` and at most `MAX_RETURNED_REMINDERS`.
+Inputs: `stored` - untrusted local history; `plan` - complete current comparison; `report` - optional verified apply outcomes; `now` - current time in ms.
 Dependencies: `historySchema`, `SyncPlan`, `SyncApplyReport`.
+
+## `BookMetadataSource` - src/book-metadata.ts
+
+The common interface for public book metadata. `byIsbn` resolves an ISBN-10 or ISBN-13 to its edition (title, subtitle, authors, edition ISBNs, publisher, date, pages, language, description, cover and page link), or null when unknown. `search` finds books by title, author or free text, best match first, with the ISBNs of their editions.
+Implementations: `createOpenLibrarySource`, `createGoogleBooksSource`, and the combined `createBookMetadata`.
+
+## `createOpenLibrarySource` - src/book-metadata.ts
+
+Use this function to read Open Library: `byIsbn` through `/api/books` (`jscmd=data`) and `search` through `/search.json` with `title`, `author` or `q`.
+Inputs: `options` - optional `fetch` and `timeoutMs`.
+Dependencies: `getJson`, `canonicalIsbn`, `isbnList`, `zod` schemas.
+
+## `createGoogleBooksSource` - src/book-metadata.ts
+
+Use this function to read Google Books volumes: `byIsbn` through `q=isbn:` keeping only volumes that carry that exact edition, and `search` through `intitle:` and `inauthor:` phrases or free text.
+Inputs: `options` - optional `fetch`, `timeoutMs` and `googleApiKey`.
+Dependencies: `getJson`, `canonicalIsbn`, `isbnList`, `zod` schemas.
+
+## `createBookMetadata` - src/book-metadata.ts
+
+Use this function to combine sources in order (default: Open Library, then Google Books). `byIsbn` returns the first result that names an author, else an authorless one, and fails only when no source answered. `search` fills up to `limit` from each source in turn, skipping books an earlier source returned (shared ISBN, or same title and first author).
+Inputs: `sources` - sources to combine; `options` - used to build the default sources.
+Dependencies: `createOpenLibrarySource`, `createGoogleBooksSource`, `normalizeTitle`, `normalizeName`.
+
+## `canonicalIsbn` - src/book-metadata.ts
+
+Use this function to validate an ISBN-10 or ISBN-13 (check digits included) and return its ISBN-13 form.
+Inputs: `value` - an ISBN in any spelling.
+Dependencies: `normalizeIsbn`.
+
+## `fuzzyKeywords` - src/matcher.ts
+
+Use this function to match interactive search text: the folded phrase appears in `value`, or every query word matches a word of `value` exactly, as a 3+ letter prefix, or within one typo from 4 letters and two from 8 (adjacent swaps count as one). Short words and numbers stay exact. Never use it for ISBNs or title IDs.
+Inputs: `value` - title or author text; `query` - what the user typed.
+Dependencies: `containsKeywords`, `editDistance`, `fold`.
+
+## `Runner.resolveBook` - src/runner.ts
+
+Use this function after a catalog miss to ask `BookMetadataSource` what to search for instead: an ISBN-only request becomes its title and author; a title becomes its corrected spelling only when the correction still matches the request within `fuzzyKeywords` tolerance, and a given author must match too. Returns undefined when `matching.bookMetadata` is off, nothing better is known, or the lookup fails (logged as a warning).
+Inputs: `book` - the request that found nothing.
+Dependencies: `deps.metadata`, `fuzzyKeywords`, `normalizeTitle`.
+
+## `Runner.searchText` - src/runner.ts
+
+Use this function for catalog text search. Explicit `title:`/`author:` fields use Thunder's `title` and `creator` filters, so the constraint applies before the catalog caps results. Plain text searches the phrase as typed and its title-by-author reading, merged by title ID.
+Inputs: `libraryKey`, `book`, `mediaTypes`, `perPage`.
+Dependencies: `ThunderClient.searchLibrary`.
+
+## `parseSearchQuery`, `matchesListSearch`, `matchesIsbnBook` - ui/src/lib/search-query.ts
+
+Use these functions to read Search input and filter tagged items. Plain text keeps the literal phrase (`text`) and any title-by-author split; `title:`/`author:` fields become a keyword query. Titles and authors match with `fuzzyKeywords`; title IDs exactly; ISBNs never match a tagged item directly. `matchesIsbnBook` matches a tagged item to an ISBN's resolved book by normalized title (either side may carry a subtitle) and author.
+Inputs: `text` - the Search box; `item` - a tagged title; `query` - a parsed request; `book` - a resolved `BookRecord`.
+Dependencies: `parseBookLine`, `fuzzyKeywords`, `normalizeTitle`, `normalizeName`.

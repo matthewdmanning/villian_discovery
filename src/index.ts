@@ -1,8 +1,8 @@
 export * from "./auth.js";
+export * from "./book-metadata.js";
 export * from "./config.js";
 export * from "./errors.js";
 export * from "./input.js";
-export * from "./isbn-lookup.js";
 export { DEFAULT_SENTRY_BASE_URL, isValidSuspendDays, LibbyClient } from "./libby-client.js";
 export { createLogger, type Logger, type LogLevel } from "./logger.js";
 export * from "./matcher.js";
@@ -16,6 +16,7 @@ export { DEFAULT_THUNDER_BASE_URL, type LibrarySearch, ThunderClient } from "./t
 export type * from "./types.js";
 
 import { resolveIdentityToken } from "./auth.js";
+import { createBookMetadata } from "./book-metadata.js";
 import { type Config, type ConfigInput, configFromEnv, mergeConfig, parseConfig } from "./config.js";
 import type { BookRequest } from "./input.js";
 import { LibbyClient } from "./libby-client.js";
@@ -37,7 +38,10 @@ export async function createClients(cfg: Config, opts: { fetch?: typeof fetch; l
     ...http,
     ...(cfg.http.thunderBaseUrl ? { baseUrl: cfg.http.thunderBaseUrl } : {}),
   });
-  return { libby, thunder, logger };
+  const metadata = cfg.matching.bookMetadata
+    ? createBookMetadata([], { ...(opts.fetch ? { fetch: opts.fetch } : {}), timeoutMs: cfg.http.timeoutMs })
+    : undefined;
+  return { libby, thunder, logger, ...(metadata ? { metadata } : {}) };
 }
 
 /** One-call API: borrow or hold every book. Config layers: env < `config`. */

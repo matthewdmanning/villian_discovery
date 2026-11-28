@@ -172,7 +172,12 @@
             { "type": "slider", "label": "Author match threshold", "binds": "matching.minAuthorScore" },
             { "type": "toggle", "label": "Ignore subtitles", "binds": "matching.ignoreSubtitle" },
             { "type": "toggle", "label": "Allow pre-release titles", "binds": "matching.allowPreRelease" },
-            { "type": "number", "label": "Results examined per library", "binds": "matching.perPage" }
+            { "type": "number", "label": "Results examined per library", "binds": "matching.perPage" },
+            {
+              "type": "toggle",
+              "label": "Look up missed books on Open Library and Google Books",
+              "binds": "matching.bookMetadata"
+            }
           ]
         },
         {
