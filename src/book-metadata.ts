@@ -1,21 +1,21 @@
 /**
- * Public book metadata: one interface, `BookMetadataSource`, with an Open Library and a Google Books
- * implementation, and a combined source that falls back between them. Requests send only the ISBN or
- * the title and author being looked up, with no cookies or referrer.
+ * Public book metadata for books that Libby or Fable already returned: one interface, `BookMetadataSource`,
+ * with an Open Library and a Google Books implementation, and a combined source that falls back between them.
+ * It resolves and checks ISBNs; it is not a search engine. Requests send only the ISBN being checked, with no
+ * cookies or referrer.
  */
 import { z } from "zod";
 import { normalizeIsbn } from "./input.js";
-import { normalizeName, normalizeTitle } from "./matcher.js";
 import { stripUndefined } from "./util.js";
 
 export type BookMetadataSourceId = "open-library" | "google-books";
 
-/** One book (an edition for an ISBN lookup, a work or volume for a search) as a metadata service describes it. */
+/** One edition as a metadata service describes it. */
 export interface BookRecord {
   title: string;
   subtitle?: string;
   authors: string[];
-  /** ISBN-13s. For an ISBN lookup, the looked-up edition comes first; for a search, every known edition. */
+  /** ISBN-13s of this edition, the looked-up one first. */
   isbns: string[];
   publisher?: string;
   publishedDate?: string;
@@ -29,19 +29,23 @@ export interface BookRecord {
   source: BookMetadataSourceId;
 }
 
-/** What to search for: a title and/or author, or free text. */
-export interface BookQuery {
-  title?: string;
-  author?: string;
-  text?: string;
+export type EditionFormat = "audiobook" | "ebook" | "print";
+
+/** One edition of a work: its ISBN-13 and, when the service knows it, its format. */
+export interface Edition {
+  isbn: string;
+  format?: EditionFormat;
 }
 
 export interface BookMetadataSource {
   readonly id: BookMetadataSourceId | "combined";
   /** Resolve an ISBN-10 or ISBN-13 to its book: title, authors and other details. Null when unknown. */
   byIsbn(isbn: string): Promise<BookRecord | null>;
-  /** Find books by title, author or text, best match first, with the ISBNs of their editions. */
-  search(query: BookQuery, limit?: number): Promise<BookRecord[]>;
+  /**
+   * Every known edition of the same work as `isbn`, that ISBN included, so two ISBNs can be checked as the
+   * same book in different editions. Only the looked-up edition when the service has no work grouping.
+   */
+  editions(isbn: string): Promise<Edition[]>;
 }
 
 /** Resolve one ISBN to its book; the shape `LibraryApi.lookupIsbn` exposes to the UI. */
@@ -54,8 +58,9 @@ export interface BookMetadataOptions {
   googleApiKey?: string;
 }
 
-const MAX_SEARCH_RESULTS = 40;
 const MAX_ISBNS = 40;
+const MAX_EDITIONS = 500;
+const CACHED_ISBNS = 500;
 
 const nonempty = z.string().trim().min(1);
 const named = z.object({ name: nonempty });
@@ -74,20 +79,17 @@ const openLibraryEdition = z.object({
     .optional(),
   url: z.string().optional(),
 });
-const openLibrarySearch = z.object({
-  docs: z.array(z.unknown()).default([]),
-});
-const openLibraryWork = z.object({
-  key: nonempty,
-  title: nonempty,
-  subtitle: nonempty.optional(),
-  author_name: z.array(nonempty).optional(),
-  isbn: z.array(z.string()).optional(),
-  first_publish_year: z.number().int().optional(),
-  publisher: z.array(nonempty).optional(),
-  language: z.array(nonempty).optional(),
-  cover_i: z.number().int().optional(),
-  number_of_pages_median: z.number().int().positive().optional(),
+const openLibraryIsbn = z.object({ works: z.array(z.object({ key: z.string().regex(/^\/works\/OL\d+W$/) })).min(1) });
+const openLibraryEditions = z.object({
+  entries: z
+    .array(
+      z.object({
+        isbn_13: z.array(z.string()).optional(),
+        isbn_10: z.array(z.string()).optional(),
+        physical_format: z.string().optional(),
+      }),
+    )
+    .default([]),
 });
 const googleVolume = z.object({
   volumeInfo: z.object({
@@ -142,13 +144,14 @@ function isbnList(values: readonly string[], first?: string): string[] {
   return [...isbns];
 }
 
-function requireQuery(query: BookQuery): BookQuery {
-  const clean = stripUndefined({ title: query.title?.trim(), author: query.author?.trim(), text: query.text?.trim() });
-  if (!clean.title && !clean.author && !clean.text) throw new Error("Enter a title, author or search text.");
-  return clean;
+/** An edition's format from a service's label: "eAudiobook", "Audio CD", "ebook", "Kindle", "Paperback"… */
+export function editionFormat(label: string | undefined): EditionFormat | undefined {
+  if (!label) return undefined;
+  if (/audio|\bcd\b|mp3|cassette/i.test(label)) return "audiobook";
+  if (/e-?book|kindle|epub|electronic/i.test(label)) return "ebook";
+  if (/paperback|hardcover|hardback|mass market|board book|library binding|print/i.test(label)) return "print";
+  return undefined;
 }
-
-const resultLimit = (limit: number) => Math.min(Math.max(1, Math.floor(limit)), MAX_SEARCH_RESULTS);
 
 function httpsUrl(value: string | undefined): string | undefined {
   if (!value || !URL.canParse(value)) return undefined;
@@ -208,42 +211,29 @@ export function createOpenLibrarySource(options: BookMetadataOptions = {}): Book
         source: "open-library" as const,
       });
     },
-    async search(query, limit = 10) {
-      const { title, author, text } = requireQuery(query);
-      const url = new URL("https://openlibrary.org/search.json");
-      url.search = new URLSearchParams(
-        stripUndefined({
-          q: text,
-          title,
-          author,
-          limit: String(resultLimit(limit)),
-          fields:
-            "key,title,subtitle,author_name,isbn,first_publish_year,publisher,language,cover_i,number_of_pages_median",
+    async editions(value) {
+      const { canonical } = requireIsbn(value);
+      // The edition record names its work; the work lists every edition with its ISBNs and format.
+      const edition = openLibraryIsbn.safeParse(
+        await getJson(new URL(`https://openlibrary.org/isbn/${canonical}.json`), service, options).catch((error) => {
+          if (error instanceof Error && error.message.endsWith("HTTP 404.")) return null;
+          throw error;
         }),
-      ).toString();
-      const response = openLibrarySearch.safeParse(await getJson(url, service, options));
-      if (!response.success) throw new Error(`${service} returned invalid search results.`);
-      return response.data.docs.flatMap((doc) => {
-        const result = openLibraryWork.safeParse(doc);
-        if (!result.success) return [];
-        const work = result.data;
-        return [
-          stripUndefined({
-            title: work.title,
-            subtitle: work.subtitle,
-            authors: work.author_name ?? [],
-            isbns: isbnList(work.isbn ?? []),
-            publisher: work.publisher?.[0],
-            publishedDate: work.first_publish_year === undefined ? undefined : String(work.first_publish_year),
-            pageCount: work.number_of_pages_median,
-            language: work.language?.[0],
-            coverUrl:
-              work.cover_i === undefined ? undefined : `https://covers.openlibrary.org/b/id/${work.cover_i}-M.jpg`,
-            infoUrl: `https://openlibrary.org${work.key}`,
-            source: "open-library" as const,
-          }),
-        ];
-      });
+      );
+      if (!edition.success) return [{ isbn: canonical }];
+      const url = new URL(`https://openlibrary.org${edition.data.works[0]!.key}/editions.json`);
+      url.searchParams.set("limit", String(MAX_EDITIONS));
+      const listed = openLibraryEditions.safeParse(await getJson(url, service, options));
+      if (!listed.success) throw new Error(`${service} returned invalid edition data.`);
+      const editions = new Map<string, Edition>([[canonical, { isbn: canonical }]]);
+      for (const entry of listed.data.entries) {
+        const format = editionFormat(entry.physical_format);
+        for (const isbn of isbnList([...(entry.isbn_13 ?? []), ...(entry.isbn_10 ?? [])])) {
+          if (!editions.has(isbn) || (format && !editions.get(isbn)!.format))
+            editions.set(isbn, { isbn, ...(format ? { format } : {}) });
+        }
+      }
+      return [...editions.values()];
     },
   };
 }
@@ -284,84 +274,87 @@ export function createGoogleBooksSource(options: BookMetadataOptions = {}): Book
       ];
     });
   };
-  // Google's field operators take quoted phrases; quotes inside a value would end the phrase early.
-  const phrase = (value: string) => `"${value.replaceAll('"', " ").trim()}"`;
+  const byIsbn = async (value: string): Promise<BookRecord | null> => {
+    const { isbn, canonical } = requireIsbn(value);
+    // Google can return near matches; keep only volumes that carry this exact edition.
+    const matches = (await volumes(`isbn:${isbn}`, 10)).filter((book) => book.isbns.includes(canonical));
+    const best = matches.find((book) => book.authors.length) ?? matches[0];
+    return best ? { ...best, isbns: isbnList(best.isbns, canonical) } : null;
+  };
   return {
     id: "google-books",
-    async byIsbn(value) {
-      const { isbn, canonical } = requireIsbn(value);
-      // Google can return near matches; keep only volumes that carry this exact edition.
-      const matches = (await volumes(`isbn:${isbn}`, 10)).filter((book) => book.isbns.includes(canonical));
-      const best = matches.find((book) => book.authors.length) ?? matches[0];
-      return best ? { ...best, isbns: isbnList(best.isbns, canonical) } : null;
-    },
-    async search(query, limit = 10) {
-      const { title, author, text } = requireQuery(query);
-      const terms = [text, title && `intitle:${phrase(title)}`, author && `inauthor:${phrase(author)}`].filter(
-        (term): term is string => !!term,
-      );
-      return volumes(terms.join(" "), resultLimit(limit));
+    byIsbn,
+    async editions(value) {
+      // Google Books has no work grouping: a volume lists only its own ISBN-10 and ISBN-13.
+      const { canonical } = requireIsbn(value);
+      return isbnList((await byIsbn(value))?.isbns ?? [], canonical).map((isbn) => ({ isbn }));
     },
   };
 }
 
-/** The same book from two services: a shared ISBN, or the same title and first author. */
-function sameBook(left: BookRecord, right: BookRecord): boolean {
-  if (left.isbns.some((isbn) => right.isbns.includes(isbn))) return true;
-  const author = (book: BookRecord) => (book.authors[0] ? normalizeName(book.authors[0]) : "");
-  return (
-    normalizeTitle(left.title, true) === normalizeTitle(right.title, true) &&
-    author(left) !== "" &&
-    author(left) === author(right)
-  );
-}
-
 /**
- * Combine sources, in order. An ISBN lookup tries each until one names an author, falling back to an
- * authorless result, and fails only when every source failed. A search fills up to `limit` from each
- * source in turn, skipping books an earlier source already returned.
+ * Combine sources, in order (default: Open Library, then Google Books). An ISBN lookup tries each until one
+ * names an author, falling back to an authorless result, and fails only when no source answered. Editions come
+ * from the first source that answers, so Google Books, which has no work grouping, is asked only when Open
+ * Library fails. Successful answers are cached per ISBN.
  */
 export function createBookMetadata(
   sources: readonly BookMetadataSource[] = [],
   options: BookMetadataOptions = {},
 ): BookMetadataSource {
   const chain = sources.length ? sources : [createOpenLibrarySource(options), createGoogleBooksSource(options)];
+  const books = boundedCache<BookRecord | null>();
+  const editionLists = boundedCache<Edition[]>();
   return {
     id: "combined",
     async byIsbn(isbn) {
-      requireIsbn(isbn);
-      const errors: string[] = [];
-      let incomplete: BookRecord | null = null;
-      for (const source of chain) {
-        try {
-          const book = await source.byIsbn(isbn);
-          if (book?.authors.length) return book;
-          incomplete ??= book;
-        } catch (error) {
-          errors.push(error instanceof Error ? error.message : String(error));
-        }
-      }
-      if (incomplete) return incomplete;
-      if (errors.length) throw new Error(errors.join(" "));
-      return null;
-    },
-    async search(query, limit = 10) {
-      requireQuery(query);
-      const wanted = resultLimit(limit);
-      const errors: string[] = [];
-      const books: BookRecord[] = [];
-      for (const source of chain) {
-        if (books.length >= wanted) break;
-        try {
-          for (const book of await source.search(query, wanted)) {
-            if (books.length < wanted && !books.some((known) => sameBook(known, book))) books.push(book);
+      const { canonical } = requireIsbn(isbn);
+      return books(canonical, async () => {
+        const errors: string[] = [];
+        let incomplete: BookRecord | null = null;
+        for (const source of chain) {
+          try {
+            const book = await source.byIsbn(canonical);
+            if (book?.authors.length) return book;
+            incomplete ??= book;
+          } catch (error) {
+            errors.push(error instanceof Error ? error.message : String(error));
           }
-        } catch (error) {
-          errors.push(error instanceof Error ? error.message : String(error));
         }
-      }
-      if (!books.length && errors.length === chain.length) throw new Error(errors.join(" "));
-      return books;
+        if (incomplete) return incomplete;
+        if (errors.length) throw new Error(errors.join(" "));
+        return null;
+      });
     },
+    async editions(isbn) {
+      const { canonical } = requireIsbn(isbn);
+      return editionLists(canonical, async () => {
+        const errors: string[] = [];
+        for (const source of chain) {
+          try {
+            return await source.editions(canonical);
+          } catch (error) {
+            errors.push(error instanceof Error ? error.message : String(error));
+          }
+        }
+        throw new Error(errors.join(" "));
+      });
+    },
+  };
+}
+
+/** Keep up to `CACHED_ISBNS` answers, oldest dropped first. A failed lookup is never kept. */
+function boundedCache<T>(): (key: string, load: () => Promise<T>) => Promise<T> {
+  const entries = new Map<string, Promise<T>>();
+  return (key, load) => {
+    const known = entries.get(key);
+    if (known) return known;
+    const value = load();
+    entries.set(key, value);
+    if (entries.size > CACHED_ISBNS) entries.delete(entries.keys().next().value!);
+    value.catch(() => {
+      if (entries.get(key) === value) entries.delete(key);
+    });
+    return value;
   };
 }

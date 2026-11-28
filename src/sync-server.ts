@@ -87,8 +87,7 @@ async function listAvailability(titleId: string) {
 async function liveRunner(settings: unknown) {
   const cfg = parseConfig(mergeConfig(settings as ConfigInput, { auth: config.auth, http: config.http }));
   const clients = await createClients(cfg, { logger });
-  // The server's own metadata source carries the optional Google Books key; the runner uses it only when enabled.
-  return { cfg, libby: clients.libby, runner: new Runner(cfg, { ...clients, metadata: bookMetadata }) };
+  return { cfg, libby: clients.libby, runner: new Runner(cfg, clients) };
 }
 
 /** Use this function to open the saved browser profile once; Libby and Fable share it because the profile allows one window. */
@@ -149,6 +148,7 @@ async function body(request: IncomingMessage): Promise<unknown> {
 const sync: SyncOrchestrator = createSyncOrchestrator({
   context,
   adapters,
+  metadata: bookMetadata,
   readSettings: loadSettings,
   writeSettings: async (settings) => writeFile(SETTINGS_FILE, `${JSON.stringify(settings, null, 2)}\n`),
 });

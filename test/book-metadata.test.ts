@@ -6,6 +6,7 @@ import {
   createBookMetadata,
   createGoogleBooksSource,
   createOpenLibrarySource,
+  editionFormat,
 } from "../src/book-metadata.js";
 
 const ISBN13 = "9780593135204";
@@ -31,17 +32,6 @@ const openEdition = {
   identifiers: { isbn_13: [ISBN13, "9780593395561"], isbn_10: [ISBN10, "not-an-isbn"] },
   cover: { large: "https://covers.openlibrary.org/b/id/123-L.jpg" },
 };
-const openWork = {
-  key: "/works/OL1W",
-  title: "Project Hail Mary",
-  author_name: ["Andy Weir"],
-  isbn: [ISBN10, ISBN13, "9780593395561", "bad"],
-  first_publish_year: 2021,
-  publisher: ["Ballantine"],
-  language: ["eng"],
-  cover_i: 123,
-  number_of_pages_median: 496,
-};
 const googleVolume = (identifier: string, over: Record<string, unknown> = {}) => ({
   volumeInfo: {
     title: "Project Hail Mary",
@@ -64,6 +54,36 @@ describe("canonicalIsbn", () => {
     expect(canonicalIsbn(ISBN13)).toBe(ISBN13);
     expect(canonicalIsbn("9780593135205")).toBeUndefined();
     expect(canonicalIsbn("0593135203")).toBeUndefined();
+  });
+});
+
+describe("editionFormat", () => {
+  it("reads common edition labels", () => {
+    expect(
+      [
+        "eAudiobook",
+        "Audio CD",
+        "MP3 CD",
+        "ebook",
+        "Kindle Edition",
+        "Paperback",
+        "Hardcover",
+        "Mass Market Paperback",
+        "Unknown",
+        undefined,
+      ].map(editionFormat),
+    ).toEqual([
+      "audiobook",
+      "audiobook",
+      "audiobook",
+      "ebook",
+      "ebook",
+      "print",
+      "print",
+      "print",
+      undefined,
+      undefined,
+    ]);
   });
 });
 
@@ -96,38 +116,33 @@ describe("Open Library", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("searches by title and author and lists each work's edition ISBNs", async () => {
-    const fetch = fetchOf({ docs: [openWork, { title: "missing key" }] });
-    const books = await createOpenLibrarySource({ fetch }).search({ title: "Hail Mary", author: "Weir" }, 5);
-    expect(books).toEqual([
+  it("lists every edition of the looked-up ISBN's work, with formats", async () => {
+    const fetch = fetchOf(
+      { key: "/books/OL1M", works: [{ key: "/works/OL1W" }] },
       {
-        title: "Project Hail Mary",
-        authors: ["Andy Weir"],
-        isbns: [ISBN13, "9780593395561"],
-        publisher: "Ballantine",
-        publishedDate: "2021",
-        pageCount: 496,
-        language: "eng",
-        coverUrl: "https://covers.openlibrary.org/b/id/123-M.jpg",
-        infoUrl: "https://openlibrary.org/works/OL1W",
-        source: "open-library",
+        entries: [
+          { isbn_13: ["9780593395561"], physical_format: "eAudiobook" },
+          { isbn_10: ["0593135210"], physical_format: "Paperback" },
+          { isbn_13: [ISBN13], physical_format: "Hardcover" },
+          { physical_format: "ebook" },
+        ],
       },
+    );
+    await expect(createOpenLibrarySource({ fetch }).editions(ISBN10)).resolves.toEqual([
+      { isbn: ISBN13, format: "print" },
+      { isbn: "9780593395561", format: "audiobook" },
+      { isbn: "9780593135211", format: "print" },
     ]);
-    const url = urlOf(fetch);
-    expect(url.origin + url.pathname).toBe("https://openlibrary.org/search.json");
-    expect(url.searchParams.get("title")).toBe("Hail Mary");
-    expect(url.searchParams.get("author")).toBe("Weir");
-    expect(url.searchParams.get("limit")).toBe("5");
-    expect(url.searchParams.has("q")).toBe(false);
+    expect(String(urlOf(fetch, 0))).toBe(`https://openlibrary.org/isbn/${ISBN13}.json`);
+    expect(String(urlOf(fetch, 1))).toBe("https://openlibrary.org/works/OL1W/editions.json?limit=500");
   });
 
-  it("sends free text as q and rejects an empty query", async () => {
-    const fetch = fetchOf({ docs: [] });
-    const source = createOpenLibrarySource({ fetch });
-    await source.search({ text: "hail mary weir" });
-    expect(urlOf(fetch).searchParams.get("q")).toBe("hail mary weir");
-    await expect(source.search({ title: "  " })).rejects.toThrow("Enter a title, author or search text.");
-    expect(fetch).toHaveBeenCalledTimes(1);
+  it("lists only the ISBN itself when Open Library has no edition record or work", async () => {
+    const source = createOpenLibrarySource({
+      fetch: fetchOf(new Response(null, { status: 404 }), { key: "/books/OL1M", works: [] }),
+    });
+    await expect(source.editions(ISBN13)).resolves.toEqual([{ isbn: ISBN13 }]);
+    await expect(source.editions(ISBN13)).resolves.toEqual([{ isbn: ISBN13 }]);
   });
 });
 
@@ -162,12 +177,17 @@ describe("Google Books", () => {
     await expect(source.byIsbn(ISBN13)).resolves.toBeNull();
   });
 
-  it("searches with intitle and inauthor phrases", async () => {
-    const fetch = fetchOf({ totalItems: 1, items: [googleVolume(ISBN13)] });
-    const books = await createGoogleBooksSource({ fetch }).search({ title: 'Hail "Mary"', author: "Weir" }, 3);
-    expect(books.map((book) => book.title)).toEqual(["Project Hail Mary"]);
-    expect(urlOf(fetch).searchParams.get("q")).toBe('intitle:"Hail  Mary" inauthor:"Weir"');
-    expect(urlOf(fetch).searchParams.get("maxResults")).toBe("3");
+  it("lists a volume's own ISBNs as its editions, having no work grouping", async () => {
+    const volume = googleVolume(ISBN13, {
+      industryIdentifiers: [
+        { type: "ISBN_13", identifier: ISBN13 },
+        { type: "ISBN_10", identifier: ISBN10 },
+        { type: "OTHER", identifier: "x" },
+      ],
+    });
+    const source = createGoogleBooksSource({ fetch: fetchOf({ totalItems: 1, items: [volume] }, { totalItems: 0 }) });
+    await expect(source.editions(ISBN13)).resolves.toEqual([{ isbn: ISBN13 }]);
+    await expect(source.editions(ISBN13)).resolves.toEqual([{ isbn: ISBN13 }]);
   });
 
   it("explains a rate limit and never repeats a URL that carries the key", async () => {
@@ -191,7 +211,7 @@ describe("combined metadata", () => {
   const source = (over: Partial<BookMetadataSource> = {}): BookMetadataSource => ({
     id: "open-library",
     byIsbn: vi.fn(async () => null),
-    search: vi.fn(async () => []),
+    editions: vi.fn(async (isbn: string) => [{ isbn }]),
     ...over,
   });
 
@@ -231,39 +251,38 @@ describe("combined metadata", () => {
     expect(unused.byIsbn).not.toHaveBeenCalled();
   });
 
-  it("merges searches up to the limit, skipping books an earlier source returned", async () => {
-    const first = source({ search: async () => [record(), record({ title: "Artemis", isbns: ["9780553448122"] })] });
-    const second = source({
-      id: "google-books",
-      search: async () => [
-        record({ source: "google-books" }),
-        record({ title: "The Martian", isbns: [], source: "google-books" }),
-        record({ title: "Project hail mary", isbns: [], source: "google-books" }),
-        record({ title: "Extra", isbns: ["9780306406157"], source: "google-books" }),
-      ],
+  it("takes editions from the first source that answers", async () => {
+    const audio = { isbn: "9780593395561", format: "audiobook" as const };
+    const first = source({
+      editions: vi.fn(async () => {
+        throw new Error("Open Library could not be reached.");
+      }),
     });
-    const books = await createBookMetadata([first, second]).search({ title: "weir" }, 3);
-    expect(books.map((book) => [book.title, book.source])).toEqual([
-      ["Project Hail Mary", "open-library"],
-      ["Artemis", "open-library"],
-      ["The Martian", "google-books"],
-    ]);
+    const second = source({ id: "google-books", editions: vi.fn(async () => [{ isbn: ISBN13 }, audio]) });
+    await expect(createBookMetadata([first, second]).editions(ISBN10)).resolves.toEqual([{ isbn: ISBN13 }, audio]);
+    expect(first.editions).toHaveBeenCalledWith(ISBN13);
+    const answered = source({ editions: vi.fn(async () => [audio]) });
+    const unused = source();
+    await createBookMetadata([answered, unused]).editions(ISBN13);
+    expect(unused.editions).not.toHaveBeenCalled();
+    await expect(createBookMetadata([first, first]).editions(ISBN13)).rejects.toThrow("could not be reached");
   });
 
-  it("asks the next source only when the first falls short, and fails only when all fail", async () => {
-    const full = source({ search: async () => [record()] });
-    const second = source({ id: "google-books" });
-    await createBookMetadata([full, second]).search({ title: "x" }, 1);
-    expect(second.search).not.toHaveBeenCalled();
-    const down = source({
-      search: async () => {
-        throw new Error("down");
-      },
-    });
-    await expect(
-      createBookMetadata([down, source({ search: async () => [record()] })]).search({ text: "x" }),
-    ).resolves.toHaveLength(1);
-    await expect(createBookMetadata([down, down]).search({ text: "x" })).rejects.toThrow("down down");
+  it("caches answers per ISBN, whatever its spelling, but never a failure", async () => {
+    const byIsbn = vi
+      .fn<BookMetadataSource["byIsbn"]>()
+      .mockRejectedValueOnce(new Error("down"))
+      .mockResolvedValue(record());
+    const metadata = createBookMetadata([source({ byIsbn })]);
+    await expect(metadata.byIsbn(ISBN13)).rejects.toThrow("down");
+    await expect(metadata.byIsbn(ISBN13)).resolves.toEqual(record());
+    await expect(metadata.byIsbn("0-593-13520-2")).resolves.toEqual(record());
+    expect(byIsbn).toHaveBeenCalledTimes(2);
+    const editions = vi.fn(async (isbn: string) => [{ isbn }]);
+    const cached = createBookMetadata([source({ editions })]);
+    await cached.editions(ISBN13);
+    await cached.editions(ISBN10);
+    expect(editions).toHaveBeenCalledTimes(1);
   });
 
   it("defaults to Open Library, then Google Books", async () => {

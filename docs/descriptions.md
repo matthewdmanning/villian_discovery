@@ -379,26 +379,38 @@ Dependencies: `historySchema`, `SyncPlan`, `SyncApplyReport`.
 
 ## `BookMetadataSource` - src/book-metadata.ts
 
-The common interface for public book metadata. `byIsbn` resolves an ISBN-10 or ISBN-13 to its edition (title, subtitle, authors, edition ISBNs, publisher, date, pages, language, description, cover and page link), or null when unknown. `search` finds books by title, author or free text, best match first, with the ISBNs of their editions.
+The common interface for public book metadata about books that Libby or Fable return; not a search engine. `byIsbn` resolves an ISBN-10 or ISBN-13 to its edition (title, subtitle, authors, edition ISBNs, publisher, date, pages, language, description, cover and page link), or null when unknown. `editions` lists every known edition of the same work, with formats when known, so two ISBNs can be checked as one book.
 Implementations: `createOpenLibrarySource`, `createGoogleBooksSource`, and the combined `createBookMetadata`.
 
 ## `createOpenLibrarySource` - src/book-metadata.ts
 
-Use this function to read Open Library: `byIsbn` through `/api/books` (`jscmd=data`) and `search` through `/search.json` with `title`, `author` or `q`.
+Use this function to read Open Library: `byIsbn` through `/api/books` (`jscmd=data`); `editions` through `/isbn/{isbn}.json` (the edition's work) and `/works/{id}/editions.json`, with formats from `physical_format`.
 Inputs: `options` - optional `fetch` and `timeoutMs`.
-Dependencies: `getJson`, `canonicalIsbn`, `isbnList`, `zod` schemas.
+Dependencies: `getJson`, `canonicalIsbn`, `isbnList`, `editionFormat`, `zod` schemas.
 
 ## `createGoogleBooksSource` - src/book-metadata.ts
 
-Use this function to read Google Books volumes: `byIsbn` through `q=isbn:` keeping only volumes that carry that exact edition, and `search` through `intitle:` and `inauthor:` phrases or free text.
+Use this function to read Google Books volumes: `byIsbn` through `q=isbn:`, keeping only volumes that carry that exact edition. Google has no work grouping, so `editions` lists only the volume's own ISBNs.
 Inputs: `options` - optional `fetch`, `timeoutMs` and `googleApiKey`.
 Dependencies: `getJson`, `canonicalIsbn`, `isbnList`, `zod` schemas.
 
 ## `createBookMetadata` - src/book-metadata.ts
 
-Use this function to combine sources in order (default: Open Library, then Google Books). `byIsbn` returns the first result that names an author, else an authorless one, and fails only when no source answered. `search` fills up to `limit` from each source in turn, skipping books an earlier source returned (shared ISBN, or same title and first author).
+Use this function to combine sources in order (default: Open Library, then Google Books). `byIsbn` returns the first result that names an author, else an authorless one, and fails only when no source answered. `editions` returns the first source's answer, so Google is asked only when Open Library fails. Answers are cached per ISBN (up to 500); failures are not.
 Inputs: `sources` - sources to combine; `options` - used to build the default sources.
-Dependencies: `createOpenLibrarySource`, `createGoogleBooksSource`, `normalizeTitle`, `normalizeName`.
+Dependencies: `createOpenLibrarySource`, `createGoogleBooksSource`, `boundedCache`.
+
+## `editionFormat` - src/book-metadata.ts
+
+Use this function to read an edition's format from a service label ("eAudiobook", "Audio CD", "Kindle", "Paperback").
+Inputs: `label` - the service's format text.
+Dependencies: none.
+
+## `linkEditions` - src/sync-editions.ts
+
+Use this function to check Libby loans against Fable books by edition. For a loan whose ISBN matches no Fable ISBN, it asks `editions`; if exactly one format-compatible Fable book, claimed by no other loan, carries one of those ISBNs, both get the work ID `editions:{loan ISBN}`. Ambiguous or failed checks change nothing.
+Inputs: `snapshots` - both providers' books, mutated; `metadata` - a `BookMetadataSource`.
+Dependencies: `isbn13`, `formatsCompatible`, `mapLimit`.
 
 ## `canonicalIsbn` - src/book-metadata.ts
 
@@ -411,12 +423,6 @@ Dependencies: `normalizeIsbn`.
 Use this function to match interactive search text: the folded phrase appears in `value`, or every query word matches a word of `value` exactly, as a 3+ letter prefix, or within one typo from 4 letters and two from 8 (adjacent swaps count as one). Short words and numbers stay exact. Never use it for ISBNs or title IDs.
 Inputs: `value` - title or author text; `query` - what the user typed.
 Dependencies: `containsKeywords`, `editDistance`, `fold`.
-
-## `Runner.resolveBook` - src/runner.ts
-
-Use this function after a catalog miss to ask `BookMetadataSource` what to search for instead: an ISBN-only request becomes its title and author; a title becomes its corrected spelling only when the correction still matches the request within `fuzzyKeywords` tolerance, and a given author must match too. Returns undefined when `matching.bookMetadata` is off, nothing better is known, or the lookup fails (logged as a warning).
-Inputs: `book` - the request that found nothing.
-Dependencies: `deps.metadata`, `fuzzyKeywords`, `normalizeTitle`.
 
 ## `Runner.searchText` - src/runner.ts
 

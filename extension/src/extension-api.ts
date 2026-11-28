@@ -117,6 +117,7 @@ async function loadSettings() {
 const sync = createSyncOrchestrator({
   context,
   adapters,
+  metadata: bookMetadata,
   readSettings: loadSettings,
   writeSettings: async (settings) => chrome.storage.local.set({ [SETTINGS_KEY]: settings }),
   async onPreview(plan, { libby }) {
@@ -156,7 +157,6 @@ function createRunner(client: Awaited<ReturnType<typeof libbyClient>>, config: C
       ...(config.http.thunderBaseUrl ? { baseUrl: config.http.thunderBaseUrl } : {}),
     }),
     logger: silentLogger,
-    metadata: bookMetadata,
   });
 }
 

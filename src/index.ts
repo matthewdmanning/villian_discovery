@@ -16,7 +16,6 @@ export { DEFAULT_THUNDER_BASE_URL, type LibrarySearch, ThunderClient } from "./t
 export type * from "./types.js";
 
 import { resolveIdentityToken } from "./auth.js";
-import { createBookMetadata } from "./book-metadata.js";
 import { type Config, type ConfigInput, configFromEnv, mergeConfig, parseConfig } from "./config.js";
 import type { BookRequest } from "./input.js";
 import { LibbyClient } from "./libby-client.js";
@@ -38,10 +37,7 @@ export async function createClients(cfg: Config, opts: { fetch?: typeof fetch; l
     ...http,
     ...(cfg.http.thunderBaseUrl ? { baseUrl: cfg.http.thunderBaseUrl } : {}),
   });
-  const metadata = cfg.matching.bookMetadata
-    ? createBookMetadata([], { ...(opts.fetch ? { fetch: opts.fetch } : {}), timeoutMs: cfg.http.timeoutMs })
-    : undefined;
-  return { libby, thunder, logger, ...(metadata ? { metadata } : {}) };
+  return { libby, thunder, logger };
 }
 
 /** One-call API: borrow or hold every book. Config layers: env < `config`. */
