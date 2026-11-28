@@ -7,7 +7,7 @@ import { InputError } from "./errors.js";
 import type { MediaType } from "./types.js";
 import { stripUndefined } from "./util.js";
 
-/** One requested book. At least one of title, isbn or titleId is set. */
+/** One requested book or catalog keyword search. */
 export interface BookRequest {
   /** Original line/entry, for reporting. */
   raw: string;
@@ -16,6 +16,10 @@ export interface BookRequest {
   isbn?: string;
   /** OverDrive title id; skips searching. */
   titleId?: string;
+  /** Interactive catalog search mode for free text or explicit fields. */
+  matchMode?: "text" | "keywords";
+  /** For `matchMode: "text"`: the whole query as typed, kept alongside any title-by-author split. */
+  text?: string;
   mediaTypes?: MediaType[];
   action?: z.infer<typeof ActionSchema>;
   libraries?: string[];

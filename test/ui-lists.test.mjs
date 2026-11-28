@@ -1,21 +1,27 @@
 import { expect, it } from "vitest";
 import { createElement } from "../ui/node_modules/react/index.js";
 import { renderToStaticMarkup } from "../ui/node_modules/react-dom/server.node.js";
-import { TagChoices } from "../ui/src/screens/Tags.tsx";
+import { QueryFields } from "../ui/src/components/TagQueryFields.tsx";
+import { QuerySummary } from "../ui/src/components/TagSearch.tsx";
 import { fixtureTags } from "./libby-lists-fixtures.ts";
 
 it("displays the Libby names and the selected state", () => {
   const html = renderToStaticMarkup(
-    createElement(TagChoices, { tags: fixtureTags, selected: ["a", "c"], onToggle() {} }),
+    createElement(QueryFields, {
+      tags: fixtureTags,
+      query: { includes: [["a", "c"]], excludes: [[]] },
+      boolean: false,
+      onChange() {},
+    }),
   );
   expect(html).toContain("⭐ Favorite");
   expect(html).toContain("🎧 Audio");
-  expect(html).toContain("To read");
-  expect(html.match(/checked=""/g)).toHaveLength(2);
+  expect(html).toContain('aria-label="Add tag to Includes"');
+  expect(html).toContain('aria-label="Remove ⭐ Favorite"');
+  expect(html).toContain('aria-label="Remove 🎧 Audio"');
 });
 
 it("shows saved query groups with Libby names", async () => {
-  const { QuerySummary } = await import("../ui/src/screens/Tags.tsx");
   const query = { includes: [["a", "b"], ["c"]], excludes: [["b"]] };
   const html = renderToStaticMarkup(createElement(QuerySummary, { query, tags: fixtureTags }));
   expect(html).toContain("(⭐ Favorite AND To read) OR 🎧 Audio");

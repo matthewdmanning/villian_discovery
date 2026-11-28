@@ -1,4 +1,5 @@
 import type { PairingOptions } from "../../../src/auth.js";
+import type { IsbnLookup } from "../../../src/book-metadata.js";
 import type { BookRequest } from "../../../src/input.js";
 import { LibbyClient } from "../../../src/libby-client.js";
 import type { ListLibraryAvailability } from "../../../src/libby-list-availability.ts";
@@ -37,6 +38,7 @@ export interface LibraryApi {
   tags(): Promise<unknown>;
   lists(): Promise<ListsData>;
   listAvailability(titleId: string): Promise<ListLibraryAvailability[]>;
+  lookupIsbn: IsbnLookup;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
   previewSync(options?: SyncPreviewOptions): Promise<SyncPlan>;
@@ -127,7 +129,7 @@ function fakeMedia(book: BookRequest, card: LibbyCard, type: string): ThunderMed
   const available = r > 0.55 ? Math.ceil((r - 0.55) * 4) : 0;
   return {
     id: book.titleId ?? String(5_000_000 + Math.floor(r * 999_999)),
-    title: book.title ?? (book.isbn ? `ISBN ${book.isbn}` : `Title ${book.titleId}`),
+    title: book.title ?? (book.isbn ? `ISBN ${book.isbn}` : book.titleId ? `Title ${book.titleId}` : "Demo title"),
     firstCreatorName: book.author ?? "Unknown",
     type: { id: type },
     isAvailable: available > 0,
@@ -174,6 +176,12 @@ export const demoApi: LibraryApi = {
         { id: "3", title: "Kindred", author: "Octavia E. Butler", tags: ["favorites"] },
       ],
     };
+  },
+  async lookupIsbn(isbn) {
+    await wait(250);
+    return isbn === "9781635575637" || isbn === "163557563X"
+      ? { title: "Piranesi", authors: ["Susanna Clarke"], isbns: ["9781635575637"], source: "open-library" }
+      : null;
   },
   async listAvailability(titleId) {
     await wait(250);
@@ -232,12 +240,18 @@ function demoFetch(config: Config, books: BookRequest[]): typeof fetch {
     if (url.pathname.includes("/libraries/") && url.pathname.endsWith("/media")) {
       const library = url.pathname.split("/").at(-2);
       const card = CARDS.find((candidate) => candidate.advantageKey === library);
-      const query = url.searchParams.get("query") ?? "";
+      const query = url.searchParams.get("query");
       const identifier = url.searchParams.get("identifier");
+      const title = url.searchParams.get("title") ?? undefined;
+      const creator = url.searchParams.get("creator") ?? undefined;
       const book = books.find(
         (candidate) =>
           (identifier !== null && candidate.isbn === identifier) ||
-          (!!candidate.title && query === [candidate.title, candidate.author].filter(Boolean).join(" ")),
+          // Explicit fields arrive as the catalog's title and creator filters.
+          (candidate.matchMode === "keywords" && candidate.title === title && candidate.author === creator) ||
+          (query !== null &&
+            !!candidate.title &&
+            (query === candidate.text || query === [candidate.title, candidate.author].filter(Boolean).join(" "))),
       );
       if (!card || !book) return Response.json({ items: [] });
       const mediaTypes = (url.searchParams.get("mediaTypes")?.split(",").filter(Boolean) ?? config.mediaTypes).filter(

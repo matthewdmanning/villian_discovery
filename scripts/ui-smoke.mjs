@@ -102,11 +102,11 @@ try {
   await page.getByRole("heading", { name: "Plan & results", exact: true }).waitFor();
   await nav.getByRole("button", { name: "Rules", exact: true }).click();
   await limit.fill("-1");
-  await nav.getByRole("button", { name: "Search & Results", exact: true }).click();
+  await nav.getByRole("button", { name: "Search", exact: true }).click();
   assert.equal(await page.getByRole("button", { name: "Run for real", exact: true }).isDisabled(), true);
   await nav.getByRole("button", { name: "Rules", exact: true }).click();
   await limit.fill("");
-  await nav.getByRole("button", { name: "Search & Results", exact: true }).click();
+  await nav.getByRole("button", { name: "Search", exact: true }).click();
   await page.evaluate(() => {
     window.testDemoApi.run = async () => {
       throw new Error("Injected real run failure");

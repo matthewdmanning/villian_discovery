@@ -1,3 +1,4 @@
+import { createBookMetadata } from "../../src/book-metadata.ts";
 import type { Config } from "../../src/config.ts";
 import type { BookRequest } from "../../src/input.ts";
 import type { CatalogReader } from "../../src/libby-audiobooks.ts";
@@ -28,6 +29,8 @@ const SETTINGS_KEY = "syncSettings";
 export const LIBBY_TAGS_CACHE_KEY = "libbyTags";
 const context: SyncContext = { userId: "local", connectionId: "libby-and-fable" };
 const observedShelf = new WeakMap<SyncAdapter, string>();
+// Public book metadata (Open Library, then Google Books) for ISBN lookups and catalog fallbacks.
+const bookMetadata = createBookMetadata();
 const publicCatalog: CatalogReader = new ThunderClient({
   timeoutMs: 8_000,
   retries: 0,
@@ -114,6 +117,7 @@ async function loadSettings() {
 const sync = createSyncOrchestrator({
   context,
   adapters,
+  metadata: bookMetadata,
   readSettings: loadSettings,
   writeSettings: async (settings) => chrome.storage.local.set({ [SETTINGS_KEY]: settings }),
   async onPreview(plan, { libby }) {
@@ -167,6 +171,7 @@ export function forgetCachedReads() {
 
 export const extensionApi: LibraryApi = {
   tags: cachedRead(reads, "tags", tags),
+  lookupIsbn: cachedRead(reads, "lookupIsbn", (isbn: string) => bookMetadata.byIsbn(isbn)),
   listAvailability: cachedRead(reads, "listAvailability", async (titleId: string) => {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");

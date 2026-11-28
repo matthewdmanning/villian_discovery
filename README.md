@@ -143,7 +143,11 @@ cd ui && npm install && npm run dev
 
 Runs on built-in demo data (`demo` badge): nothing reaches Libby. Demo pairing displays a sample code and completes automatically.
 
-Search groups editions with the same title and author so you can compare their formats and libraries. **Best match** ranks titles by their strongest visible edition, with exact ISBN hits first. In live Search, an ISBN lookup includes other editions when the full catalog title and all credited author IDs agree. Exact ISBN results stay visible if a library's alternate-edition lookup fails or the catalog cannot confirm the credits.
+Search shows your tagged books when you open it. Use the Include and Exclude tag buttons to filter the list. Enter text to search the library catalog, or narrow the tagged list when tag filters are selected. You can search by title, author, or ISBN, and use optional fields such as `title:Hail Mary author:Weir`. Fields filter the catalog by title and creator before it limits results. Plain text matches the phrase as typed and, for a line such as `Dune by Frank Herbert`, as title by author. Title and author matching tolerates small typos; ISBNs and title IDs must match exactly.
+
+Public book metadata (Open Library, falling back to Google Books) resolves and checks ISBNs of books that Libby or Fable return; it is not a search engine. With tag filters active, Search resolves an ISBN to its title and author, shows what it resolved to, and matches that title and author against your tagged books. Sync uses it to match a loan to the Fable copy of the same book in another edition (see [docs/sync.md](docs/sync.md)). Lookups send only the ISBN being checked, with no cookies or referrer. The local server can use an optional `GOOGLE_BOOKS_API_KEY` environment variable for Google Books; without a key, Google's shared keyless quota applies and can run out, and Open Library's answer is used alone. The extension uses the keyless API.
+
+Catalog results group editions with the same title and author so you can compare their formats and libraries. **Best match** ranks titles by their strongest visible edition, with exact ISBN hits first. In live Search, an ISBN lookup includes other editions when the full catalog title and all credited author IDs agree. Exact ISBN results stay visible if a library's alternate-edition lookup fails or the catalog cannot confirm the credits.
 Audiobook options in Search and audiobook entries on the Shelf show narrator credits when available.
 
 To use your real accounts on Windows, double-click `Start libby-shelf.cmd`. It installs what is missing, starts a local server on <http://127.0.0.1:8787>, and opens it. On other systems, run `npm ci && npm ci --prefix ui && npm run live`. Connect Libby opens libbyapp.com for your sign-in on its own; "phone code" shows a setup code in the app instead. Sync compares on its own when it opens; the first comparison opens a browser window for your Fable login. Settings save as you change them. Live sync only reads: every write stays blocked until its contract is verified ([docs/sync-contracts.md](docs/sync-contracts.md)). Login, token-file changes, and completed runs refresh card data. Identical Libby, Fable, and catalog reads within 10 s reuse the last result (in the local server, or in the extension), so Refresh, Retry, and Preview changes never make you wait; any write clears the kept results. At least one card must stay selected because an empty CLI card filter means all cards.
@@ -160,18 +164,20 @@ The **Sync libraries** tab uses Preview → Review → Apply. Libby controls rea
 
 ## Endpoints used
 
-| Purpose                 | Request                                                                                   |
-| ----------------------- | ----------------------------------------------------------------------------------------- |
-| new identity            | `POST sentry.libbyapp.com/chip?client=dewey`                                              |
-| setup-code display/poll | `GET /chip/clone/code` (`role=pointer`, optional `code`)                                  |
-| optional input code     | `POST /chip/clone/code` (form `code`, `role=pointer`)                                     |
-| complete pairing        | `POST /chip/clone` (form `blessing`), then authenticated `POST /chip` to refresh identity |
-| account state           | `GET /chip/sync`                                                                          |
-| borrow                  | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}`    |
-| hold                    | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`                 |
-| suspend hold            | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                   |
-| search                  | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                             | identifier&mediaTypes&x-client-id=dewey` |
-| title lookup            | `GET .../v2/libraries/{key}/media/{titleId}`                                              |
+| Purpose                 | Request                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| new identity            | `POST sentry.libbyapp.com/chip?client=dewey`                                                                                                   |
+| setup-code display/poll | `GET /chip/clone/code` (`role=pointer`, optional `code`)                                                                                       |
+| optional input code     | `POST /chip/clone/code` (form `code`, `role=pointer`)                                                                                          |
+| complete pairing        | `POST /chip/clone` (form `blessing`), then authenticated `POST /chip` to refresh identity                                                      |
+| account state           | `GET /chip/sync`                                                                                                                               |
+| borrow                  | `POST /card/{cardId}/loan/{titleId}` `{period, units:"days", lucky_day, title_format}`                                                         |
+| hold                    | `POST /card/{cardId}/hold/{titleId}` `{days_to_suspend:0, email_address}`                                                                      |
+| suspend hold            | `PUT /card/{cardId}/hold/{titleId}` `{days_to_suspend}`                                                                                        |
+| search                  | `GET thunder.api.overdrive.com/v2/libraries/{key}/media?query                                                                                  | identifier&mediaTypes&x-client-id=dewey` |
+| title lookup            | `GET .../v2/libraries/{key}/media/{titleId}`                                                                                                   |
+| ISBN metadata           | `GET openlibrary.org/api/books?bibkeys=ISBN:{isbn}&jscmd=data`, then `GET books.googleapis.com/books/v1/volumes?q=isbn:{isbn}`                 |
+| ISBN editions (sync)    | `GET openlibrary.org/isbn/{isbn}.json`, then `GET openlibrary.org/works/{work}/editions.json`; Google Books volume ISBNs if Open Library fails |
 
 Sources: [ping/libby-calibre-plugin](https://github.com/ping/libby-calibre-plugin) (based on [lullius/pylibby](https://github.com/lullius/pylibby)), [mknabe/book-club](https://github.com/mknabe/book-club).
 

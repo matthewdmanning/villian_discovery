@@ -131,13 +131,6 @@
       ]
     },
     {
-      "id": "tags",
-      "title": "Lists",
-      "cli": "",
-      "enabled": true,
-      "regions": [{ "id": "tags", "components": [{ "type": "output", "label": "Libby tags" }] }]
-    },
-    {
       "id": "settings",
       "title": "Rules",
       "cli": "config",
@@ -196,15 +189,16 @@
     },
     {
       "id": "search",
-      "title": "Search & Results",
+      "title": "Search",
       "cli": "search <query>",
       "enabled": true,
       "regions": [
         {
           "id": "query",
           "components": [
-            { "type": "field", "input": "search", "label": "Title by Author or ISBN" },
-            { "type": "button", "label": "Search", "action": "search" }
+            { "type": "field", "input": "search", "label": "Search books" },
+            { "type": "button", "label": "Search", "action": "search" },
+            { "type": "button", "label": "Add tags" }
           ]
         },
         {

@@ -143,6 +143,73 @@ describe("Runner", () => {
     expect(qs[1]!.get("query")).toBe("Dune");
   });
 
+  it("finds catalog entries using plain keywords and optional title or author fields", async () => {
+    const { runner, calls } = setup([
+      {
+        match: /thunder/,
+        respond: () => ({
+          body: {
+            items: [
+              media({ id: "111", creators: projectAuthors }),
+              media({ id: "222", title: "Artemis", creators: projectAuthors }),
+              media({
+                id: "333",
+                title: "Andy Weir: A Biography",
+                firstCreatorName: "Somebody Else",
+                creators: [{ name: "Andy Weir", role: "Narrator" }],
+              }),
+            ],
+          },
+        }),
+      },
+    ]);
+
+    const searchIds = async (book: Parameters<Runner["searchMatches"]>[0]) =>
+      (await runner.searchMatches(book, [card()])).map(({ media }) => media.id);
+    expect(await searchIds({ raw: "Hail", title: "Hail", matchMode: "text" })).toEqual(["111"]);
+    expect(await searchIds({ raw: "Weir", title: "Weir", matchMode: "text" })).toEqual(["333", "111", "222"]);
+    expect(
+      await searchIds({ raw: "title:Hail author:Weir", title: "Hail", author: "Weir", matchMode: "keywords" }),
+    ).toEqual(["111"]);
+    expect(await searchIds({ raw: "author:Weir", author: "Weir", matchMode: "keywords" })).toEqual(["111", "222"]);
+    // Explicit fields use the catalog's own title and creator filters instead of a free-text query.
+    expect(calls.map(({ url }) => ["query", "title", "creator"].map((name) => url.searchParams.get(name)))).toEqual([
+      ["Hail", null, null],
+      ["Weir", null, null],
+      [null, "Hail", "Weir"],
+      [null, null, "Weir"],
+    ]);
+  });
+
+  it("searches a plain phrase as typed and as title by author, keeping literal title matches", async () => {
+    const chocolate = media({ id: "444", title: "Death by Chocolate", firstCreatorName: "Sarah Graves", creators: [] });
+    const { runner, calls } = setup([
+      {
+        match: /thunder/,
+        respond: (url) => ({
+          body: { items: url.searchParams.get("query") === "Death by Chocolate" ? [chocolate] : [] },
+        }),
+      },
+    ]);
+    const matches = await runner.searchMatches(
+      { raw: "Death by Chocolate", title: "Death", author: "Chocolate", text: "Death by Chocolate", matchMode: "text" },
+      [card()],
+    );
+    expect(matches.map(({ media }) => media.id)).toEqual(["444"]);
+    expect(calls.map(({ url }) => url.searchParams.get("query"))).toEqual(["Death by Chocolate", "Death Chocolate"]);
+  });
+
+  it("finds a catalog title despite a small typo in the query", async () => {
+    const { runner } = setup([
+      { match: /thunder/, respond: () => ({ body: { items: [media({ creators: projectAuthors })] } }) },
+    ]);
+    const found = await runner.searchMatches(
+      { raw: "Projetc Hial Mary", title: "Projetc Hial Mary", text: "Projetc Hial Mary", matchMode: "text" },
+      [card()],
+    );
+    expect(found.map(({ media }) => media.id)).toEqual(["111"]);
+  });
+
   it.each([false, true])(
     "previews other editions at every selected library (audiobook only: %s)",
     async (audioOnly) => {

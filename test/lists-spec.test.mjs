@@ -7,7 +7,7 @@ import { LibraryRows } from "../ui/src/components/ListResult.tsx";
 import { demoApi } from "../ui/src/lib/api.ts";
 import { sortListItems } from "../ui/src/lib/list-results.ts";
 import { StoreProvider } from "../ui/src/lib/store.tsx";
-import { TagsScreen } from "../ui/src/screens/Tags.tsx";
+import { SearchScreen } from "../ui/src/screens/Search.tsx";
 
 /** Product rules for Lists. */
 
@@ -103,7 +103,7 @@ describe("feature flags", () => {
   });
   const render = async () => {
     const api = { ...demoApi, lists: vi.fn(async () => ({ tags: [], items: [] })) };
-    await act(async () => root.render(createElement(StoreProvider, { api }, createElement(TagsScreen))));
+    await act(async () => root.render(createElement(StoreProvider, { api }, createElement(SearchScreen))));
   };
   it("Boolean and multiquery are not shown as controls in the UI", async () => {
     await render();

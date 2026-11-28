@@ -1,3 +1,4 @@
+import type { BookMetadataSource } from "./book-metadata.js";
 import { resolveSyncSettings, type SyncSettings, SyncSettingsSchema } from "./sync-config.js";
 import {
   applySync,
@@ -25,6 +26,8 @@ export function createSyncOrchestrator(input: {
   readSettings: () => Promise<unknown>;
   writeSettings: (settings: unknown) => Promise<void>;
   journal?: SyncJournal;
+  /** Public book metadata for checking loans against Fable books by edition. */
+  metadata?: BookMetadataSource;
   onPreview?: (plan: SyncPlan, adapters: SyncAdapters) => Promise<void>;
   onApply?: (plan: SyncPlan, report: SyncApplyReport, adapters: SyncAdapters) => Promise<void>;
 }): SyncOrchestrator {
@@ -48,6 +51,7 @@ export function createSyncOrchestrator(input: {
         settings: await input.readSettings(),
         adapters,
         options: { ...options, matches: options.matches ?? matches },
+        ...(input.metadata ? { metadata: input.metadata } : {}),
       });
       matches = plan.options.matches ?? {};
       plans.set(plan.id, plan);
@@ -66,6 +70,7 @@ export function createSyncOrchestrator(input: {
         adapters,
         journal,
         approvals,
+        ...(input.metadata ? { metadata: input.metadata } : {}),
       });
       await input.onApply?.(plan, report, adapters);
       return report;

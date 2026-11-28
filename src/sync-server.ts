@@ -15,6 +15,7 @@ import { dirname, extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { loginWithDeviceCode, readTokenFile, signInToLibby, writeTokenFile } from "./auth.js";
+import { createBookMetadata } from "./book-metadata.js";
 import { type ConfigInput, configFromEnv, mergeConfig, parseConfig } from "./config.js";
 import { type BrowserSession, openBrowserSession, openSite } from "./discovery/browser.js";
 import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discovery/export-lists.js";
@@ -47,6 +48,8 @@ const TYPES: Record<string, string> = {
 const config = parseConfig(mergeConfig(configFromEnv()));
 const logger = createLogger(config.logLevel);
 const http = { ...config.http, logger };
+const googleApiKey = process.env.GOOGLE_BOOKS_API_KEY?.trim();
+const bookMetadata = createBookMetadata([], googleApiKey ? { googleApiKey } : {});
 const publicCatalog = new ThunderClient({
   ...http,
   timeoutMs: Math.min(http.timeoutMs, 8_000),
@@ -145,6 +148,7 @@ async function body(request: IncomingMessage): Promise<unknown> {
 const sync: SyncOrchestrator = createSyncOrchestrator({
   context,
   adapters,
+  metadata: bookMetadata,
   readSettings: loadSettings,
   writeSettings: async (settings) => writeFile(SETTINGS_FILE, `${JSON.stringify(settings, null, 2)}\n`),
 });
@@ -187,6 +191,11 @@ const apiRoutes: Record<string, Handler> = {
   "GET /api/lists": async () => readLists(await libby()),
   "POST /api/lists/availability": async (input) => listAvailability((input as { titleId: string })?.titleId),
   "GET /api/tags": async () => (await libby()).tags(),
+  "POST /api/isbn": async (input) => {
+    const isbn = (input as { isbn?: unknown } | null)?.isbn;
+    if (typeof isbn !== "string") throw new Error("Enter a valid ISBN-10 or ISBN-13.");
+    return bookMetadata.byIsbn(isbn);
+  },
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };
     const { runner, cfg, libby } = await liveRunner(settings);
@@ -217,6 +226,7 @@ const routes = withCooldown(
       "GET /api/lists",
       "POST /api/lists/availability",
       "GET /api/tags",
+      "POST /api/isbn",
       "POST /api/search",
       "POST /api/sync/preview",
     ],

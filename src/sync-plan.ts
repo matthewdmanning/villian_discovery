@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { BookMetadataSource } from "./book-metadata.js";
 import { ConfigSchema } from "./config.js";
 import { LOOKUP_CONCURRENCY, mapLimit } from "./map-limit.js";
 import {
@@ -14,6 +15,7 @@ import {
   syncEditionScore,
 } from "./sync.js";
 import { resolveSyncSettings, type SyncSettings } from "./sync-config.js";
+import { EDITION_WORK_PREFIX, linkEditions } from "./sync-editions.js";
 
 export type SyncContext = { userId: string; connectionId: string };
 export type FableCatalogMatch = {
@@ -156,9 +158,15 @@ function toSchema(books: BookSnapshot[], schema: readonly string[]): BookSnapsho
 }
 
 /** Use this function to read both providers without returning a partial preview when either source fails. */
-async function readBoth(adapters: SyncAdapters, context: SyncContext): Promise<Record<SyncProvider, BookSnapshot[]>> {
+async function readBoth(
+  adapters: SyncAdapters,
+  context: SyncContext,
+  metadata?: BookMetadataSource,
+): Promise<Record<SyncProvider, BookSnapshot[]>> {
   const [libby, fable] = await Promise.all([adapters.libby.read(context), adapters.fable.read(context)]);
-  return { libby: toSchema(libby, adapters.libby.fields), fable: toSchema(fable, adapters.fable.fields) };
+  const snapshots = { libby: toSchema(libby, adapters.libby.fields), fable: toSchema(fable, adapters.fable.fields) };
+  // Public edition data can show a loan and a Fable book are one work in different editions.
+  return metadata ? linkEditions(snapshots, metadata) : snapshots;
 }
 
 /** Use this function to classify explicit clears and reductions in string-array membership for mandatory removal review. */
@@ -395,10 +403,12 @@ export async function previewSync(input: {
   settings: unknown;
   adapters: SyncAdapters;
   options?: SyncPreviewOptions;
+  /** Public book metadata to check loans against Fable books by edition; see `linkEditions`. */
+  metadata?: BookMetadataSource;
 }): Promise<SyncPlan> {
   const context = ContextSchema.parse(input.context);
   const settings = resolveSyncSettings(input.settings);
-  const snapshots = await readBoth(input.adapters, context);
+  const snapshots = await readBoth(input.adapters, context, input.metadata);
   const options = OptionsSchema.parse(input.options ?? {});
   const libbyById = new Map(snapshots.libby.map((book) => [book.bookId, book]));
   if (options.matches) {
@@ -448,10 +458,17 @@ function snapshotKey(snapshots: Record<SyncProvider, BookSnapshot[]>): string {
     // Display data and catalog-filled ISBNs come from best-effort lookups that can fail on one read and not
     // the next. A loan's edition is fixed by its title ID, so they never signal a change in the library.
     libby: snapshots.libby
-      .map(({ loanUrl: _loanUrl, narrators: _narrators, isbn: _isbn, ...book }) => book)
+      .map(({ loanUrl: _loanUrl, narrators: _narrators, isbn: _isbn, ...book }) => withoutEditionLink(book))
       .sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
-    fable: [...snapshots.fable].sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
+    fable: snapshots.fable.map(withoutEditionLink).sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
   });
+}
+
+/** Drop a work ID that `linkEditions` set: it comes from a best-effort lookup, not from either library. */
+function withoutEditionLink<T extends { workId?: string | undefined }>(book: T): T {
+  if (!book.workId?.startsWith(EDITION_WORK_PREFIX)) return book;
+  const { workId: _workId, ...rest } = book;
+  return rest as T;
 }
 
 /** Index each provider's snapshots by book ID for constant-time lookups. */
@@ -499,6 +516,8 @@ export async function applySync(input: {
   adapters: SyncAdapters;
   journal: SyncJournal;
   approvals: unknown;
+  /** The metadata used for the preview, so re-reads link the same editions. */
+  metadata?: BookMetadataSource;
 }): Promise<SyncApplyReport> {
   const context = ContextSchema.parse(input.context);
   const settings = resolveSyncSettings(input.settings);
@@ -535,7 +554,7 @@ export async function applySync(input: {
     };
     const validate = async () => {
       await validateConfig();
-      const fresh = await readBoth(input.adapters, context);
+      const fresh = await readBoth(input.adapters, context, input.metadata);
       const parsed = reconcileSnapshotsDetailed(fresh.libby, fresh.fable, settings);
       fresh.libby = parsed.libby;
       fresh.fable = parsed.fable;
@@ -601,7 +620,7 @@ export async function applySync(input: {
         failure = error;
       }
       try {
-        const fresh = await readBoth(input.adapters, context);
+        const fresh = await readBoth(input.adapters, context, input.metadata);
         if (appliedValue(operation, fresh, settings.matching)) {
           adoptCreated(operation, fresh);
           const target = expected[operation.target].find((book) => book.bookId === operation.bookId);

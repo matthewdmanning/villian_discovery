@@ -11,7 +11,6 @@ import {
   Search,
   SlidersHorizontal,
   Sun,
-  Tags as TagsIcon,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import { compact } from "./components/ui.tsx";
@@ -27,14 +26,12 @@ import { SearchScreen } from "./screens/Search.tsx";
 import { Settings } from "./screens/Settings.tsx";
 import { Shelf } from "./screens/Shelf.tsx";
 import { SyncScreen } from "./screens/Sync.tsx";
-import { TagsScreen } from "./screens/Tags.tsx";
 
 const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; short: string; view: () => ReactNode }> = {
   connect: { icon: Plug, short: "Connect", view: Connect },
   cards: { icon: CreditCard, short: "Cards", view: Cards },
   books: { icon: BookOpen, short: "Books", view: Books },
   shelf: { icon: BookOpen, short: "Shelf", view: Shelf },
-  tags: { icon: TagsIcon, short: "Lists", view: TagsScreen },
   settings: { icon: SlidersHorizontal, short: "Rules", view: Settings },
   search: { icon: Search, short: "Search", view: SearchScreen },
   results: { icon: ListChecks, short: "Results", view: Results },
@@ -49,17 +46,11 @@ const mobileOnly = options.layout === "mobile";
 const desk = mobileOnly ? "hidden" : "hidden lg:flex";
 const phone = mobileOnly ? "" : "lg:hidden";
 
-export function App({
-  tagsView,
-  openLoan,
-}: {
-  tagsView?: () => ReactNode;
-  openLoan?: (url: string) => Promise<void>;
-} = {}) {
+export function App({ openLoan }: { openLoan?: (url: string) => Promise<void> } = {}) {
   const { screen, go, api } = useStore();
   const [theme, toggleTheme] = useTheme();
   const activeScreen = screen === "results" ? "search" : screen;
-  const View = activeScreen === "tags" && tagsView ? tagsView : VIEWS[activeScreen].view;
+  const View = VIEWS[activeScreen].view;
   const idx = navigationScreens.findIndex((s) => s.id === activeScreen);
 
   const brand = (

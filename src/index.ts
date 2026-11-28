@@ -1,4 +1,5 @@
 export * from "./auth.js";
+export * from "./book-metadata.js";
 export * from "./config.js";
 export * from "./errors.js";
 export * from "./input.js";

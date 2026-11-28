@@ -15,6 +15,8 @@ export default defineManifest({
     "https://sentry.libbyapp.com/*",
     "https://vandal.libbyapp.com/*",
     "https://thunder.api.overdrive.com/*",
+    "https://openlibrary.org/*",
+    "https://books.googleapis.com/*",
 
     "https://fable.co/*",
   ],
