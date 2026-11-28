@@ -4,18 +4,21 @@ import type { ListItem } from "../../../src/libby-lists.ts";
 export type ListSort = "title" | "author";
 /** Title for sorting: a leading "The", "A" or "An" does not count. */
 const sortKey = (title: string) => title.trim().replace(/^(?:the|an?)\s+/i, "");
+const collator = new Intl.Collator(undefined, { sensitivity: "base" });
 export function sortListItems(items: ListItem[], sort: ListSort): ListItem[] {
-  return [...items].sort((a, b) => {
-    if (sort === "author") {
-      if (!a.author && b.author) return 1;
-      if (a.author && !b.author) return -1;
-      const byAuthor = (a.author ?? "").localeCompare(b.author ?? "", undefined, { sensitivity: "base" });
-      if (byAuthor) return byAuthor;
-    }
-    return (
-      sortKey(a.title).localeCompare(sortKey(b.title), undefined, { sensitivity: "base" }) || a.id.localeCompare(b.id)
-    );
-  });
+  // Compute each key once rather than on every comparison.
+  return items
+    .map((item) => ({ item, title: sortKey(item.title) }))
+    .sort((a, b) => {
+      if (sort === "author") {
+        if (!a.item.author && b.item.author) return 1;
+        if (a.item.author && !b.item.author) return -1;
+        const byAuthor = collator.compare(a.item.author ?? "", b.item.author ?? "");
+        if (byAuthor) return byAuthor;
+      }
+      return collator.compare(a.title, b.title) || a.item.id.localeCompare(b.item.id);
+    })
+    .map(({ item }) => item);
 }
 const count = (value: unknown) =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined;

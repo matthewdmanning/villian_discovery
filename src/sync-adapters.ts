@@ -7,7 +7,7 @@
  */
 import type { FableBook, FableGet, FableList } from "./discovery/export-lists.js";
 import type { LibbyClient } from "./libby-client.js";
-import { normalizeName, normalizeTitle } from "./matcher.js";
+import { isbn13, normalizeName, normalizeTitle } from "./matcher.js";
 import { fetchAllPages } from "./pagination.js";
 import type { BookSnapshot, SnapshotField } from "./sync.js";
 import type { SyncAdapter, SyncOperation } from "./sync-plan.js";
@@ -44,6 +44,18 @@ const STATUS_BY_SYSTEM_LIST: Record<string, string> = {
   finished: "finished",
   did_not_finish: "did-not-finish",
 };
+/** When a book sits on several system lists, the furthest-along status wins, whatever order Fable lists them in. */
+const STATUS_RANK: Record<string, number> = {
+  "want-to-read": 0,
+  "currently-reading": 1,
+  "did-not-finish": 2,
+  finished: 3,
+};
+function furtherStatus(current: string | undefined, next: string | undefined): string | undefined {
+  if (!next) return current;
+  if (!current) return next;
+  return (STATUS_RANK[next] ?? -1) > (STATUS_RANK[current] ?? -1) ? next : current;
+}
 
 /** Use this function to build a snapshot field only when the app returned a usable value. */
 const field = (value: SnapshotField["value"] | undefined): SnapshotField | undefined =>
@@ -66,9 +78,16 @@ function loanIsbn(loan: ShelfItem): string | undefined {
 export function libbySnapshots(state: SyncResponse, progress: ReadonlyMap<string, number> = new Map()): BookSnapshot[] {
   const books = new Map<string, BookSnapshot>();
   for (const loan of state.loans ?? []) {
-    if (!loan.title || books.has(loan.id)) continue;
+    if (!loan.title) continue;
     const author = typeof loan.firstCreatorName === "string" ? loan.firstCreatorName : undefined;
     const isbn = loanIsbn(loan);
+    const known = books.get(loan.id);
+    if (known) {
+      // The same title on another card is the same book: fill gaps, never add a second snapshot.
+      if (!known.author && author) known.author = author;
+      if (!known.isbn && isbn) known.isbn = isbn;
+      continue;
+    }
     const percent = progress.get(loan.id);
     books.set(loan.id, {
       bookId: `libby:${loan.id}`,
@@ -93,8 +112,10 @@ export function fableSnapshots(lists: { list: FableList; entries: FableEntry[] }
       if (!id || !title) continue;
       const known = books.get(id);
       if (known) {
-        known.shelves.push(list.name);
-        if (!known.snapshot.fields.readingStatus && status) known.snapshot.fields.readingStatus = { value: status };
+        if (!known.shelves.includes(list.name)) known.shelves.push(list.name);
+        const current = known.snapshot.fields.readingStatus?.value;
+        const best = furtherStatus(typeof current === "string" ? current : undefined, status);
+        if (best) known.snapshot.fields.readingStatus = { value: best };
         // ponytail: Fable notes belong to a list entry; the first non-empty note stands for the book.
         if (!known.snapshot.fields.notes && note) known.snapshot.fields.notes = { value: note };
         continue;
@@ -135,8 +156,11 @@ async function unverifiedWrite(): Promise<void> {
 async function findFableBook(get: FableGet, book: NonNullable<SyncOperation["create"]>): Promise<string> {
   const search = async (q: string) =>
     (await get<{ books?: FableSearchBook[] }>("/api/search", { q, type: "book" })).books ?? [];
-  if (book.isbn) {
-    const byIsbn = (await search(book.isbn)).filter((candidate) => candidate.isbn === book.isbn);
+  const wanted = book.isbn ? isbn13(book.isbn) : undefined;
+  if (book.isbn && wanted) {
+    const byIsbn = (await search(book.isbn)).filter(
+      (candidate) => candidate.isbn !== undefined && isbn13(candidate.isbn) === wanted,
+    );
     if (byIsbn.length === 1) return byIsbn[0]!.id;
   }
   const title = normalizeTitle(book.title, true);
@@ -172,7 +196,8 @@ export function libbyAdapter(client: LibbyClient): SyncAdapter {
           const percent = await client
             .loanProgress({ cardId: loan.cardId, titleId: loan.id, mediaType: loan.type?.id ?? "" })
             .catch(() => undefined);
-          if (percent !== undefined) progress.set(loan.id, percent);
+          // One title on several cards: keep the furthest position, independent of response order.
+          if (percent !== undefined) progress.set(loan.id, Math.max(percent, progress.get(loan.id) ?? percent));
         }),
       );
       return libbySnapshots(state, progress);
@@ -186,6 +211,21 @@ export function libbyAdapter(client: LibbyClient): SyncAdapter {
  * to Currently Reading (verified 2026-11-19 from fable.co's own search and list picker calls); no other write is verified.
  */
 export function fableAdapter(get: FableGet, post?: FablePost): SyncAdapter {
+  // One apply can add many books; read the list IDs once per adapter. A failed read is retried next time.
+  let currentList: Promise<string> | undefined;
+  const currentReadingId = () => {
+    currentList ??= fetchAllPages({ ...PAGE, media_type: "" }, (query) =>
+      get<{ next: string | null; results: FableList[] }>("/api/me/book-lists", query),
+    ).then((lists) => {
+      const current = lists.find((list) => list.system_type === "current_reading");
+      if (!current) throw new Error("Fable has no Currently Reading list");
+      return current.id;
+    });
+    currentList.catch(() => {
+      currentList = undefined;
+    });
+    return currentList;
+  };
   return {
     verified: !!post,
     fields: FABLE_FIELDS,
@@ -209,13 +249,9 @@ export function fableAdapter(get: FableGet, post?: FablePost): SyncAdapter {
       if (!post || !operation.create || operation.field !== "readingStatus" || operation.after !== "currently-reading")
         return unverifiedWrite();
       await assertCurrent();
-      const lists = await fetchAllPages({ ...PAGE, media_type: "" }, (query) =>
-        get<{ next: string | null; results: FableList[] }>("/api/me/book-lists", query),
-      );
-      const current = lists.find((list) => list.system_type === "current_reading");
-      if (!current) throw new Error("Fable has no Currently Reading list");
+      const listId = await currentReadingId();
       const bookId = await findFableBook(get, operation.create);
-      await post("/api/me/book-lists/picker", { book_id: bookId, book_list_ids: [current.id], exclude_from: [] });
+      await post("/api/me/book-lists/picker", { book_id: bookId, book_list_ids: [listId], exclude_from: [] });
     },
   };
 }

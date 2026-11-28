@@ -186,10 +186,15 @@ function buildPlan(
   const matches = options.matches ?? {};
   const editions = Object.entries(options.editions ?? {});
   if (editions.length) {
-    const groups = matchSnapshotGroups(selected.libby, selected.fable, settings.matching, matches).groups;
+    const { groups } = matchSnapshotGroups(selected.libby, selected.fable, settings.matching, matches);
+    const groupsById = new Map(groups.map((group) => [group.groupId, group]));
+    // A group ID lists its members, so it changes when an edition joins; the chosen edition's group still applies.
+    const groupsByBook = new Map(
+      groups.flatMap((group) => [...group.libby, ...group.fable].map((book) => [book.bookId, group] as const)),
+    );
     for (const provider of ["libby", "fable"] as const) {
       for (const [groupId, editionId] of editions) {
-        const group = groups.find((candidate) => candidate.groupId === groupId);
+        const group = groupsById.get(groupId) ?? groupsByBook.get(editionId);
         const edition = group?.[provider].find((book) => book.bookId === editionId);
         if (!group || !edition) continue;
         const members = new Set(group[provider].map((member) => member.bookId));
@@ -204,6 +209,7 @@ function buildPlan(
   }
   const result = reconcileSnapshotsDetailed(selected.libby, selected.fable, settings, matches);
   const rows = structuredClone(result.rows);
+  const resultGroups = new Map(result.groups.map((group) => [group.groupId, group]));
   const operations: SyncOperation[] = [];
   for (const row of rows) {
     const decision = options.resolutions?.[syncDecisionKey(row)];
@@ -224,7 +230,7 @@ function buildPlan(
       adapters.fable.writableFields.includes("readingStatus")
     )
       continue;
-    const group = result.groups.find((candidate) => candidate.groupId === row.groupId);
+    const group = row.groupId === undefined ? undefined : resultGroups.get(row.groupId);
     if (!group) continue;
     for (const book of group[target]) {
       const before = book.fields[row.field];
@@ -313,6 +319,14 @@ function snapshotKey(snapshots: Record<SyncProvider, BookSnapshot[]>): string {
   });
 }
 
+/** Index each provider's snapshots by book ID for constant-time lookups. */
+function indexBooks(snapshots: Record<SyncProvider, BookSnapshot[]>): Record<SyncProvider, Map<string, BookSnapshot>> {
+  return {
+    libby: new Map(snapshots.libby.map((book) => [book.bookId, book])),
+    fable: new Map(snapshots.fable.map((book) => [book.bookId, book])),
+  };
+}
+
 /** Use this function to find the destination books that now match a created book's source. */
 function createdBooks(
   operation: SyncOperation,
@@ -387,15 +401,14 @@ export async function applySync(input: {
       const parsed = reconcileSnapshotsDetailed(fresh.libby, fresh.fable, settings);
       fresh.libby = parsed.libby;
       fresh.fable = parsed.fable;
+      const freshBooks = indexBooks(fresh);
       for (const operation of input.plan.operations) {
         if (outcomes.get(operation.id)?.status === "success" && !appliedValue(operation, fresh, settings.matching))
           throw new Error("A previously applied value changed; create a new preview");
         if (outcomes.has(operation.id) && appliedValue(operation, fresh, settings.matching)) {
           adoptCreated(operation, fresh);
           const book = expected[operation.target].find((candidate) => candidate.bookId === operation.bookId);
-          const actual = fresh[operation.target].find((candidate) => candidate.bookId === operation.bookId)?.fields[
-            operation.field
-          ];
+          const actual = freshBooks[operation.target].get(operation.bookId)?.fields[operation.field];
           if (book && actual) book.fields[operation.field] = structuredClone(actual);
           if (outcomes.get(operation.id)?.status === "success") continue;
           await persist({

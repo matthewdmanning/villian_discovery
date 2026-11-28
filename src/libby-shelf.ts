@@ -1,5 +1,6 @@
 import { type CatalogReader, narratorsForItem } from "./libby-audiobooks.js";
 import type { LibbyClient } from "./libby-client.js";
+import { type Logger, silentLogger } from "./logger.js";
 import { mediaAuthors } from "./matcher.js";
 import type { ShelfItem } from "./types.js";
 
@@ -58,19 +59,47 @@ async function entries(
   ).flat();
 }
 
+/** Drop repeats of one loan or hold (same card and title). Libby should never send them; warn so it stays visible. */
+export function uniqueShelfItems(items: ShelfItem[], label: string, logger: Pick<Logger, "warn">): ShelfItem[] {
+  const seen = new Set<string>();
+  const repeats: string[] = [];
+  const unique = items.filter((item) => {
+    const key = `${item.cardId}:${item.id}`;
+    if (seen.has(key)) {
+      repeats.push(key);
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+  if (repeats.length)
+    logger.warn(
+      `Libby returned ${repeats.length} duplicate ${label} item(s); kept the first of each: ${repeats.join(", ")}`,
+    );
+  return unique;
+}
+
 async function shelfTab(
   value: unknown,
   label: string,
   cards: ReadonlyMap<string, { name: string; advantageKey: string }>,
-  catalog?: CatalogReader,
+  catalog: CatalogReader | undefined,
+  logger: Pick<Logger, "warn">,
 ): Promise<ShelfTab> {
   return Array.isArray(value)
-    ? { status: "available", items: await entries(value as ShelfItem[], cards, catalog) }
+    ? {
+        status: "available",
+        items: await entries(uniqueShelfItems(value as ShelfItem[], label, logger), cards, catalog),
+      }
     : { status: "unavailable", reason: `Libby did not provide ${label} data.` };
 }
 
 /** Read Libby's verified current loans and holds. Returned titles stay unavailable until Libby exposes a verified source. */
-export async function listShelf(client: LibbyClient, catalog?: CatalogReader): Promise<ShelfData> {
+export async function listShelf(
+  client: LibbyClient,
+  catalog?: CatalogReader,
+  logger: Pick<Logger, "warn"> = silentLogger,
+): Promise<ShelfData> {
   const state = await client.sync();
   const cards = new Map(
     (state.cards ?? []).map((card) => [
@@ -79,8 +108,8 @@ export async function listShelf(client: LibbyClient, catalog?: CatalogReader): P
     ]),
   );
   const [checkedOut, holds] = await Promise.all([
-    shelfTab(state.loans, "checked-out", cards, catalog),
-    shelfTab(state.holds, "holds", cards, catalog),
+    shelfTab(state.loans, "checked-out", cards, catalog, logger),
+    shelfTab(state.holds, "holds", cards, catalog, logger),
   ]);
   return {
     checkedOut,

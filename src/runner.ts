@@ -75,6 +75,12 @@ export class Runner {
     { allowPartialResults = false, queryAuthor }: { allowPartialResults?: boolean; queryAuthor?: string } = {},
   ): Promise<Candidate[]> {
     const libs = orderedLibraries(cards, book.libraries);
+    const cardsByLibrary = new Map<string, LibbyCard[]>();
+    for (const card of cards) {
+      const group = cardsByLibrary.get(card.advantageKey);
+      if (group) group.push(card);
+      else cardsByLibrary.set(card.advantageKey, [card]);
+    }
     const out: Candidate[] = [];
     for (const lib of libs) {
       const items = await this.search(lib, queryAuthor ? { ...book, author: queryAuthor } : book).catch(
@@ -86,7 +92,7 @@ export class Runner {
       );
       const matches = rankedMatches(book, items, { ...this.cfg.matching, mediaTypes: this.cfg.mediaTypes });
       for (const match of matches) {
-        for (const card of cards.filter((c) => c.advantageKey === lib)) out.push({ card, match });
+        for (const card of cardsByLibrary.get(lib) ?? []) out.push({ card, match });
       }
     }
     return out;

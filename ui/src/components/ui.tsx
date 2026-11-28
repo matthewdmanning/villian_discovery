@@ -147,6 +147,46 @@ export function Segmented<T extends string>(props: {
   );
 }
 
+/**
+ * A button for an external query. While `cooldown` seconds remain it is disabled and counts down,
+ * so repeated clicks cannot flood Libby, Fable or a library catalog.
+ */
+export function CooldownButton(props: {
+  onClick(): void;
+  cooldown: number;
+  busy?: boolean;
+  disabled?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  const { onClick, cooldown, busy = false, disabled = false, className = "btn btn-ghost btn-sm", children } = props;
+  const waiting = cooldown > 0 && !busy;
+  // The countdown is a description, so the button keeps one accessible name throughout.
+  const hint = useId();
+  return (
+    <button
+      type="button"
+      className={className}
+      disabled={disabled || busy || cooldown > 0}
+      onClick={onClick}
+      title={waiting ? `Available again in ${cooldown} s` : undefined}
+      aria-describedby={waiting ? hint : undefined}
+    >
+      {children}
+      {waiting && (
+        <>
+          <span aria-hidden className="badge badge-ghost badge-sm tabular-nums">
+            {cooldown}s
+          </span>
+          <span id={hint} hidden>
+            Available again in {cooldown} seconds
+          </span>
+        </>
+      )}
+    </button>
+  );
+}
+
 /** Up/down buttons that move an item one step within an ordered list. */
 export function ReorderControls(props: {
   name: string;

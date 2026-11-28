@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   activeListQueries,
   filterListGroups,
@@ -7,7 +7,7 @@ import {
   listQueryKey,
 } from "../../../src/libby-lists.ts";
 import { emptyQuery, needsBoolean, simpleQuery } from "./list-query.ts";
-import type { ListSort } from "./list-results.ts";
+import { type ListSort, sortListItems } from "./list-results.ts";
 import { useStore } from "./store.tsx";
 import { useResource } from "./use-resource.ts";
 
@@ -32,7 +32,7 @@ export function useLists() {
     useCallback(() => api.lists(), [api]),
     { keepStale: true },
   );
-  const { data, revision, reload } = lists;
+  const { data, revision, reload, cooldown } = lists;
   const error = lists.error !== undefined;
   const busy = lists.loading;
   const [draft, setDraft] = useState<ListQuery>(emptyQuery);
@@ -71,17 +71,22 @@ export function useLists() {
     setEditing(undefined);
     setDuplicate(false);
   }
-  const items = data
-    ? multiquery && saved.length
-      ? filterListQueries(
-          data.items,
-          activeListQueries(
-            saved.map((row) => row.query),
-            draft,
-          ),
-        )
-      : filterListGroups(data.items, draft.includes, draft.excludes)
-    : [];
+  const items = useMemo(
+    () =>
+      data
+        ? multiquery && saved.length
+          ? filterListQueries(
+              data.items,
+              activeListQueries(
+                saved.map((row) => row.query),
+                draft,
+              ),
+            )
+          : filterListGroups(data.items, draft.includes, draft.excludes)
+        : [],
+    [data, multiquery, saved, draft],
+  );
+  const sorted = useMemo(() => sortListItems(items, sort), [items, sort]);
   function changeMultiquery(value: boolean) {
     setMultiquery(value);
     saveFlag("multiquery", value);
@@ -113,9 +118,11 @@ export function useLists() {
     busy,
     revision,
     reload,
+    cooldown,
     sort,
     setSort,
     items,
+    sorted,
     changeBoolean,
     changeMultiquery,
     add,
