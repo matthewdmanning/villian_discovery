@@ -124,10 +124,16 @@ function isbn13For(book: BookSnapshot): string | undefined {
  */
 function sharedIdentityKeys(book: BookSnapshot): string[] {
   const keys: string[] = [];
-  if (book.workId) keys.push(`work:${JSON.stringify([book.workId, book.format])}`);
+  // Format stays out of the key: Fable often omits it. Joins check format compatibility instead.
+  if (book.workId) keys.push(`work:${book.workId}`);
   const isbn = isbn13For(book);
   if (isbn) keys.push(`isbn13:${isbn}`);
   return keys;
+}
+
+/** An unknown format fits any format; two known formats must be equal. */
+export function formatsCompatible(left: BookSnapshot["format"], right: BookSnapshot["format"]): boolean {
+  return !left || !right || left === right;
 }
 
 /** Use this function to score a candidate edition for a loan. Inputs: `book` — Libby title, format, and ISBN evidence; `candidate` — Fable title, format, ISBN, and optional subtitle. Dependencies: `isbn13` and `titleSimilarity`; incompatible formats have no score. */
@@ -135,7 +141,7 @@ export function syncEditionScore(
   book: Pick<BookSnapshot, "title" | "format" | "isbn">,
   candidate: Pick<BookSnapshot, "title" | "format" | "isbn"> & { subtitle?: string },
 ): number | undefined {
-  if (book.format && candidate.format && book.format !== candidate.format) return undefined;
+  if (!formatsCompatible(book.format, candidate.format)) return undefined;
   const isbn = book.isbn && isbn13(book.isbn);
   if (isbn && candidate.isbn && isbn === isbn13(candidate.isbn)) return 1;
   return titleSimilarity(
@@ -272,17 +278,31 @@ export function matchSnapshotGroups(
   for (let index = 0; index < fable.length; index++) collectIdentity("fable", fable[index]!, index);
   for (const entry of identityIndex.values()) {
     if (!entry.libby.length || !entry.fable.length) continue;
-    const formats = new Set(
-      [...entry.libby.map((index) => libby[index]!.format), ...entry.fable.map((index) => fable[index]!.format)].filter(
-        Boolean,
+    const formats = [
+      ...new Set(
+        [
+          ...entry.libby.map((index) => libby[index]!.format),
+          ...entry.fable.map((index) => fable[index]!.format),
+        ].filter((format) => format !== undefined),
       ),
-    );
-    if (formats.size > 1) continue;
-    const firstLibby = entry.libby[0]!;
-    const firstFable = entry.fable[0]!;
-    for (const index of entry.libby.slice(1)) joinRoots(parents, `l:${firstLibby}`, `l:${index}`);
-    for (const index of entry.fable.slice(1)) joinRoots(parents, `f:${firstFable}`, `f:${index}`);
-    joinRoots(parents, `l:${firstLibby}`, `f:${firstFable}`);
+    ];
+    // One known format (or none): unknown formats fit, so everything joins. Several: join each format's own
+    // editions, and leave books without a format apart, since they could belong to either.
+    const buckets =
+      formats.length > 1
+        ? formats.map((format) => ({
+            libby: entry.libby.filter((index) => libby[index]!.format === format),
+            fable: entry.fable.filter((index) => fable[index]!.format === format),
+          }))
+        : [entry];
+    for (const bucket of buckets) {
+      if (!bucket.libby.length || !bucket.fable.length) continue;
+      const firstLibby = bucket.libby[0]!;
+      const firstFable = bucket.fable[0]!;
+      for (const index of bucket.libby.slice(1)) joinRoots(parents, `l:${firstLibby}`, `l:${index}`);
+      for (const index of bucket.fable.slice(1)) joinRoots(parents, `f:${firstFable}`, `f:${index}`);
+      joinRoots(parents, `l:${firstLibby}`, `f:${firstFable}`);
+    }
   }
   joinConfirmed(parents, libby, fable, confirmed);
 
@@ -292,9 +312,8 @@ export function matchSnapshotGroups(
     const matched = matchedRoots(parents, libby.length, fable.length);
     const addWork = (provider: "libby" | "fable", book: BookSnapshot, index: number): void => {
       if (matched.has(findRoot(parents, `${provider === "libby" ? "l" : "f"}:${index}`))) return;
-      const work = workKey(book);
-      if (!work) return;
-      const key = JSON.stringify([work, book.format]);
+      const key = workKey(book);
+      if (!key) return;
       const entry = workIndex.get(key) ?? { libby: [], fable: [] };
       entry[provider].push(index);
       workIndex.set(key, entry);
@@ -303,16 +322,28 @@ export function matchSnapshotGroups(
     for (let index = 0; index < fable.length; index++) addWork("fable", fable[index]!, index);
     for (const entry of workIndex.values()) {
       if (!entry.libby.length || !entry.fable.length) continue;
-      if (entry.libby.length !== 1 || entry.fable.length !== 1) {
+      // Pair a Libby and a Fable book only when each is the other's single format-compatible candidate.
+      const fits = (left: number, right: number) => formatsCompatible(libby[left]!.format, fable[right]!.format);
+      const ambiguousLibby = new Set<number>();
+      const ambiguousFable = new Set<number>();
+      for (const left of entry.libby) {
+        const candidates = entry.fable.filter((right) => fits(left, right));
+        if (!candidates.length) continue;
+        const [only] = candidates;
+        if (candidates.length === 1 && entry.libby.filter((other) => fits(other, only!)).length === 1) {
+          joinRoots(parents, `l:${left}`, `f:${only!}`);
+          continue;
+        }
+        ambiguousLibby.add(left);
+        for (const right of candidates) ambiguousFable.add(right);
+      }
+      if (ambiguousLibby.size)
         conflicts.push({
           code: "ambiguous-match",
           message: "Exact normalized title and author match is ambiguous; choose an edition explicitly.",
-          libbyBookIds: entry.libby.map((index) => libby[index]!.bookId),
-          fableBookIds: entry.fable.map((index) => fable[index]!.bookId),
+          libbyBookIds: [...ambiguousLibby].map((index) => libby[index]!.bookId),
+          fableBookIds: [...ambiguousFable].map((index) => fable[index]!.bookId),
         });
-        continue;
-      }
-      joinRoots(parents, `l:${entry.libby[0]!}`, `f:${entry.fable[0]!}`);
     }
   }
 

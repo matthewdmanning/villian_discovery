@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ConfigSchema } from "./config.js";
+import { LOOKUP_CONCURRENCY, mapLimit } from "./map-limit.js";
 import {
   type BookSnapshot,
   isMetadataFieldInScope,
@@ -317,6 +318,15 @@ function buildPlan(
     const source = group.libby[0]!;
     const catalog = catalogMatches[source.bookId];
     const requested = options.catalogSelections?.[source.bookId];
+    if (requested && catalog === null) {
+      // The search failed, so the selection cannot be checked now; keep the book for review, not the whole preview.
+      unmatched.push({
+        message: `Could not search Fable for ${group.title}; preview again to confirm its edition`,
+        libbyBookIds,
+        fableBookIds: [],
+      });
+      continue;
+    }
     if (requested && (!catalog?.some((book) => book.id === requested) || existingCatalogIds.has(requested))) {
       throw new Error(`The Fable catalog selection for ${source.title} is no longer available`);
     }
@@ -344,7 +354,15 @@ function buildPlan(
         ? proposeCreate(group, adapters, id, catalogId, !!requested, minTitleScore)
         : undefined;
     if (create) {
-      if (catalogId && proposedCatalogIds.has(catalogId)) continue;
+      if (catalogId && proposedCatalogIds.has(catalogId)) {
+        // Two loans resolved to one Fable edition: add it once and ask about the other loan.
+        unmatched.push({
+          message: `${group.title} matches a Fable edition already proposed for another loan; choose its edition`,
+          libbyBookIds,
+          fableBookIds,
+        });
+        continue;
+      }
       if (catalogId) proposedCatalogIds.add(catalogId);
       operations.push(create);
     } else {
@@ -414,13 +432,12 @@ export async function previewSync(input: {
     const loans = groups.flatMap((group) =>
       group.fable.length ? [] : group.libby.filter((book) => book.fields.checkedOut?.value === true),
     );
-    await Promise.all(
-      loans.map(async (book) => {
-        catalogMatches[book.bookId] = await search(book, options.minTitleScore ?? DEFAULT_MIN_TITLE_SCORE).catch(
-          () => null,
-        );
-      }),
-    );
+    // Each search is two Fable requests; cap how many run at once.
+    await mapLimit(loans, LOOKUP_CONCURRENCY, async (book) => {
+      catalogMatches[book.bookId] = await search(book, options.minTitleScore ?? DEFAULT_MIN_TITLE_SCORE).catch(
+        () => null,
+      );
+    });
   }
   return buildPlan(context, settings, snapshots, input.adapters, options, undefined, catalogMatches);
 }
@@ -428,8 +445,10 @@ export async function previewSync(input: {
 /** Use this function to normalize snapshot record ordering before checking a preview for stale data. */
 function snapshotKey(snapshots: Record<SyncProvider, BookSnapshot[]>): string {
   return stable({
+    // Display data and catalog-filled ISBNs come from best-effort lookups that can fail on one read and not
+    // the next. A loan's edition is fixed by its title ID, so they never signal a change in the library.
     libby: snapshots.libby
-      .map(({ loanUrl: _loanUrl, narrators: _narrators, ...book }) => book)
+      .map(({ loanUrl: _loanUrl, narrators: _narrators, isbn: _isbn, ...book }) => book)
       .sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
     fable: [...snapshots.fable].sort((a, b) => a.bookId.localeCompare(b.bookId, "en")),
   });
