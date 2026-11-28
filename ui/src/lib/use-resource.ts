@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EXTERNAL_QUERY_COOLDOWN_MS } from "../../../src/query-cooldown.ts";
-import { useCooldown } from "./use-cooldown.ts";
 
 export type ResourceOptions = {
   /** Keep the last loaded value while reloading and after a failed reload. Default: clear it. */
   keepStale?: boolean;
-  /** Wait this long after a load finishes before `reload` asks again. Default: the external query cooldown. */
-  cooldownMs?: number;
 };
 
 export type Resource<T> = {
@@ -16,12 +12,13 @@ export type Resource<T> = {
   loading: boolean;
   /** Bumped by `reload`; key children on it to reset their state per load. */
   revision: number;
-  /** Load again, unless the cooldown after the last load is still running. */
+  /**
+   * Load again, unless a load is already running. Repeated external reads are throttled where they are made
+   * (the server's and the extension's query cooldown), so this never needs to wait.
+   */
   reload(): void;
-  /** Load again now, ignoring the cooldown; for when an account changed. */
+  /** Load again even while a load runs, superseding it; for when the account changed. */
   forceReload(): void;
-  /** Whole seconds until `reload` works again; 0 when ready. */
-  cooldown: number;
 };
 
 type State<T> = Pick<Resource<T>, "data" | "error" | "loading">;
@@ -37,15 +34,11 @@ export function errorMessage(reason: unknown): string {
  * Responses from superseded or unmounted loads are ignored.
  * Memoize `load` with `useCallback` so its dependencies decide when to refetch.
  */
-export function useResource<T>(
-  load: () => Promise<T>,
-  { keepStale = false, cooldownMs = EXTERNAL_QUERY_COOLDOWN_MS }: ResourceOptions = {},
-): Resource<T> {
+export function useResource<T>(load: () => Promise<T>, { keepStale = false }: ResourceOptions = {}): Resource<T> {
   const [state, setState] = useState<State<T>>({ data: undefined, error: undefined, loading: true });
   const [revision, setRevision] = useState(0);
-  const { remaining, cooling, start } = useCooldown(cooldownMs);
   const blocked = useRef(false);
-  blocked.current = cooling || state.loading;
+  blocked.current = state.loading;
   const forceReload = useCallback(() => setRevision((value) => value + 1), []);
   const reload = useCallback(() => {
     if (!blocked.current) forceReload();
@@ -59,18 +52,16 @@ export function useResource<T>(
       (data) => {
         if (!current) return;
         setState({ data, error: undefined, loading: false });
-        start();
       },
       (reason: unknown) => {
         if (!current) return;
         setState((prev) => ({ data: keepStale ? prev.data : undefined, error: errorMessage(reason), loading: false }));
-        start();
       },
     );
     return () => {
       current = false;
     };
-  }, [load, keepStale, revision, start]);
+  }, [load, keepStale, revision]);
 
-  return { ...state, revision, reload, forceReload, cooldown: remaining };
+  return { ...state, revision, reload, forceReload };
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createQueryCooldown, EXTERNAL_QUERY_COOLDOWN_MS, withCooldown } from "../src/query-cooldown.js";
+import {
+  cachedRead,
+  clearsCache,
+  createQueryCooldown,
+  EXTERNAL_QUERY_COOLDOWN_MS,
+  withCooldown,
+} from "../src/query-cooldown.js";
 
 function clock(start = 0) {
   let at = start;
@@ -138,6 +144,39 @@ describe("withCooldown", () => {
     await wrapped["GET /status"](undefined);
     await wrapped["GET /status"](undefined);
     expect(calls).toEqual(["status", "status"]);
+    expect(cooldown.size).toBe(0);
+  });
+});
+
+describe("cachedRead and clearsCache", () => {
+  it("keys reads by name and every argument", async () => {
+    const cooldown = createQueryCooldown(60_000);
+    const fetch = vi.fn(async (id: string, page: number) => `${id}:${page}`);
+    const read = cachedRead(cooldown, "read", fetch);
+    const other = cachedRead(cooldown, "other", fetch);
+    expect(await read("a", 1)).toBe("a:1");
+    expect(await read("a", 1)).toBe("a:1");
+    expect(await read("a", 2)).toBe("a:2");
+    expect(await other("a", 1)).toBe("a:1");
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("forgets kept reads after a write, even a failed one", async () => {
+    const cooldown = createQueryCooldown(60_000);
+    const read = cachedRead(
+      cooldown,
+      "read",
+      vi.fn(async () => 1),
+    );
+    await read();
+    const write = clearsCache(cooldown, async (fail: boolean) => {
+      if (fail) throw new Error("write failed");
+      return "done";
+    });
+    expect(await write(false)).toBe("done");
+    expect(cooldown.size).toBe(0);
+    await read();
+    await expect(write(true)).rejects.toThrow("write failed");
     expect(cooldown.size).toBe(0);
   });
 });

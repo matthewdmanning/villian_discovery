@@ -2,7 +2,7 @@ import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import type { ListQuery, TagGroups } from "../../../src/libby-lists.ts";
 import type { LibbyTag } from "../../../src/libby-tags-cache.ts";
 import { ListResult } from "../components/ListResult.tsx";
-import { CooldownButton, Panel, Screen } from "../components/ui.tsx";
+import { Panel, RefreshButton, Screen } from "../components/ui.tsx";
 import { formatTagGroups, toggleTag, unionTags } from "../lib/list-query.ts";
 import type { ListSort } from "../lib/list-results.ts";
 import { useLists } from "../lib/use-lists.ts";
@@ -138,7 +138,6 @@ export function TagsScreen() {
     busy,
     revision,
     reload,
-    cooldown,
     sort,
     setSort,
     items,
@@ -261,9 +260,9 @@ export function TagsScreen() {
               <option value="author">Author A–Z</option>
             </select>
           </label>
-          <CooldownButton busy={busy} cooldown={cooldown} onClick={reload}>
+          <RefreshButton busy={busy} onClick={reload}>
             Refresh
-          </CooldownButton>
+          </RefreshButton>
         </div>
         {busy && <p role="status">Loading…</p>}
         {error && (

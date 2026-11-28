@@ -7,7 +7,7 @@ import { syncDecisionKey } from "../../../src/sync-plan.ts";
 import { BookLine, BookSections, ProgressValue, ReadingStatus, Stars } from "../components/SyncBook.tsx";
 import { APP_NAMES, AppValue, SyncChange } from "../components/SyncChange.tsx";
 import { SyncSettingsPanel } from "../components/SyncSettings.tsx";
-import { CooldownButton, Empty, Panel, Screen } from "../components/ui.tsx";
+import { Empty, Panel, RefreshButton, Screen } from "../components/ui.tsx";
 import { type BookSummary, hasValue, LINE_FIELDS, summarizeBooks } from "../lib/sync-books.ts";
 import { displaySyncValue as displayValue, SYNC_FIELD_LABELS as labels } from "../lib/sync-format.ts";
 import { useSync } from "../lib/use-sync.ts";
@@ -62,7 +62,6 @@ export function SyncScreen({
     api,
     syncResult,
     busy,
-    cooldown,
     error,
     review,
     settings,
@@ -204,11 +203,10 @@ export function SyncScreen({
       actions={
         tab === "Shelf" && (
           <div className={`flex flex-wrap ${compactLayout ? "gap-2" : "gap-3"}`}>
-            <CooldownButton
+            <RefreshButton
               className={`btn btn-primary btn-pop ${compactLayout ? "btn-sm" : "btn-lg"}`}
               busy={busy}
               disabled={!saved}
-              cooldown={cooldown}
               onClick={() => void sync()}
             >
               {busy ? (
@@ -217,7 +215,7 @@ export function SyncScreen({
                 <RefreshCw className={compactLayout ? "size-4" : "size-5"} />
               )}
               Preview changes
-            </CooldownButton>
+            </RefreshButton>
             <button
               type="button"
               className={`btn btn-secondary btn-pop ${compactLayout ? "btn-sm" : "btn-lg"}`}

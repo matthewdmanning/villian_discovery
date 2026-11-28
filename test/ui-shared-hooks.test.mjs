@@ -117,7 +117,7 @@ describe("useResource", () => {
       if (call > 1) throw new Error("Down");
       return "ok";
     });
-    await mount(load, { cooldownMs: 0 });
+    await mount(load);
     expect(hook.data).toBe("ok");
     await act(async () => hook.reload());
     expect(hook).toMatchObject({ loading: false, data: undefined, error: "Down", revision: 1 });
@@ -126,7 +126,7 @@ describe("useResource", () => {
   it("keeps stale data through reloads and failures when asked", async () => {
     const next = deferred();
     const load = vi.fn().mockResolvedValueOnce("first").mockReturnValueOnce(next.promise);
-    await mount(load, { keepStale: true, cooldownMs: 0 });
+    await mount(load, { keepStale: true });
     await act(async () => hook.reload());
     expect(hook).toMatchObject({ loading: true, data: "first" });
     await act(async () => next.reject("Nope"));
@@ -150,62 +150,31 @@ describe("useResource", () => {
     expect(hook.data).toBe("b");
   });
 
-  it("ignores reload during the cooldown and while loading, but not forceReload", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
-    try {
-      const pending = deferred();
-      const load = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue("again");
-      await mount(load, { cooldownMs: 3_000 });
-      await act(async () => hook.reload());
-      expect(load).toHaveBeenCalledTimes(1);
-      await act(async () => pending.resolve("first"));
-      expect(hook.cooldown).toBe(3);
-      await act(async () => hook.reload());
-      expect(load).toHaveBeenCalledTimes(1);
-      await act(async () => vi.advanceTimersByTime(1_000));
-      expect(hook.cooldown).toBe(2);
-      await act(async () => vi.advanceTimersByTime(2_000));
-      expect(hook.cooldown).toBe(0);
-      await act(async () => hook.reload());
-      expect(load).toHaveBeenCalledTimes(2);
-      await act(async () => hook.forceReload());
-      expect(load).toHaveBeenCalledTimes(3);
-    } finally {
-      vi.useRealTimers();
-    }
+  it("ignores reload while loading, but forceReload supersedes the running load", async () => {
+    const pending = deferred();
+    const load = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue("again");
+    await mount(load);
+    await act(async () => hook.reload());
+    expect(load).toHaveBeenCalledTimes(1);
+    await act(async () => hook.forceReload());
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(hook.data).toBe("again");
+    await act(async () => pending.resolve("stale"));
+    expect(hook.data).toBe("again");
   });
 
-  it("starts the cooldown after a failure too", async () => {
-    await mount(async () => {
-      throw new Error("Down");
-    });
-    expect(hook).toMatchObject({ error: "Down", cooldown: 10 });
+  it("reloads right away after a load finishes", async () => {
+    const load = vi.fn().mockRejectedValueOnce(new Error("Down")).mockResolvedValue("up");
+    await mount(load);
+    expect(hook.error).toBe("Down");
+    await act(async () => hook.reload());
+    expect(hook).toMatchObject({ data: "up", error: undefined, loading: false });
+    await act(async () => hook.reload());
+    expect(load).toHaveBeenCalledTimes(3);
   });
 
   it("never reports an empty error message", () => {
     expect(errorMessage(new Error(""))).toBe("Unknown error");
     expect(errorMessage("plain")).toBe("plain");
-  });
-});
-
-describe("useCooldown", () => {
-  it("ends even when the deadline passes before its timer is set", async () => {
-    const { useCooldown } = await import("../ui/src/lib/use-cooldown.ts");
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
-    try {
-      function Probe() {
-        hook = useCooldown(1_000);
-        return null;
-      }
-      await act(async () => root.render(createElement(Probe)));
-      // Start, then jump past the deadline before React runs the effect.
-      await act(async () => {
-        hook.start();
-        vi.setSystemTime(Date.now() + 5_000);
-      });
-      expect(hook).toMatchObject({ remaining: 0, cooling: false });
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });

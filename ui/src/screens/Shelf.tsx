@@ -1,6 +1,6 @@
 import { BookOpen, RefreshCw } from "lucide-react";
 import { useCallback, useState } from "react";
-import { CooldownButton, Empty, Panel, Screen } from "../components/ui.tsx";
+import { Empty, Panel, RefreshButton, Screen } from "../components/ui.tsx";
 import type { ShelfData, ShelfEntry, ShelfTab } from "../lib/api.ts";
 import { useStore } from "../lib/store.tsx";
 import { useResource } from "../lib/use-resource.ts";
@@ -62,7 +62,7 @@ function TabContent({ tab, kind }: { tab: ShelfTab; kind: "checkedOut" | "holds"
 export function Shelf() {
   const { api } = useStore();
   const [active, setActive] = useState<(typeof TABS)[number][0]>("checkedOut");
-  const { data, error, loading, reload, cooldown } = useResource(useCallback(() => api.shelf(), [api]));
+  const { data, error, loading, reload } = useResource(useCallback(() => api.shelf(), [api]));
 
   return (
     <Screen id="shelf">
@@ -70,9 +70,9 @@ export function Shelf() {
       {!loading && error && (
         <div className="space-y-3" role="alert">
           <p>Could not load shelf: {error}</p>
-          <CooldownButton className="btn btn-primary" cooldown={cooldown} onClick={reload}>
+          <RefreshButton className="btn btn-primary" onClick={reload}>
             <RefreshCw className="size-4" /> Retry
-          </CooldownButton>
+          </RefreshButton>
         </div>
       )}
       {!loading && !error && data && (
@@ -92,9 +92,9 @@ export function Shelf() {
                 </button>
               ))}
             </div>
-            <CooldownButton cooldown={cooldown} onClick={reload}>
+            <RefreshButton onClick={reload}>
               <RefreshCw className="size-4" /> Refresh
-            </CooldownButton>
+            </RefreshButton>
           </div>
           <TabContent tab={data[active]} kind={active} />
         </Panel>
