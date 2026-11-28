@@ -1,5 +1,5 @@
 import { BookCopy, ChevronDown, Clock, Search, Users } from "lucide-react";
-import { type FormEvent, type ReactNode, useCallback, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useMemo, useState } from "react";
 import type { BookRequest } from "../../../src/input.ts";
 import { mediaNarrators } from "../../../src/matcher.ts";
 import { TagFilters, TaggedResults } from "../components/TagSearch.tsx";
@@ -73,10 +73,13 @@ export function SearchScreen() {
   const matches = catalog.data?.query === catalogQuery ? catalog.data?.matches : undefined;
   const catalogError = catalogQuery ? catalog.error : undefined;
   const searching = Boolean(catalogQuery && !matches && !catalogError);
-  const isbnTitleIds = submitted?.isbn && new Set(matches?.map(({ media }) => media.id));
-  const items = submitted
-    ? lists.items.filter((item) => (isbnTitleIds ? isbnTitleIds.has(item.id) : matchesListSearch(item, submitted)))
-    : lists.items;
+  const items = useMemo(() => {
+    if (!submitted) return lists.items;
+    const isbnTitleIds = submitted.isbn && new Set(matches?.map(({ media }) => media.id));
+    return lists.items.filter((item) =>
+      isbnTitleIds ? isbnTitleIds.has(item.id) : matchesListSearch(item, submitted),
+    );
+  }, [lists.items, submitted, matches]);
 
   function submit(e: FormEvent) {
     e.preventDefault();

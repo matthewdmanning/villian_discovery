@@ -1,4 +1,5 @@
 import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useMemo } from "react";
 import type { ListItem, ListQuery } from "../../../src/libby-lists.ts";
 import type { LibbyTag } from "../../../src/libby-tags-cache.ts";
 import { formatTagGroups } from "../lib/list-query.ts";
@@ -147,6 +148,7 @@ export function TagFilters({ lists }: { lists: Lists }) {
 
 export function TaggedResults({ lists, items }: { lists: Lists; items: ListItem[] }) {
   const { api, data, error, busy, revision, reload, sort, setSort } = lists;
+  const sorted = useMemo(() => sortListItems(items, sort), [items, sort]);
   return (
     <Panel>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -177,7 +179,7 @@ export function TaggedResults({ lists, items }: { lists: Lists; items: ListItem[
         !error &&
         (items.length ? (
           <ul className="divide-y-2 divide-base-200">
-            {sortListItems(items, sort).map((item) => (
+            {sorted.map((item) => (
               <ListResult
                 key={`${revision}:${item.id}`}
                 item={item}
