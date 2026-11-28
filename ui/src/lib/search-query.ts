@@ -1,7 +1,7 @@
 import { type BookRequest, parseBookLine } from "../../../src/input.ts";
 import type { IsbnBook } from "../../../src/isbn-lookup.ts";
 import type { ListItem } from "../../../src/libby-lists.ts";
-import { containsKeywords, normalizeName, normalizeTitle } from "../../../src/matcher.ts";
+import { fuzzyKeywords, normalizeName, normalizeTitle } from "../../../src/matcher.ts";
 
 /**
  * Parse the text used by the list/search UI.
@@ -16,11 +16,11 @@ export function parseSearchQuery(text: string): BookRequest {
   const fields = explicitFields(raw);
   if (!fields) {
     const parsed = parseBookLine(raw);
-    // A bare UI keyword should be searched as a title/author keyword by the
-    // catalog runner as well as by matchesListSearch. Keep legacy structured
-    // forms unchanged.
-    if (parsed.title && !parsed.author && !parsed.isbn && !parsed.titleId) return { ...parsed, matchMode: "text" };
-    return parsed;
+    // ISBNs and title IDs stay exact.
+    if (parsed.isbn || parsed.titleId) return parsed;
+    // Plain text keeps both readings: the literal phrase ("Death by Chocolate") and, when the line has one,
+    // the legacy title-by-author split ("Project Hail Mary by Andy Weir").
+    return { ...parsed, text: raw, matchMode: "text" };
   }
 
   const result: BookRequest = { raw, matchMode: "keywords" };
@@ -29,18 +29,21 @@ export function parseSearchQuery(text: string): BookRequest {
   return result;
 }
 
-/** Filter a tagged-list item using a parsed search request. */
+/** Filter a tagged-list item using a parsed search request. Titles and authors match fuzzily; IDs exactly. */
 export function matchesListSearch(item: ListItem, query: BookRequest): boolean {
   // ListItem has no ISBN.  Never claim an ISBN match based on unrelated text.
   if (query.isbn) return false;
   if (query.titleId) return item.id === query.titleId;
   const author = item.author ?? "";
-  if (query.matchMode === "text" && query.title) {
-    return containsKeywords(item.title, query.title) || containsKeywords(author, query.title);
+  if (query.matchMode === "text") {
+    const literal = query.text ?? query.title;
+    if (literal && fuzzyKeywords(`${item.title} ${author}`, literal)) return true;
+    return Boolean(
+      query.title && query.author && fuzzyKeywords(item.title, query.title) && fuzzyKeywords(author, query.author),
+    );
   }
   return (
-    (!query.title || containsKeywords(item.title, query.title)) &&
-    (!query.author || containsKeywords(author, query.author))
+    (!query.title || fuzzyKeywords(item.title, query.title)) && (!query.author || fuzzyKeywords(author, query.author))
   );
 }
 
@@ -50,9 +53,11 @@ export function matchesIsbnBook(item: ListItem, book: IsbnBook): boolean {
   const bookTitle = normalizeTitle(book.title, false);
   const fullTitle = book.subtitle ? normalizeTitle(`${book.title} ${book.subtitle}`, false) : bookTitle;
   const author = item.author ? normalizeName(item.author) : "";
+  // Either side may carry a subtitle the other lacks ("Piranesi" vs "Piranesi: A Novel").
+  const mainTitle = normalizeTitle(item.title, true);
   return Boolean(
     title &&
-      (title === bookTitle || title === fullTitle) &&
+      (title === bookTitle || title === fullTitle || (mainTitle && mainTitle === normalizeTitle(book.title, true))) &&
       author &&
       book.authors.some((name) => normalizeName(name) === author),
   );

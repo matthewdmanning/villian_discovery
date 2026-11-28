@@ -172,7 +172,42 @@ describe("Runner", () => {
       await searchIds({ raw: "title:Hail author:Weir", title: "Hail", author: "Weir", matchMode: "keywords" }),
     ).toEqual(["111"]);
     expect(await searchIds({ raw: "author:Weir", author: "Weir", matchMode: "keywords" })).toEqual(["111", "222"]);
-    expect(calls.map(({ url }) => url.searchParams.get("query"))).toEqual(["Hail", "Weir", "Hail Weir", "Weir"]);
+    // Explicit fields use the catalog's own title and creator filters instead of a free-text query.
+    expect(calls.map(({ url }) => ["query", "title", "creator"].map((name) => url.searchParams.get(name)))).toEqual([
+      ["Hail", null, null],
+      ["Weir", null, null],
+      [null, "Hail", "Weir"],
+      [null, null, "Weir"],
+    ]);
+  });
+
+  it("searches a plain phrase as typed and as title by author, keeping literal title matches", async () => {
+    const chocolate = media({ id: "444", title: "Death by Chocolate", firstCreatorName: "Sarah Graves", creators: [] });
+    const { runner, calls } = setup([
+      {
+        match: /thunder/,
+        respond: (url) => ({
+          body: { items: url.searchParams.get("query") === "Death by Chocolate" ? [chocolate] : [] },
+        }),
+      },
+    ]);
+    const matches = await runner.searchMatches(
+      { raw: "Death by Chocolate", title: "Death", author: "Chocolate", text: "Death by Chocolate", matchMode: "text" },
+      [card()],
+    );
+    expect(matches.map(({ media }) => media.id)).toEqual(["444"]);
+    expect(calls.map(({ url }) => url.searchParams.get("query"))).toEqual(["Death by Chocolate", "Death Chocolate"]);
+  });
+
+  it("finds a catalog title despite a small typo in the query", async () => {
+    const { runner } = setup([
+      { match: /thunder/, respond: () => ({ body: { items: [media({ creators: projectAuthors })] } }) },
+    ]);
+    const found = await runner.searchMatches(
+      { raw: "Projetc Hial Mary", title: "Projetc Hial Mary", text: "Projetc Hial Mary", matchMode: "text" },
+      [card()],
+    );
+    expect(found.map(({ media }) => media.id)).toEqual(["111"]);
   });
 
   it.each([false, true])(

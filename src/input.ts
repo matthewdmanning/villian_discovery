@@ -18,6 +18,8 @@ export interface BookRequest {
   titleId?: string;
   /** Interactive catalog search mode for free text or explicit fields. */
   matchMode?: "text" | "keywords";
+  /** For `matchMode: "text"`: the whole query as typed, kept alongside any title-by-author split. */
+  text?: string;
   mediaTypes?: MediaType[];
   action?: z.infer<typeof ActionSchema>;
   libraries?: string[];

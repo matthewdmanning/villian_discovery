@@ -48,21 +48,28 @@ export function scoreMatch(book: BookRequest, media: ThunderMedia, o: MatchOptio
     return isbnMatch ? { media, titleScore: 1, authorScore: undefined, isbnMatch } : undefined;
   }
   const { author, matchMode } = book;
+  const fullTitle = [media.title, media.subtitle].filter(Boolean).join(" ");
+  const authors = mediaAuthors(media);
   if (matchMode === "keywords") {
-    const title = [media.title, media.subtitle].filter(Boolean).join(" ");
-    if (book.title && !containsKeywords(title, book.title)) return undefined;
-    if (author && !mediaAuthors(media).some((name) => containsKeywords(name, author))) return undefined;
+    if (book.title && !fuzzyKeywords(fullTitle, book.title)) return undefined;
+    if (author && !authors.some((name) => fuzzyKeywords(name, author))) return undefined;
     return { media, titleScore: 1, authorScore: author ? 1 : undefined, isbnMatch };
   }
   const titleScore = book.title ? titleSimilarity(book.title, media, o.ignoreSubtitle) : 1;
   const authorScore = author ? authorSimilarity(author, media) : undefined;
   if (isbnMatch) return { media, titleScore, authorScore, isbnMatch };
-  const text = matchMode === "text" ? book.title : undefined;
-  if (
-    text &&
-    [media.title, media.subtitle ?? "", ...mediaAuthors(media)].some((value) => containsKeywords(value, text))
-  ) {
-    return { media, titleScore, authorScore, isbnMatch };
+  if (matchMode === "text") {
+    // The literal phrase over title and authors, or the title-by-author reading, each tolerating small typos.
+    const literal = book.text ?? book.title;
+    if (literal && fuzzyKeywords([fullTitle, ...authors].join(" "), literal))
+      return { media, titleScore, authorScore, isbnMatch };
+    if (
+      book.title &&
+      author &&
+      fuzzyKeywords(fullTitle, book.title) &&
+      authors.some((name) => fuzzyKeywords(name, author))
+    )
+      return { media, titleScore, authorScore, isbnMatch };
   }
   if (titleScore < o.minTitleScore) return undefined;
   if (authorScore !== undefined && authorScore < o.minAuthorScore) return undefined;
@@ -194,6 +201,60 @@ export function containsKeywords(value: string, query: string): boolean {
       .trim();
   const keywords = normalize(query);
   return Boolean(keywords && normalize(value).includes(keywords));
+}
+
+const searchWords = (s: string) =>
+  fold(s)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+/** Edit distance with adjacent transpositions (optimal string alignment), stopping once it exceeds `limit`. */
+function editDistance(a: string, b: string, limit: number): number {
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+  let previous2: number[] = [];
+  let previous = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let value = Math.min(previous[j]! + 1, current[j - 1]! + 1, previous[j - 1]! + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        value = Math.min(value, previous2[j - 2]! + 1);
+      current.push(value);
+      best = Math.min(best, value);
+    }
+    if (best > limit) return limit + 1;
+    previous2 = previous;
+    previous = current;
+  }
+  return previous[b.length]!;
+}
+
+/** Typos allowed in one search word: none for short words or numbers, one from 4 letters, two from 8. */
+function allowedTypos(word: string): number {
+  if (/\p{N}/u.test(word)) return 0;
+  return word.length >= 8 ? 2 : word.length >= 4 ? 1 : 0;
+}
+
+/**
+ * Whether `query` finds `value` for interactive search: the folded phrase appears in it, or every query word
+ * matches some word of `value` exactly, as a prefix (3+ letters), or within a small number of typos.
+ * Word order does not matter. Identifiers such as ISBNs and title IDs must be compared exactly instead.
+ */
+export function fuzzyKeywords(value: string, query: string): boolean {
+  if (containsKeywords(value, query)) return true;
+  const wanted = searchWords(query);
+  if (!wanted.length) return false;
+  const words = searchWords(value);
+  return wanted.every((word) =>
+    words.some(
+      (candidate) =>
+        candidate === word ||
+        (word.length >= 3 && candidate.startsWith(word)) ||
+        (allowedTypos(word) > 0 && editDistance(word, candidate, allowedTypos(word)) <= allowedTypos(word)),
+    ),
+  );
 }
 
 /** Sørensen–Dice coefficient over character bigrams. 1 = identical. */

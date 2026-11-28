@@ -198,10 +198,21 @@ function TagPicker({
   onClose(): void;
 }) {
   const dialog = useRef<HTMLDialogElement | null>(null);
+  const list = useRef<HTMLDivElement | null>(null);
+  const done = useRef<HTMLButtonElement | null>(null);
+  // Picking a tag removes its button. Focus then moves to the tag that took its place, or to Done.
+  const [refocus, setRefocus] = useState<number>();
   useEffect(() => {
     const node = dialog.current;
     if (node && typeof node.showModal === "function" && !node.open) node.showModal();
   }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run after the picked tag leaves the list.
+  useEffect(() => {
+    if (refocus === undefined) return;
+    const buttons = list.current?.querySelectorAll("button") ?? [];
+    (buttons[Math.min(refocus, buttons.length - 1)] ?? done.current)?.focus();
+    setRefocus(undefined);
+  }, [tags, refocus]);
 
   const nativeModal =
     typeof HTMLDialogElement !== "undefined" && typeof HTMLDialogElement.prototype.showModal === "function";
@@ -220,13 +231,16 @@ function TagPicker({
           Add tag to {label}
         </h3>
         {tags.length ? (
-          <div className="grid max-h-72 gap-1 overflow-y-auto">
-            {tags.map((tag) => (
+          <div ref={list} className="grid max-h-72 gap-1 overflow-y-auto">
+            {tags.map((tag, index) => (
               <button
                 key={tag.uuid}
                 type="button"
                 className="btn btn-ghost min-h-11 justify-start"
-                onClick={() => onSelect(tag.uuid)}
+                onClick={() => {
+                  setRefocus(index);
+                  onSelect(tag.uuid);
+                }}
               >
                 {tag.name}
               </button>
@@ -236,7 +250,7 @@ function TagPicker({
           <p className="text-sm opacity-70">No available tags</p>
         )}
         <div className="modal-action">
-          <button type="button" className="btn btn-primary" onClick={onClose}>
+          <button ref={done} type="button" className="btn btn-primary" onClick={onClose}>
             Done
           </button>
         </div>

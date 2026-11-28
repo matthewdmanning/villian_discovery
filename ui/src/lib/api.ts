@@ -240,13 +240,18 @@ function demoFetch(config: Config, books: BookRequest[]): typeof fetch {
     if (url.pathname.includes("/libraries/") && url.pathname.endsWith("/media")) {
       const library = url.pathname.split("/").at(-2);
       const card = CARDS.find((candidate) => candidate.advantageKey === library);
-      const query = url.searchParams.get("query") ?? "";
+      const query = url.searchParams.get("query");
       const identifier = url.searchParams.get("identifier");
+      const title = url.searchParams.get("title") ?? undefined;
+      const creator = url.searchParams.get("creator") ?? undefined;
       const book = books.find(
         (candidate) =>
           (identifier !== null && candidate.isbn === identifier) ||
-          ((candidate.title || candidate.matchMode === "keywords") &&
-            query === [candidate.title, candidate.author].filter(Boolean).join(" ")),
+          // Explicit fields arrive as the catalog's title and creator filters.
+          (candidate.matchMode === "keywords" && candidate.title === title && candidate.author === creator) ||
+          (query !== null &&
+            !!candidate.title &&
+            (query === candidate.text || query === [candidate.title, candidate.author].filter(Boolean).join(" "))),
       );
       if (!card || !book) return Response.json({ items: [] });
       const mediaTypes = (url.searchParams.get("mediaTypes")?.split(",").filter(Boolean) ?? config.mediaTypes).filter(

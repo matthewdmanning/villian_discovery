@@ -125,12 +125,28 @@ describe("Lists screen", () => {
     await click(container.querySelector('dialog button[aria-label="Close tag picker"]'));
   });
 
+  it("keeps keyboard focus in the picker after each pick", async () => {
+    await mount();
+    await click(tagTrigger(group("Includes")));
+    const pick = async (label) => {
+      tagChoice(label).focus();
+      await click(tagChoice(label));
+    };
+    await pick("Favorites");
+    expect(document.activeElement?.textContent).toBe("To read");
+    await pick("Audio");
+    expect(document.activeElement?.textContent).toBe("To read");
+    await pick("To read");
+    expect(document.activeElement?.textContent).toBe("Done");
+    await click(tagChoice("Done"));
+  });
+
   it("shows the load error, then recovers when Refresh succeeds", async () => {
     const lists = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ tags, items });
     await mount({ lists });
-    expect(container.querySelector('[role="alert"]').textContent).toContain("Could not load items");
+    expect(container.querySelector('[role="alert"]').textContent).toContain("Could not load tags.");
     expect(titles()).toEqual([]);
-    await click(buttonText("Refresh"));
+    await click(buttonText("Retry"));
     expect(lists).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(titles()).toHaveLength(4);
@@ -350,6 +366,17 @@ describe("Unified search", () => {
     await click(buttonText("Search"));
     await flush();
   };
+
+  it("keeps the tag load error and its retry beside the controls during a catalog search", async () => {
+    const lists = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ tags, items });
+    await mount({ lists, search: vi.fn(async () => [match("Project Hail Mary", "Andy Weir")]) });
+    await submit("Project Hail Mary");
+    expect(text()).toContain("Project Hail Mary");
+    expect(container.querySelector('[role="alert"]').textContent).toContain("Could not load tags.");
+    await click(buttonText("Retry"));
+    expect(lists).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
 
   it("passes plain text and author fields through catalog search", async () => {
     const search = vi.fn(async () => [match("Project Hail Mary", "Andy Weir")]);

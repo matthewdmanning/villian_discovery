@@ -278,12 +278,42 @@ export class Runner {
       const perPage = this.cfg.matching.perPage;
       if (book.isbn) items = await thunder.searchLibrary(libraryKey, { identifier: book.isbn, mediaTypes, perPage });
       const accepted = bestMatch(book, items, { ...this.cfg.matching, mediaTypes: this.cfg.mediaTypes });
-      const query = [book.title, book.author].filter(Boolean).join(" ");
-      if (!accepted && query && (book.title || book.matchMode === "keywords")) {
-        items = await thunder.searchLibrary(libraryKey, { query, mediaTypes, perPage });
-      }
+      if (!accepted) items = await this.searchText(libraryKey, book, mediaTypes, perPage);
     }
     return items;
+  }
+
+  /**
+   * Catalog text search for a title, author or interactive query. Explicit `title:`/`author:` fields use the
+   * catalog's own title and creator filters, so the constraint applies before the catalog caps its results.
+   * Plain text searches the phrase as typed and, when it splits as title by author, that reading too.
+   */
+  private async searchText(
+    libraryKey: string,
+    book: BookRequest,
+    mediaTypes: readonly string[],
+    perPage: number,
+  ): Promise<ThunderMedia[]> {
+    const { thunder } = this.deps;
+    const common = { mediaTypes: [...mediaTypes], perPage };
+    if (book.matchMode === "keywords") {
+      if (!book.title && !book.author) return [];
+      return thunder.searchLibrary(libraryKey, {
+        ...common,
+        ...(book.title ? { title: book.title } : {}),
+        ...(book.author ? { creator: book.author } : {}),
+      });
+    }
+    const split = [book.title, book.author].filter(Boolean).join(" ");
+    const queries = [
+      ...new Set(
+        [book.matchMode === "text" ? book.text : undefined, split].filter((query): query is string => !!query),
+      ),
+    ];
+    if (!book.title || !queries.length) return [];
+    const results = await Promise.all(queries.map((query) => thunder.searchLibrary(libraryKey, { ...common, query })));
+    const seen = new Set<string>();
+    return results.flat().filter((media) => !seen.has(media.id) && seen.add(media.id));
   }
 }
 

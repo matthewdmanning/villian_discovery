@@ -40,12 +40,23 @@ export function TagFilters({ lists }: { lists: Lists }) {
     boolean,
     multiquery,
     busy,
+    error,
+    reload,
     add,
     saveEdit,
     startEdit,
   } = lists;
   return (
     <div className="space-y-2">
+      {/* Beside the controls it disables, so the error and its retry stay visible during a catalog search. */}
+      {error && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-error">
+          <span>Could not load tags.</span>
+          <RefreshButton busy={busy} onClick={reload}>
+            Retry
+          </RefreshButton>
+        </div>
+      )}
       <div
         className={`grid gap-4 rounded-field border border-base-300 p-3 ${multiquery ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" : "grid-cols-2"}`}
       >
@@ -148,6 +159,7 @@ export function TagFilters({ lists }: { lists: Lists }) {
 
 export function TaggedResults({ lists, items }: { lists: Lists; items: ListItem[] }) {
   const { api, data, error, busy, revision, reload, sort, setSort } = lists;
+  // A load error is shown, with its retry, beside the tag controls in TagFilters.
   const sorted = useMemo(() => sortListItems(items, sort), [items, sort]);
   return (
     <Panel>
@@ -169,11 +181,6 @@ export function TaggedResults({ lists, items }: { lists: Lists; items: ListItem[
         </RefreshButton>
       </div>
       {busy && <p role="status">Loading…</p>}
-      {error && (
-        <p role="alert" className="text-error">
-          Could not load items. Try refreshing.
-        </p>
-      )}
       {data &&
         !busy &&
         !error &&

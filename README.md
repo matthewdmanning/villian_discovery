@@ -143,7 +143,7 @@ cd ui && npm install && npm run dev
 
 Runs on built-in demo data (`demo` badge): nothing reaches Libby. Demo pairing displays a sample code and completes automatically.
 
-Search shows your tagged books when you open it. Use the Include and Exclude tag buttons to filter the list. Enter text to search the library catalog, or narrow the tagged list when tag filters are selected. You can search by title, author, or ISBN, and use optional fields such as `title:Hail Mary author:Weir`.
+Search shows your tagged books when you open it. Use the Include and Exclude tag buttons to filter the list. Enter text to search the library catalog, or narrow the tagged list when tag filters are selected. You can search by title, author, or ISBN, and use optional fields such as `title:Hail Mary author:Weir`. Fields filter the catalog by title and creator before it limits results. Plain text matches the phrase as typed and, for a line such as `Dune by Frank Herbert`, as title by author. Title and author matching tolerates small typos; ISBNs and title IDs must match exactly.
 
 With tag filters active, Search looks up the ISBN on Open Library and falls back to Google Books. The lookup sends only the ISBN and uses public book metadata to match title and author against your tagged books. The local server can use an optional `GOOGLE_BOOKS_API_KEY` environment variable for Google Books. The extension uses the keyless API.
 

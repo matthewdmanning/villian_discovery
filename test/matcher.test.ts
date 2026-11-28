@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bestMatch, isbn13, normalizeName, normalizeTitle, toIsbn13 } from "../src/matcher.js";
+import { bestMatch, fuzzyKeywords, isbn13, normalizeName, normalizeTitle, toIsbn13 } from "../src/matcher.js";
 import { media } from "./fixtures.js";
 
 const opts = {
@@ -86,4 +86,31 @@ it("compares authors rather than narrators or other contributors", () => {
   });
   expect(bestMatch({ raw: "", title: title.title, author: "Ray Porter" }, [title], opts)).toBeUndefined();
   expect(bestMatch({ raw: "", title: title.title, author: "Andy Weir" }, [title], opts)).toBeDefined();
+});
+
+describe("fuzzyKeywords", () => {
+  it("matches phrases, prefixes and words in any order", () => {
+    expect(fuzzyKeywords("Project Hail Mary", "hail mary")).toBe(true);
+    expect(fuzzyKeywords("Project Hail Mary", "mary project")).toBe(true);
+    expect(fuzzyKeywords("Project Hail Mary", "proj")).toBe(true);
+    expect(fuzzyKeywords("Café Society", "cafe")).toBe(true);
+  });
+
+  it("allows one typo from four letters and two from eight, including swapped letters", () => {
+    expect(fuzzyKeywords("Andy Weir", "Wier")).toBe(true);
+    expect(fuzzyKeywords("J. R. R. Tolkien", "Tolkein")).toBe(true);
+    expect(fuzzyKeywords("Neverwhere", "Nevrwhree")).toBe(true);
+    expect(fuzzyKeywords("Andy Weir", "Wxyz")).toBe(false);
+    expect(fuzzyKeywords("Neverwhere", "Nxvxrwhxre")).toBe(false);
+  });
+
+  it("keeps short words and numbers exact", () => {
+    expect(fuzzyKeywords("Death by Chocolate", "dy")).toBe(false);
+    expect(fuzzyKeywords("Catch-22", "Catch 23")).toBe(false);
+    expect(fuzzyKeywords("Catch-22", "Catch 22")).toBe(true);
+  });
+
+  it("never matches an empty query", () => {
+    expect(fuzzyKeywords("Anything", "  ")).toBe(false);
+  });
 });
