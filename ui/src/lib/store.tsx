@@ -2,14 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useS
 import type { InputFormat } from "../../../src/input.ts";
 import type { SyncField } from "../../../src/sync.ts";
 import type { SyncApplyReport, SyncApprovals, SyncPlan } from "../../../src/sync-plan.ts";
-import {
-  type BookRequest,
-  type BookResult,
-  demoApi,
-  type LibbyCard,
-  type LibraryApi,
-  type LoginOptions,
-} from "./api.ts";
+import { type BookRequest, type BookResult, demoApi, type LibbyCard, type LibraryApi } from "./api.ts";
 import { type Config, type ConfigInput, resolve, setPath } from "./config.ts";
 import { options, type ScreenId, screens } from "./spec.ts";
 import { useResource } from "./use-resource.ts";
@@ -40,7 +33,6 @@ interface Store {
   refreshCards(): void;
   /** Reload cards immediately after an observed account change. */
   forceRefreshCards(): void;
-  login(options: LoginOptions): Promise<void>;
   books: BookRequest[];
   setBooks(b: BookRequest[]): void;
   draft: BookDraft;
@@ -86,12 +78,6 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
   const cardsResource = useResource(useCallback(() => api.cards(tokenFile), [api, tokenFile]));
   const cards = cardsResource.data ?? NO_CARDS;
   const { loading: cardsLoading, error: cardsError, reload: refreshCards, forceReload: reloadCards } = cardsResource;
-  const login = async (options: LoginOptions) => {
-    await api.login(tokenFile, options);
-    options.signal?.throwIfAborted();
-    // A new sign-in changes the account: supersede any load still running for the old one.
-    reloadCards();
-  };
   const [books, setBooks] = useState<BookRequest[]>([]);
   const [draft, setDraftState] = useState<BookDraft>({ text: "", format: "auto", edits: {} });
   const [results, setResults] = useState<Store["results"]>();
@@ -146,7 +132,6 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     ...(cardsError && { cardsError }),
     refreshCards,
     forceRefreshCards: reloadCards,
-    login,
     books,
     setBooks,
     draft,

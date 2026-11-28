@@ -26,6 +26,7 @@ import {
   chapterAt,
   chapterEnd,
   clampRate,
+  clipTag,
   createPlayer,
   DEMO_AUDIOBOOK,
   formatRate,
@@ -33,7 +34,6 @@ import {
   hasTag,
   MAX_NOTE_LENGTH,
   MAX_RATE,
-  MAX_TAG_LENGTH,
   MIN_RATE,
   normalizeTag,
   type PlayerAction,
@@ -209,9 +209,9 @@ function TagMenu(props: { mark: Bookmark; library: string[]; dispatch(a: PlayerA
                   placeholder="Tag name"
                   autoComplete="off"
                   className={`input input-sm min-w-0 flex-1`}
-                  maxLength={MAX_TAG_LENGTH}
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  // Clipping by character, not `maxLength`'s UTF-16 units, leaves room for emoji.
+                  onChange={(e) => setName(clipTag(e.target.value))}
                 />
                 <button type="submit" className="btn btn-primary btn-sm" disabled={!normalizeTag(name)}>
                   Add
@@ -263,7 +263,7 @@ function BookmarkItem(props: { mark: Bookmark; chapter: string; library: string[
       />
       <div className="flex flex-wrap items-center gap-2">
         {mark.tags.map((t) => (
-          <span key={t} className="badge badge-secondary gap-1 font-semibold">
+          <span key={t} className="badge gap-1 border-2 border-secondary bg-base-100 font-semibold">
             {t}
             <button
               type="button"

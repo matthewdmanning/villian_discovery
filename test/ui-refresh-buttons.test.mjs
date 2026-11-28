@@ -3,9 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SYNC_FALLBACKS } from "../src/sync-config.ts";
 import { act, createElement } from "../ui/node_modules/react/index.js";
 import { createRoot } from "../ui/node_modules/react-dom/client.js";
+import { LibraryCards as Cards } from "../ui/src/components/LibraryCards.tsx";
 import { demoApi } from "../ui/src/lib/api.ts";
 import { StoreProvider, useStore } from "../ui/src/lib/store.tsx";
-import { Cards } from "../ui/src/screens/Cards.tsx";
 import { Shelf } from "../ui/src/screens/Shelf.tsx";
 import { SyncScreen } from "../ui/src/screens/Sync.tsx";
 
@@ -40,7 +40,6 @@ async function mount(screen, api = {}) {
     ...demoApi,
     cards: vi.fn(async () => [card]),
     shelf: vi.fn(async () => shelf),
-    login: vi.fn(async () => {}),
     getSyncSettings: vi.fn(async () => ({ ...SYNC_FALLBACKS })),
     // The demo plan has every field the Sync screen renders.
     previewSync: vi.fn((options) => demoApi.previewSync(options)),
@@ -89,12 +88,10 @@ describe("refresh buttons", () => {
     expect(container.textContent).not.toContain("Could not load cards");
   });
 
-  it("reloads cards after sign-in and after an observed account change", async () => {
+  it("reloads cards after an observed account change", async () => {
     const api = await mount(Cards);
-    await act(async () => store.login({ method: "browser" }));
-    expect(api.cards).toHaveBeenCalledTimes(2);
     await act(async () => store.forceRefreshCards());
-    expect(api.cards).toHaveBeenCalledTimes(3);
+    expect(api.cards).toHaveBeenCalledTimes(2);
   });
 
   it("disables the shelf's Refresh only while the shelf loads", async () => {

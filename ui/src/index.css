@@ -118,8 +118,12 @@
 }
 
 @theme inline {
-  --font-sans: "Nunito Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Fredoka Variable", "Nunito Variable", ui-sans-serif, system-ui, sans-serif;
+  /* Emoji fonts follow the text fonts so player tags and notes show color emoji. */
+  --font-sans:
+    "Nunito Variable", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-display:
+    "Fredoka Variable", "Nunito Variable", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Noto Color Emoji";
   --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --color-pop: var(--pop-ink);
   --color-libby: var(--app-libby);

@@ -65,6 +65,21 @@ describe("Sync screen layout", () => {
     expect(button("Preview changes")).toBeUndefined();
   });
 
+  it("shows only the simplified screens in the navigation", () => {
+    expect(screens.map((s) => s.id)).toEqual(["sync", "shelf", "search", "player"]);
+  });
+
+  it("keeps library cards in the Settings tab", async () => {
+    await mount();
+    expect(container.textContent).not.toContain("Library cards");
+    await click([...container.querySelectorAll('[role="tab"]')].find((el) => el.textContent === "Settings"));
+    for (let i = 0; i < 10 && !container.querySelector('input[aria-label="Use Main"]'); i++) await flush();
+    const panel = container.querySelector('[role="tabpanel"][aria-label="Settings"]');
+    expect(panel.textContent).toContain("Your sync settings");
+    expect(panel.textContent).toContain("Library cards");
+    expect(panel.querySelector('input[aria-label="Use Main"]')).not.toBeNull();
+  });
+
   it("shows author, narrator and days left under the title, and links both apps", async () => {
     await mount({ openLoan: vi.fn(async () => {}) });
     const dune = line("Dune");

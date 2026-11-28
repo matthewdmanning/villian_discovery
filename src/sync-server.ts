@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Local server for the live UI: serves the built UI (`ui/dist`), Libby sign-in and cards, and a read-only
+ * Local server for the live UI: serves the built UI (`ui/dist`), Libby cards, and a read-only
  * sync preview of Libby and Fable. `npm run live` builds everything, starts it, and opens the browser.
  *
  * Binds to 127.0.0.1 only. The Libby token stays in the token file and Fable's login stays in the
@@ -14,7 +14,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { dirname, extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { loginWithDeviceCode, readTokenFile, signInToLibby, writeTokenFile } from "./auth.js";
+import { readTokenFile } from "./auth.js";
 import { createBookMetadata } from "./book-metadata.js";
 import { type ConfigInput, configFromEnv, mergeConfig, parseConfig } from "./config.js";
 import { type BrowserSession, openBrowserSession, openSite } from "./discovery/browser.js";
@@ -60,14 +60,11 @@ const SETTINGS_FILE = join(dirname(config.auth.tokenFile), "sync-settings.json")
 const context = { userId: "local", connectionId: "libby-and-fable" };
 let fable: Promise<FableGet> | undefined;
 let browser: Promise<BrowserSession> | undefined;
-let libbySignIn: Promise<void> | undefined;
-let deviceLogin: Promise<void> | undefined;
-let deviceCode: string | undefined;
 
 /** Use this function to get a Libby client for the saved login; it throws when no one has signed in. */
 async function savedToken(): Promise<string> {
   const identityToken = config.auth.identityToken ?? (await readTokenFile(config.auth.tokenFile));
-  if (!identityToken) throw new Error("Connect Libby first");
+  if (!identityToken) throw new Error("Connect Libby first: run libby-shelf login");
   return identityToken;
 }
 
@@ -90,7 +87,7 @@ async function liveRunner(settings: unknown) {
   return { cfg, libby: clients.libby, runner: new Runner(cfg, clients) };
 }
 
-/** Use this function to open the saved browser profile once; Libby and Fable share it because the profile allows one window. */
+/** Use this function to open the saved browser profile once; the profile allows one window, which Fable's login uses. */
 function session(): Promise<BrowserSession> {
   browser ??= openBrowserSession()
     .then((opened) => {
@@ -160,32 +157,6 @@ const apiRoutes: Record<string, Handler> = {
     build: BUILD,
     pid: process.pid,
   }),
-  "POST /api/login": async () => {
-    // Every open app tab asks to sign in; they all wait on one sign-in, so Libby sees one device.
-    libbySignIn ??= session()
-      .then((opened) => signInToLibby(opened, { http, tokenFile: config.auth.tokenFile, log: (m) => logger.info(m) }))
-      .finally(() => {
-        libbySignIn = undefined;
-      });
-    await libbySignIn;
-    return {};
-  },
-  "POST /api/login/device-code": async () => {
-    // Libby's API shows a setup code for the user's existing Libby device; GET returns the current code.
-    deviceLogin ??= loginWithDeviceCode(new LibbyClient(http), {
-      onCode: (code) => {
-        deviceCode = code;
-      },
-    })
-      .then((identity) => writeTokenFile(config.auth.tokenFile, identity))
-      .finally(() => {
-        deviceLogin = undefined;
-        deviceCode = undefined;
-      });
-    await deviceLogin;
-    return {};
-  },
-  "GET /api/login/device-code": async () => ({ code: deviceCode }),
   "GET /api/cards": async () => (await (await libby()).sync()).cards ?? [],
   "GET /api/shelf": async () => listShelf(await libby(), publicCatalog, logger),
   "GET /api/lists": async () => readLists(await libby()),
@@ -233,13 +204,7 @@ const routes = withCooldown(
       "POST /api/sync/preview",
     ],
     // Anything that changes an account or settings makes kept reads stale.
-    writes: [
-      "POST /api/login",
-      "POST /api/login/device-code",
-      "POST /api/run",
-      "PUT /api/sync/settings",
-      "POST /api/sync/apply",
-    ],
+    writes: ["POST /api/run", "PUT /api/sync/settings", "POST /api/sync/apply"],
   },
   createQueryCooldown(),
 );
@@ -261,7 +226,7 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
   const send = (status: number, value: unknown) =>
     response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(value));
   if (!route) return send(404, { error: "Not found" });
-  // Another website can post to 127.0.0.1 too; only the app's own page may borrow books or sign in.
+  // Another website can post to 127.0.0.1 too; only the app's own page may borrow books or change settings.
   const origin = request.headers.origin;
   if (origin && origin !== `http://${request.headers.host}`) return send(403, { error: "Forbidden" });
   try {

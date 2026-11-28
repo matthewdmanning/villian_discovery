@@ -31,25 +31,6 @@ export async function call<T>(method: string, path: string, body?: unknown, repe
 /** The UI's API over the local live server (`npm run live`); sync reads both apps and never writes. */
 export const liveApi: LibraryApi = {
   demo: false,
-  status: () => call("GET", "status"),
-  login: async (_tokenFile, { method, onCode, signal }) => {
-    if (method === "browser") return call("POST", "login");
-    // The server pairs over Libby's API; the page polls for each new setup code until pairing ends.
-    let finished = false;
-    const pairing = call<void>("POST", "login/device-code").finally(() => {
-      finished = true;
-    });
-    pairing.catch(() => {});
-    for (let shown: string | undefined; !finished; await new Promise((r) => setTimeout(r, 1_000))) {
-      signal?.throwIfAborted();
-      const { code } = await call<{ code?: string }>("GET", "login/device-code");
-      if (code && code !== shown) {
-        shown = code;
-        onCode(code, undefined);
-      }
-    }
-    await pairing;
-  },
   cards: () => call("GET", "cards"),
   shelf: () => call("GET", "shelf"),
   tags: () => call("GET", "tags"),

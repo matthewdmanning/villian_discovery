@@ -20,7 +20,7 @@ import { resolveSyncSettings } from "../../src/sync-config.ts";
 import { createSyncOrchestrator } from "../../src/sync-orchestrator.ts";
 import type { SyncAdapter, SyncContext } from "../../src/sync-plan.ts";
 import { ThunderClient } from "../../src/thunder-client.ts";
-import type { LibraryApi, LoginOptions } from "../../ui/src/lib/api.ts";
+import type { LibraryApi } from "../../ui/src/lib/api.ts";
 import { createFableGet, createFablePost, isFableSignedIn } from "./fable-get.ts";
 import { libbyClient, libbyProblem } from "./libby-session.ts";
 import { shelfHistory } from "./sync-shelf-history.ts";
@@ -188,15 +188,6 @@ export const extensionApi: LibraryApi = {
     return readPastCheckouts(client);
   }),
   demo: false,
-  status: async () => ({ connected: (await connections()).libby }),
-  login: clearsCache(reads, async (_tokenFile: string, { signal }: LoginOptions) => {
-    await chrome.tabs.create({ url: "https://libbyapp.com/" });
-    // The tab's own sign-in finishes this call: poll until an identity with cards appears.
-    while (!(await libbyClient())) {
-      signal?.throwIfAborted();
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-    }
-  }),
   cards: cachedRead(reads, "cards", async () => {
     const client = await libbyClient();
     if (!client) throw new Error("Connect Libby first");

@@ -18,10 +18,24 @@ try {
   });
   await page.goto(process.env.UI_URL ?? "http://127.0.0.1:5173");
   const nav = page.locator("aside");
-  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
-  const cardRows = page.locator("table tbody tr");
+  // Retired screens stay out of the navigation (#33).
+  for (const name of ["Connect Libby", "Library cards", "Book list", "Rules", "Plan & results"])
+    assert.equal(
+      await nav.getByRole("button", { name, exact: true }).count(),
+      0,
+      `${name} must not be in the navigation`,
+    );
+  // Library cards live in Sync's Settings tab.
+  const openCards = async () => {
+    await nav.getByRole("button", { name: "Sync", exact: true }).click();
+    await page.getByRole("tab", { name: "Settings", exact: true }).click();
+  };
+  const settingsPanel = page.locator('[role="tabpanel"][aria-label="Settings"]');
+  await openCards();
+  await settingsPanel.getByRole("heading", { name: "Library cards", exact: true }).waitFor();
+  const cardRows = settingsPanel.locator("table tbody tr");
   await cardRows.nth(1).waitFor();
-  const priorityColumn = (await page.locator("table thead th").allTextContents()).indexOf("Priority");
+  const priorityColumn = (await settingsPanel.locator("table thead th").allTextContents()).indexOf("Priority");
   assert.notEqual(priorityColumn, -1);
   assert.equal((await cardRows.first().locator("td").nth(priorityColumn).textContent()).trim(), "2");
   assert.equal((await cardRows.last().locator("td").nth(priorityColumn).textContent()).trim(), "1");
@@ -35,7 +49,11 @@ try {
   assert.equal(await cardRows.last().getAttribute("draggable"), "false");
   assert.equal(await page.getByRole("button", { name: "Move Branch up", exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole("button", { name: "Move Branch down", exact: true }).isDisabled(), true);
-  assert.equal(await page.getByRole("checkbox", { name: "Use Main", exact: true }).isDisabled(), true);
+  assert.equal(
+    await page.getByRole("checkbox", { name: "Use Main", exact: true }).isDisabled(),
+    true,
+    "the final selected card must stay enabled for use",
+  );
   await cardRows.first().dragTo(cardRows.last());
   assert.match(await cardRows.first().textContent(), /Main/);
   await page.getByRole("checkbox", { name: "Use Branch", exact: true }).check();
@@ -44,10 +62,11 @@ try {
   assert.match(await cardRows.first().textContent(), /Main/);
   await page.getByRole("button", { name: "Move Main down", exact: true }).click();
   await page.reload();
-  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
+  await openCards();
+  await cardRows.nth(1).waitFor();
   assert.match(await cardRows.first().textContent(), /Branch/);
   await page.setViewportSize({ width: 390, height: 844 });
-  const mobileCards = page.locator("main ul > li");
+  const mobileCards = settingsPanel.locator("ul > li");
   assert.match(await mobileCards.first().textContent(), /Branch/);
   await page.getByRole("button", { name: "Move Main up", exact: true }).click();
   assert.match(await mobileCards.first().textContent(), /Main/);
@@ -57,156 +76,44 @@ try {
   assert.equal(await page.getByRole("button", { name: "Move Main up", exact: true }).isDisabled(), true);
   await page.getByRole("checkbox", { name: "Use Main", exact: true }).check();
   await page.setViewportSize({ width: 1280, height: 900 });
-  await nav.getByRole("button", { name: "Book list", exact: true }).click();
-  const input = page.locator("#books-text");
-  const duplicate = "Dune by Frank Herbert\nDune by Frank Herbert";
-  await input.fill(duplicate);
-  const actions = page.locator("table select[aria-label=action]");
-  await actions.nth(0).selectOption("borrow");
-  await actions.nth(1).selectOption("hold");
-  assert.equal(await actions.nth(0).inputValue(), "borrow");
-  assert.equal(await actions.nth(1).inputValue(), "hold");
-  await nav.getByRole("button", { name: "Rules", exact: true }).click();
-  await nav.getByRole("button", { name: "Book list", exact: true }).click();
-  assert.equal(await input.inputValue(), duplicate);
-  assert.equal(await actions.nth(0).inputValue(), "borrow");
-  assert.equal(await actions.nth(1).inputValue(), "hold");
-
-  await nav.getByRole("button", { name: "Rules", exact: true }).click();
-  const limit = page.getByText("Max loans per run", { exact: true }).locator("..").locator("input");
-  await limit.fill("-1");
-  await nav.getByRole("button", { name: "Book list", exact: true }).click();
-  assert.equal(await page.getByRole("button", { name: "Preview results", exact: true }).isDisabled(), true);
-  await page.getByRole("alert").waitFor();
-  await nav.getByRole("button", { name: "Rules", exact: true }).click();
-  await limit.fill("");
-  await nav.getByRole("button", { name: "Book list", exact: true }).click();
-
+  // After the reload, so the handle reaches the module the page runs.
   await page.evaluate(async () => {
     const loaded = performance
       .getEntriesByType("resource")
       .findLast((entry) => new URL(entry.name).pathname === "/src/lib/api.ts");
-    const { demoApi } = await import(loaded?.name ?? "/src/lib/api.ts");
-    window.testDemoApi = demoApi;
-    window.originalRun = demoApi.run;
-    demoApi.run = async () => {
-      throw new Error("Injected run failure");
-    };
+    window.testDemoApi = (await import(loaded?.name ?? "/src/lib/api.ts")).demoApi;
   });
-  await page.getByRole("button", { name: "Preview results", exact: true }).click();
-  await page.getByText("Run failed: Injected run failure", { exact: true }).waitFor();
-  await page.evaluate(() => {
-    window.testDemoApi.run = window.originalRun;
-  });
-  await page.getByRole("button", { name: "Preview results", exact: true }).click();
-  await page.getByRole("heading", { name: "Plan & results", exact: true }).waitFor();
-  await nav.getByRole("button", { name: "Rules", exact: true }).click();
-  await limit.fill("-1");
-  await nav.getByRole("button", { name: "Search", exact: true }).click();
-  assert.equal(await page.getByRole("button", { name: "Run for real", exact: true }).isDisabled(), true);
-  await nav.getByRole("button", { name: "Rules", exact: true }).click();
-  await limit.fill("");
-  await nav.getByRole("button", { name: "Search", exact: true }).click();
-  await page.evaluate(() => {
-    window.testDemoApi.run = async () => {
-      throw new Error("Injected real run failure");
-    };
-  });
-  await page.getByRole("button", { name: "Run for real", exact: true }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Run", exact: true }).click();
-  await page.getByText("Run failed: Injected real run failure", { exact: true }).waitFor();
-  await page.evaluate(() => {
-    window.testDemoApi.status = async () => {
-      throw new Error("Injected status failure");
-    };
-  });
-  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
-  await page.getByText("Injected status failure", { exact: true }).waitFor();
-  await nav.getByRole("button", { name: "Book list", exact: true }).click();
-  await input.fill("Another book");
-  assert.equal(await actions.first().inputValue(), "", "new input must clear old row overrides");
 
-  const chooseMethod = (name) => page.getByRole("radio", { name, exact: true }).check();
-  await input.fill('{"books":[{"title":"Dune","author":"Frank Herbert"}]}');
-  assert.equal(await page.locator("tbody tr").count(), 1);
-  assert.equal(await page.locator("tbody tr td").first().textContent(), "Dune");
-
-  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
-  const mainCard = page.getByRole("checkbox", { name: "Use Main", exact: true });
-  const branchCard = page.getByRole("checkbox", { name: "Use Branch", exact: true });
-  await branchCard.uncheck();
-  assert.equal(await mainCard.isChecked(), true);
-  assert.equal(await mainCard.isDisabled(), true, "the final selected card must stay enabled for use");
-  await branchCard.check();
-
-  await page.evaluate(async () => {
-    const { demoApi } = await import("/src/lib/api.ts");
-    window.originalCards = demoApi.cards;
-    demoApi.cards = async (tokenFile) => {
-      window.cardsTokenFile = tokenFile;
+  await page.evaluate(() => {
+    window.testDemoApi.cards = async () => {
       if (!window.cardsAfterLogin) throw new Error("Sign in to load cards");
       return [
         { cardId: "a", advantageKey: "lib1", cardName: "One" },
         { cardId: "b", advantageKey: "lib1", cardName: "Two" },
       ];
     };
-    demoApi.status = async () => ({ connected: false });
-    demoApi.login = async (_tokenFile, options) => {
-      options.onCode("12345678");
-      await new Promise((resolve, reject) => {
-        window.approvePairing = resolve;
-        options.signal?.addEventListener(
-          "abort",
-          () => {
-            window.pairingCancelled = true;
-            reject(options.signal.reason);
-          },
-          { once: true },
-        );
-      });
-      window.cardsAfterLogin = true;
-    };
   });
-  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
-  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
   await page.getByRole("button", { name: "Refresh cards", exact: true }).click();
   await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await page.getByText("Could not load cards: Sign in to load cards", { exact: true }).waitFor();
-  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
-  await chooseMethod("phone code");
-  await page.getByRole("button", { name: "Display setup code", exact: true }).click();
-  await page.getByText("12345678", { exact: true }).waitFor();
-  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
-  assert.equal(await page.evaluate(() => window.pairingCancelled), true);
-  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
-  await page.getByText("Not connected to Libby", { exact: true }).waitFor();
-  await chooseMethod("phone code");
-  await page.getByRole("button", { name: "Display setup code", exact: true }).click();
-  await page.getByText("12345678", { exact: true }).waitFor();
-  await page.evaluate(() => window.approvePairing());
-  await page.getByText("12345678", { exact: true }).waitFor({ state: "hidden" });
-  await page.getByText("Connected to Libby", { exact: true }).waitFor();
-  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
+  await page.evaluate(() => {
+    window.cardsAfterLogin = true;
+  });
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
   await page.getByRole("checkbox", { name: "Use One", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Move One up", exact: true }).count(), 1);
 
-  await page.evaluate(async () => {
-    (await import("/src/lib/api.ts")).demoApi.cards = async () => [];
+  await page.evaluate(() => {
+    window.testDemoApi.cards = async () => [];
   });
-  await nav.getByRole("button", { name: "Connect Libby", exact: true }).click();
-  await chooseMethod("phone code");
-  await page.getByRole("button", { name: "Display setup code", exact: true }).click();
-  await page.getByText("12345678", { exact: true }).waitFor();
-  await page.evaluate(() => window.approvePairing());
-  await page.getByText("12345678", { exact: true }).waitFor({ state: "hidden" });
-  await page.getByText("Connected to Libby", { exact: true }).waitFor();
-  await nav.getByRole("button", { name: "Library cards", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh cards", exact: true }).click();
   await page.getByText("No library cards found.", { exact: false }).waitFor();
   await page.getByRole("button", { name: "Refresh cards", exact: true }).waitFor();
   assert.deepEqual(errors, [], "browser errors or duplicate React keys");
 
   const syncButton = () => page.locator("main").getByRole("button", { name: "Sync", exact: true });
+  await nav.getByRole("button", { name: "Shelf", exact: true }).click();
   await nav.getByRole("button", { name: "Sync", exact: true }).click();
   // The comparison runs on its own when Sync opens.
   await page.getByRole("status").filter({ hasText: "Last compared" }).waitFor();
@@ -309,7 +216,7 @@ try {
   await openTab("Shelf");
   await syncButton().click();
   const comparisonStatus = await page.getByRole("status").filter({ hasText: "Last compared" }).textContent();
-  await nav.getByRole("button", { name: "Book list", exact: true }).click();
+  await nav.getByRole("button", { name: "Search", exact: true }).click();
   await nav.getByRole("button", { name: "Sync", exact: true }).click();
   assert.equal(await page.getByRole("status").filter({ hasText: "Last compared" }).textContent(), comparisonStatus);
   await page.evaluate(() => {
@@ -321,7 +228,7 @@ try {
   await page.getByRole("alert").filter({ hasText: "Injected sync failure" }).waitFor();
   assert.equal(await page.getByRole("status").filter({ hasText: "Last compared" }).textContent(), comparisonStatus);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('nav[aria-label="Screens"]').last().getByRole("button", { name: "Books", exact: true }).click();
+  await page.locator('nav[aria-label="Screens"]').last().getByRole("button", { name: "Search", exact: true }).click();
   await page.locator('nav[aria-label="Screens"]').last().getByRole("button", { name: "Sync", exact: true }).click();
   await page.getByRole("heading", { name: "Sync", exact: true }).waitFor({ state: "attached" });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
@@ -351,7 +258,7 @@ try {
   await sheet.waitFor({ state: "detached" });
   assert.deepEqual(errors, [], "browser errors or duplicate React keys");
   console.log(
-    "UI regression checks passed: card priority, drafts, run/status errors, sync precedence, conflicts, mobile navigation, and phone bookmark sheet.",
+    "UI regression checks passed: simplified navigation, card priority in Sync Settings, sync precedence, conflicts, mobile navigation, and phone bookmark sheet.",
   );
 } finally {
   await browser.close();

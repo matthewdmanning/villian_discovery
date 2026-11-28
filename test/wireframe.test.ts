@@ -29,6 +29,7 @@ const Spec = z.object({
       title: z.string(),
       cli: z.string(),
       enabled: z.boolean(),
+      deprecated: z.boolean().optional(),
       regions: z.array(z.looseObject({ id: z.string(), components: z.array(Component) })),
     }),
   ),
@@ -64,6 +65,14 @@ describe("libby UI wireframe spec", () => {
     const ids = spec.screens.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(spec.screens.find((s) => s.id === spec.options.defaultScreen)?.enabled).toBe(true);
+  });
+
+  it("keeps deprecated screens disabled and hides the retired ones", () => {
+    expect(spec.screens.filter((s) => s.deprecated && s.enabled)).toEqual([]);
+    expect(spec.screens.find((s) => s.id === "settings")?.deprecated).toBe(true);
+    expect(spec.screens.map((s) => s.id)).not.toContain("connect");
+    expect(spec.screens.map((s) => s.id)).not.toContain("cards");
+    expect(spec.screens.find((s) => s.id === "books")?.enabled).toBe(false);
   });
 
   it("binds only to real config paths", () => {

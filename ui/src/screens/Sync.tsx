@@ -4,12 +4,13 @@ import { isbn13 } from "../../../src/matcher.ts";
 import type { SyncField, SyncProvider } from "../../../src/sync.ts";
 import { SYNC_FALLBACKS } from "../../../src/sync-config.ts";
 import { syncDecisionKey } from "../../../src/sync-plan.ts";
+import { LibraryCards } from "../components/LibraryCards.tsx";
 import { PastCheckouts } from "../components/PastCheckouts.tsx";
 import { BookLine, BookSections, ProgressValue, ReadingStatus, Stars } from "../components/SyncBook.tsx";
 import { APP_NAMES, AppValue, SyncChange } from "../components/SyncChange.tsx";
 import { copyAndOpen, FableReview, type PostReview } from "../components/SyncReview.tsx";
 import { SyncSettingsPanel } from "../components/SyncSettings.tsx";
-import { Empty, Panel, RefreshButton, Screen } from "../components/ui.tsx";
+import { compact, Empty, Panel, RefreshButton, Screen } from "../components/ui.tsx";
 import { labelForAction } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
 import { type BookSummary, hasValue, LINE_FIELDS, summarizeBooks, toStatusKey } from "../lib/sync-books.ts";
@@ -311,13 +312,18 @@ export function SyncScreen({
         )
       )}
       {tab === "Settings" ? (
-        <div role="tabpanel" aria-label="Settings" className="contents">
+        <div
+          role="tabpanel"
+          aria-label="Settings"
+          className={compactLayout ? "space-y-2" : compact ? "space-y-4" : "space-y-6"}
+        >
           <SyncSettingsPanel
             value={settings ?? SYNC_FALLBACKS}
             busy={busy || !saved}
             onChange={(value) => saveSettings(value)}
             onReset={() => saveSettings({})}
           />
+          <LibraryCards />
         </div>
       ) : busy ? (
         <Empty icon={<RefreshCw className="size-7" />} title="Fetching library changes">
