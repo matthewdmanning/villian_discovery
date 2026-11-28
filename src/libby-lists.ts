@@ -1,4 +1,7 @@
 import { type LibbyTag, parseTagsResponse } from "./libby-tags-cache.js";
+import { mapLimit } from "./map-limit.js";
+
+export { mapLimit };
 
 export interface ListItem {
   id: string;
@@ -47,26 +50,6 @@ export async function readLists(client: {
 
 /** Tags read at once, so an account with many tags stays under Libby's rate limits. */
 export const TAG_CONCURRENCY = 4;
-
-/** Map in input order with at most `limit` calls in flight; the first failure rejects and starts no more calls. */
-export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  let failed = false;
-  const worker = async () => {
-    while (!failed && next < items.length) {
-      const index = next++;
-      try {
-        results[index] = await fn(items[index]!);
-      } catch (error) {
-        failed = true;
-        throw error;
-      }
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker));
-  return results;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

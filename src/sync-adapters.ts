@@ -8,6 +8,7 @@
 import type { FableBook, FableGet, FableList } from "./discovery/export-lists.js";
 import { type CatalogReader, loanUrl, narratorsForItem } from "./libby-audiobooks.js";
 import type { LibbyClient } from "./libby-client.js";
+import { LOOKUP_CONCURRENCY, mapLimit } from "./map-limit.js";
 import { isbn13, mediaNarrators, normalizeName, normalizeTitle } from "./matcher.js";
 import { fetchAllPages } from "./pagination.js";
 import { type BookSnapshot, type SnapshotField, syncEditionScore } from "./sync.js";
@@ -292,38 +293,37 @@ export function libbyAdapter(
       const identifiers = new Map<string, string>();
       const cards = new Map(state.cards?.map((card) => [card.cardId, card]));
       // A loan whose position cannot be read keeps unknown progress; it never reads as 0.
-      await Promise.all(
-        (state.loans ?? []).map(async (loan) => {
-          const card = cards.get(loan.cardId);
-          const format = bookFormat(loan.type);
-          const lookup =
-            catalog && card?.advantageKey && !loanIsbn(loan)
-              ? catalog.getLibraryMedia(card.advantageKey, loan.id).catch(() => undefined)
-              : undefined;
-          const [percent, credits] = await Promise.all([
-            client
-              .loanProgress({ cardId: loan.cardId, titleId: loan.id, mediaType: loan.type?.id ?? "" })
-              .catch(() => undefined),
-            lookup
-              ? lookup.then((media) => {
-                  const checkedOut =
-                    media?.id === loan.id && (!format || !media.type || bookFormat(media.type) === format)
-                      ? media
-                      : undefined;
-                  const isbn = checkedOut && loanIsbn(checkedOut, format);
-                  if (isbn) identifiers.set(loan.id, isbn);
-                  const direct = mediaNarrators(loan);
-                  return direct.length || !checkedOut || format !== "audiobook" ? direct : mediaNarrators(checkedOut);
-                })
-              : catalog
-                ? narratorsForItem(loan, card, catalog)
-                : [],
-          ]);
-          // One title on several cards: keep the furthest position, independent of response order.
-          if (percent !== undefined) progress.set(loan.id, Math.max(percent, progress.get(loan.id) ?? percent));
-          if (credits.length) narrators.set(loan.id, credits);
-        }),
-      );
+      // Each loan may need a progress read and a catalog lookup; cap how many loans are in flight.
+      await mapLimit(state.loans ?? [], LOOKUP_CONCURRENCY, async (loan) => {
+        const card = cards.get(loan.cardId);
+        const format = bookFormat(loan.type);
+        const lookup =
+          catalog && card?.advantageKey && !loanIsbn(loan)
+            ? catalog.getLibraryMedia(card.advantageKey, loan.id).catch(() => undefined)
+            : undefined;
+        const [percent, credits] = await Promise.all([
+          client
+            .loanProgress({ cardId: loan.cardId, titleId: loan.id, mediaType: loan.type?.id ?? "" })
+            .catch(() => undefined),
+          lookup
+            ? lookup.then((media) => {
+                const checkedOut =
+                  media?.id === loan.id && (!format || !media.type || bookFormat(media.type) === format)
+                    ? media
+                    : undefined;
+                const isbn = checkedOut && loanIsbn(checkedOut, format);
+                if (isbn) identifiers.set(loan.id, isbn);
+                const direct = mediaNarrators(loan);
+                return direct.length || !checkedOut || format !== "audiobook" ? direct : mediaNarrators(checkedOut);
+              })
+            : catalog
+              ? narratorsForItem(loan, card, catalog)
+              : [],
+        ]);
+        // One title on several cards: keep the furthest position, independent of response order.
+        if (percent !== undefined) progress.set(loan.id, Math.max(percent, progress.get(loan.id) ?? percent));
+        if (credits.length) narrators.set(loan.id, credits);
+      });
       return libbySnapshots(state, progress).map((book) => {
         const credits = book.providerId && narrators.get(book.providerId);
         const isbn = book.providerId && identifiers.get(book.providerId);
