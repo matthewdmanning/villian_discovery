@@ -5,6 +5,15 @@ export const LINE_FIELDS = new Set(["readingProgress", "rating", "readingStatus"
 
 export type StatusKey = "unopened" | "progress" | "dnf" | "finished";
 
+/** Use this function to map provider reading status values to the shelf display status. Inputs: `value` — provider status. Dependencies: None. */
+export function toStatusKey(value: unknown): StatusKey | undefined {
+  if (value === "finished") return "finished";
+  if (value === "currently-reading") return "progress";
+  if (value === "dnf" || value === "did-not-finish") return "dnf";
+  if (value === "unopened") return "unopened";
+  return undefined;
+}
+
 export type BookSummary = {
   groupId: string;
   title: string;

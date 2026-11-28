@@ -108,11 +108,11 @@ describe("refresh buttons", () => {
     expect(button("Refresh").disabled).toBe(false);
   });
 
-  it("lets Preview changes run again as soon as a preview finishes", async () => {
+  it("lets Sync run again as soon as a preview finishes", async () => {
     const api = await mount(SyncScreen);
     expect(api.previewSync).toHaveBeenCalledTimes(1);
-    expect(plain(button("Preview changes"))).toEqual({ disabled: false, title: null, describedBy: null });
-    await click(button("Preview changes"));
+    expect(plain(button("Sync"))).toEqual({ disabled: false, title: null, describedBy: null });
+    await click(button("Sync"));
     expect(api.previewSync).toHaveBeenCalledTimes(2);
   });
 });

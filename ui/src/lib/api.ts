@@ -3,7 +3,7 @@ import type { IsbnLookup } from "../../../src/book-metadata.js";
 import type { BookRequest } from "../../../src/input.js";
 import { LibbyClient } from "../../../src/libby-client.js";
 import type { ListLibraryAvailability } from "../../../src/libby-list-availability.ts";
-import type { ListsData } from "../../../src/libby-lists.ts";
+import type { ListsData, PastCheckouts } from "../../../src/libby-lists.ts";
 import { type ShelfData, unavailableShelf } from "../../../src/libby-shelf.ts";
 import { silentLogger } from "../../../src/logger.js";
 import type { BookResult, ResultStatus } from "../../../src/runner.js";
@@ -37,6 +37,8 @@ export interface LibraryApi {
   shelf(): Promise<ShelfData>;
   tags(): Promise<unknown>;
   lists(): Promise<ListsData>;
+  /** Past Libby loans, from Libby's Borrowed tag. */
+  pastCheckouts(): Promise<PastCheckouts>;
   listAvailability(titleId: string): Promise<ListLibraryAvailability[]>;
   lookupIsbn: IsbnLookup;
   search(book: BookRequest, config: Config): Promise<Match[]>;
@@ -49,6 +51,7 @@ export interface LibraryApi {
 
 export type LoginOptions = PairingOptions & { method: "browser" | "device-code" };
 
+export type { PastCheckouts } from "../../../src/libby-lists.ts";
 export type { ShelfData, ShelfEntry, ShelfTab } from "../../../src/libby-shelf.ts";
 export type { BookRequest, BookResult, LibbyCard, ResultStatus };
 
@@ -174,6 +177,21 @@ export const demoApi: LibraryApi = {
         { id: "1", title: "The Night Circus", author: "Erin Morgenstern", tags: ["want-to-read", "favorites"] },
         { id: "2", title: "Piranesi", author: "Susanna Clarke", tags: ["want-to-read"] },
         { id: "3", title: "Kindred", author: "Octavia E. Butler", tags: ["favorites"] },
+      ],
+    };
+  },
+  async pastCheckouts() {
+    await wait(250);
+    return {
+      status: "available",
+      source: "borrowed-tag",
+      // Dune is checked out in the demo, so it is left out of past checkouts.
+      items: [
+        { id: "demo-dune", title: "Dune", author: "Herbert, Frank", tags: ["borrowed"] },
+        { id: "demo-piranesi-audio", title: "Piranesi", author: "Clarke, Susanna", tags: ["borrowed"] },
+        { id: "3", title: "Kindred", author: "Butler, Octavia E.", tags: ["borrowed"] },
+        { id: "5", title: "The Left Hand of Darkness", author: "Le Guin, Ursula K.", tags: ["borrowed"] },
+        { id: "6", title: "The Night Circus", author: "Morgenstern, Erin", tags: ["borrowed"] },
       ],
     };
   },

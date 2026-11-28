@@ -347,7 +347,7 @@ Use this function to show when a source book has exact ISBN evidence among candi
 Inputs: `book` - source identifiers; `candidates` - candidate edition identifiers.
 Dependencies: `extractIsbn`, `normalizeIsbn`.
 
-## `toStatusKey` - ui/src/screens/Sync.tsx
+## `toStatusKey` - ui/src/lib/sync-books.ts
 
 Use this function to translate provider reading statuses into Shelf display statuses.
 Inputs: `value` - provider reading status.
@@ -435,3 +435,38 @@ Dependencies: `ThunderClient.searchLibrary`.
 Use these functions to read Search input and filter tagged items. Plain text keeps the literal phrase (`text`) and any title-by-author split; `title:`/`author:` fields become a keyword query. Titles and authors match with `fuzzyKeywords`; title IDs exactly; ISBNs never match a tagged item directly. `matchesIsbnBook` matches a tagged item to an ISBN's resolved book by normalized title (either side may carry a subtitle) and author.
 Inputs: `text` - the Search box; `item` - a tagged title; `query` - a parsed request; `book` - a resolved `BookRecord`.
 Dependencies: `parseBookLine`, `fuzzyKeywords`, `normalizeTitle`, `normalizeName`.
+
+## `loanTimeLeft` - ui/src/screens/Sync.tsx
+
+Use this function to label a loan's remaining time in whole days ("9 days left", "1 day left", "Due today").
+Inputs: `expiresAt` - ISO end time; `now` - epoch ms.
+Dependencies: None.
+
+## `libbySnapshots` `expiresAt`, `fableSnapshots` `pageUrl` - src/sync-adapters.ts
+
+A loan's `expireDate` becomes `expiresAt` (latest across cards; unparseable dropped). A Fable book's `url` becomes `pageUrl` only for `https://fable.co`. Both are display data that `snapshotKey` ignores.
+Dependencies: `loanExpiry`, `fablePageUrl`.
+
+## `isBorrowedTag`, `readPastCheckouts` - src/libby-lists.ts
+
+Use these functions to read past checkouts from Libby's Borrowed tag (any case, with or without emoji). Reads the tag list and that tag only; without it, returns `unavailable` with how to turn tagging on.
+Inputs: `client` - `tags()` and `taggings(tag)`.
+Dependencies: `parseTagsResponse`, `readLists`.
+
+## `PastCheckouts`, `fableBookFor` - ui/src/components/PastCheckouts.tsx
+
+Use this component below the checkouts: past loans not on the Shelf now, each with its Fable state and link, scrolling after three rows. `fableBookFor` matches by subtitle-free normalized title and, when both have one, order-insensitive author.
+Inputs: `data`, `error`, `loading`, `reload`, `checkedOut` - current Libby title IDs; `fable` - Fable snapshots.
+Dependencies: `normalizeTitle`, `normalizeName`, `toStatusKey`.
+
+## `FableReview`, `copyAndOpen` - ui/src/components/SyncReview.tsx
+
+Use this component in a book's pulldown: a one-row, growing review box and **Post to Fable**, which calls `post(pageUrl, text)` and says whether the text was pasted, only copied, or must be copied by hand. The parent keeps the draft (store `reviewDrafts`, by page URL), so it survives the Shelf unmounting. `copyAndOpen` is the default outside the extension.
+Inputs: `title`, `pageUrl`, `post`, `draft`, `onDraft`.
+Dependencies: `navigator.clipboard`, `window.open`.
+
+## `postToFable`, `fillReview` - extension/src/fable-review.ts
+
+Use `postToFable` to copy a review, reuse or open a fable.co tab at the book page, wait until that tab reports the book page loaded, and run `fillReview` there. Handoffs run one at a time. `fillReview` acts only on `pathname`. It finds an editable review box (named for a review, or alone in a dialog titled for one), opening it with a "Rate & review" button when needed. It types the text as a paste would and succeeds only if the box then holds it. It never submits and refuses pages outside fable.co. Result: `pasted`, `copied`, or `manual` when the clipboard also failed.
+Inputs: `pageUrl`, `text`; `fillReview` also `pathname`, `timeoutMs`.
+Dependencies: `chrome.tabs`, `chrome.windows`, `chrome.scripting`.

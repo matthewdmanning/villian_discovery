@@ -30,9 +30,11 @@ export const DEMO_SYNC_SNAPSHOTS = {
     },
     {
       bookId: "libby:dune",
+      providerId: "demo-dune",
       workId: "isbn:9780441172719",
       title: "Dune",
       author: "Frank Herbert",
+      narrators: ["Scott Brick"],
       fields: {
         readingProgress: { value: 100 },
         checkedOut: { value: true },
@@ -46,6 +48,7 @@ export const DEMO_SYNC_SNAPSHOTS = {
       workId: "isbn:9781635575637",
       title: "Piranesi",
       author: "Susanna Clarke",
+      pageUrl: "https://fable.co/book/piranesi-by-susanna-clarke-163557563X",
       fields: {
         readingProgress: { value: 80, updatedAt: "2026-11-14T10:00:00Z" },
         readingStatus: { value: "currently-reading" },
@@ -59,6 +62,7 @@ export const DEMO_SYNC_SNAPSHOTS = {
       workId: "isbn:9780441172719",
       title: "Dune",
       author: "Frank Herbert",
+      pageUrl: "https://fable.co/book/dune-dune-1-by-frank-herbert-0441172717",
       fields: {
         readingProgress: { value: 20 },
         readingStatus: { value: "currently-reading" },

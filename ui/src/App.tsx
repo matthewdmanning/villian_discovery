@@ -13,6 +13,7 @@ import {
   Sun,
 } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
+import type { PostReview } from "./components/SyncReview.tsx";
 import { compact } from "./components/ui.tsx";
 import { options, type ScreenId, screens } from "./lib/spec.ts";
 import { useStore } from "./lib/store.tsx";
@@ -46,7 +47,13 @@ const mobileOnly = options.layout === "mobile";
 const desk = mobileOnly ? "hidden" : "hidden lg:flex";
 const phone = mobileOnly ? "" : "lg:hidden";
 
-export function App({ openLoan }: { openLoan?: (url: string) => Promise<void> } = {}) {
+export function App({
+  openLoan,
+  postReview,
+}: {
+  openLoan?: (url: string) => Promise<void>;
+  postReview?: PostReview;
+} = {}) {
   const { screen, go, api } = useStore();
   const [theme, toggleTheme] = useTheme();
   const activeScreen = screen === "results" ? "search" : screen;
@@ -135,7 +142,11 @@ export function App({ openLoan }: { openLoan?: (url: string) => Promise<void> } 
         <main
           className={`flex-1 px-safe ${compact ? "py-5" : "py-6 sm:py-10"} pb-dock ${mobileOnly ? "" : "lg:pb-safe"} ${mobileOnly ? "mx-auto w-full max-w-md" : ""}`}
         >
-          {activeScreen === "sync" && openLoan ? <SyncScreen openLoan={openLoan} /> : <View />}
+          {activeScreen === "sync" ? (
+            <SyncScreen {...(openLoan ? { openLoan } : {})} {...(postReview ? { postReview } : {})} />
+          ) : (
+            <View />
+          )}
           {options.navigation === "wizard" && (
             <div className="mx-auto mt-8 flex w-full max-w-5xl justify-between">
               <button

@@ -21,6 +21,10 @@ export const BookSnapshotSchema = z
     providerId: z.string().min(1).optional(),
     loanUrl: z.url({ protocol: /^https$/, hostname: /^libbyapp\.com$/ }).optional(),
     narrators: z.array(z.string().min(1)).optional(),
+    /** When a Libby loan ends. Display only. */
+    expiresAt: z.iso.datetime({ offset: true }).optional(),
+    /** The book's fable.co page. Display only. */
+    pageUrl: z.url({ protocol: /^https$/, hostname: /^fable\.co$/ }).optional(),
     knownFields: z.array(z.string().min(1)).optional(),
     fields: z.record(z.string().min(1), SnapshotFieldSchema),
   })

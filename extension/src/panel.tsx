@@ -9,6 +9,7 @@ import { useTheme } from "../../ui/src/lib/theme.ts";
 import { SyncScreen } from "../../ui/src/screens/Sync.tsx";
 import { connections, extensionApi, forgetCachedReads, openInLibby } from "./extension-api.ts";
 import { FABLE_SIGN_IN_URL } from "./fable-get.ts";
+import { postToFable } from "./fable-review.ts";
 import { LIBBY_URL } from "./libby-session.ts";
 
 const CHECK_MS = 3_000;
@@ -122,7 +123,7 @@ function Panel() {
         </a>
       </header>
       <main className="p-2">
-        <SyncScreen openLoan={openInLibby} compactLayout />
+        <SyncScreen openLoan={openInLibby} postReview={postToFable} compactLayout />
       </main>
     </>
   );

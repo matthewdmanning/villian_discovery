@@ -48,6 +48,34 @@ export async function readLists(client: {
   return { tags, items: [...items.values()] };
 }
 
+/** Past Libby loans, or why they cannot be shown. */
+export type PastCheckouts =
+  | { status: "available"; source: "borrowed-tag"; items: ListItem[] }
+  | { status: "unavailable"; reason: string };
+
+/** Libby names its automatic tag for borrowed titles "Borrowed"; users may add an emoji or change its case. */
+export function isBorrowedTag(tag: LibbyTag): boolean {
+  return /^[^\p{L}\p{N}]*borrowed[^\p{L}\p{N}]*$/iu.test(tag.name.trim());
+}
+
+/**
+ * Read past checkouts from Libby's Borrowed tag. Libby's loan history (Timeline) has no endpoint this tool uses,
+ * so the tag that Libby adds to each borrowed title stands in. Reads the tag list and that one tag only.
+ */
+export async function readPastCheckouts(client: {
+  tags(): Promise<unknown>;
+  taggings(tag: LibbyTag): Promise<unknown>;
+}): Promise<PastCheckouts> {
+  const tag = parseTagsResponse(await client.tags()).find(isBorrowedTag);
+  if (!tag)
+    return {
+      status: "unavailable",
+      reason: "Libby has no Borrowed tag. Turn on tagging borrowed titles in Libby's settings.",
+    };
+  const { items } = await readLists({ tags: async () => ({ tags: [tag] }), taggings: client.taggings.bind(client) });
+  return { status: "available", source: "borrowed-tag", items };
+}
+
 /** Tags read at once, so an account with many tags stays under Libby's rate limits. */
 export const TAG_CONCURRENCY = 4;
 

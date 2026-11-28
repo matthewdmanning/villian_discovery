@@ -55,6 +55,9 @@ interface Store {
   setSyncBusy(value: boolean): void;
   syncError: string | undefined;
   setSyncError(value: string | undefined): void;
+  /** Unposted Fable reviews by book page URL; they outlive the Shelf, which unmounts during Sync and Apply. */
+  reviewDrafts: Readonly<Record<string, string>>;
+  setReviewDraft(pageUrl: string, text: string): void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -95,6 +98,11 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
   const [syncResult, setSyncResult] = useState<Store["syncResult"]>();
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncError, setSyncError] = useState<string>();
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
+  const setReviewDraft = useCallback(
+    (pageUrl: string, text: string) => setReviewDrafts((drafts) => ({ ...drafts, [pageUrl]: text })),
+    [],
+  );
 
   useEffect(() => {
     try {
@@ -151,6 +159,8 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     setSyncBusy,
     syncError,
     setSyncError,
+    reviewDrafts,
+    setReviewDraft,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
