@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chapterAt,
+  clipTag,
   createPlayer,
   findTag,
   formatRate,
@@ -147,6 +148,18 @@ describe("bookmark notes and tags", () => {
   it("ignores edits to unknown bookmarks", () => {
     const s = playerReducer(marked(), { type: "createTag", name: "x" });
     expect(playerReducer(s, { type: "bookmarkTag", id: 99, tag: "x" })).toBe(s);
+  });
+
+  it("allows emoji tags, counting each emoji as one character", () => {
+    const family = "👨‍👩‍👧‍👦";
+    let s = act(marked(), { type: "createTag", name: " 🎵  Music " });
+    s = act(s, { type: "createTag", name: "🔥" });
+    expect(s.tagLibrary).toEqual(["🎵 Music", "🔥"]);
+    expect(s.bookmarks[0].tags).toEqual(["🎵 Music", "🔥"]);
+    expect(normalizeTag(family.repeat(MAX_TAG_LENGTH))).toBe(family.repeat(MAX_TAG_LENGTH));
+    expect(normalizeTag(family.repeat(MAX_TAG_LENGTH + 1))).toBeUndefined();
+    expect(clipTag(`${"a".repeat(MAX_TAG_LENGTH - 1)}${family}!`)).toBe(`${"a".repeat(MAX_TAG_LENGTH - 1)}${family}`);
+    expect(findTag(["👍🏽"], "👍")).toBeUndefined();
   });
 
   it("merges tag lists into a sorted library", () => {

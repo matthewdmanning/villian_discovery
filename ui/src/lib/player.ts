@@ -41,10 +41,17 @@ export const RESTART_GRACE = 3;
 export const MAX_NOTE_LENGTH = 2000;
 export const MAX_TAG_LENGTH = 32;
 
-/** Trims and collapses inner whitespace; empty or over-long input returns undefined. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+/** Characters as a person counts them: one emoji is one, even when it joins several code points. */
+const characters = (text: string) => Array.from(graphemes.segment(text), (s) => s.segment);
+
+/** Cuts typed tag text to `MAX_TAG_LENGTH` characters without splitting an emoji. */
+export const clipTag = (text: string) => characters(text).slice(0, MAX_TAG_LENGTH).join("");
+
+/** NFC-normalizes, trims and collapses inner whitespace; empty or over-long input returns undefined. Emoji count as one character each. */
 export function normalizeTag(tag: string): string | undefined {
-  const t = tag.trim().replace(/\s+/g, " ");
-  return t && t.length <= MAX_TAG_LENGTH ? t : undefined;
+  const t = tag.normalize("NFC").trim().replace(/\s+/g, " ");
+  return t && characters(t).length <= MAX_TAG_LENGTH ? t : undefined;
 }
 const sameTag = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
 

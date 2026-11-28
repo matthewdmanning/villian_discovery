@@ -1,5 +1,5 @@
 {
-  "$comment": "Low-fidelity wireframe spec for the libby-shelf UI (ui/). Edit `options` and per-item `enabled` to reconfigure. See README.md.",
+  "$comment": "Low-fidelity wireframe spec for the libby-shelf UI (ui/). Edit `options` and per-item `enabled` to reconfigure; `deprecated` screens stay disabled. See README.md.",
   "version": 1,
   "options": {
     "layout": "desktop",
@@ -52,42 +52,9 @@
               "columns": ["book", "field", "libby", "fable", "value", "source"]
             }
           ]
-        }
-      ]
-    },
-    {
-      "id": "connect",
-      "title": "Connect Libby",
-      "cli": "login",
-      "enabled": true,
-      "regions": [
-        {
-          "id": "status",
-          "components": [{ "type": "banner", "label": "Connection status", "binds": "auth.tokenFile" }]
         },
         {
-          "id": "form",
-          "components": [
-            {
-              "type": "output",
-              "input": "code",
-              "label": "8-digit setup code",
-              "hint": "Enter this code on your existing Libby device: Menu → Copy To Another Device → Enter Setup Code"
-            },
-            { "type": "field", "input": "path", "label": "Token file", "binds": "auth.tokenFile", "advanced": true },
-            { "type": "button", "label": "Sign in to Libby", "action": "login" }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "cards",
-      "title": "Library cards",
-      "cli": "cards",
-      "enabled": true,
-      "regions": [
-        {
-          "id": "table",
+          "id": "cards",
           "components": [
             {
               "type": "table",
@@ -108,7 +75,7 @@
       "id": "books",
       "title": "Book list",
       "cli": "run <input>",
-      "enabled": true,
+      "enabled": false,
       "regions": [
         {
           "id": "input",
@@ -180,7 +147,8 @@
       "id": "settings",
       "title": "Rules",
       "cli": "config",
-      "enabled": true,
+      "enabled": false,
+      "deprecated": true,
       "regions": [
         {
           "id": "general",
@@ -274,7 +242,7 @@
       "id": "results",
       "title": "Plan & results",
       "cli": "run",
-      "enabled": true,
+      "enabled": false,
       "regions": [
         {
           "id": "summary",

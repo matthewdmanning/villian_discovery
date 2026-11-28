@@ -2,11 +2,9 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
-  CreditCard,
   Headphones,
   ListChecks,
   Moon,
-  Plug,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -19,8 +17,6 @@ import { options, type ScreenId, screens } from "./lib/spec.ts";
 import { useStore } from "./lib/store.tsx";
 import { useTheme } from "./lib/theme.ts";
 import { Books } from "./screens/Books.tsx";
-import { Cards } from "./screens/Cards.tsx";
-import { Connect } from "./screens/Connect.tsx";
 import { Player } from "./screens/Player.tsx";
 import { Results } from "./screens/Results.tsx";
 import { SearchScreen } from "./screens/Search.tsx";
@@ -29,8 +25,6 @@ import { Shelf } from "./screens/Shelf.tsx";
 import { SyncScreen } from "./screens/Sync.tsx";
 
 const VIEWS: Record<ScreenId, { icon: ComponentType<{ className?: string }>; short: string; view: () => ReactNode }> = {
-  connect: { icon: Plug, short: "Connect", view: Connect },
-  cards: { icon: CreditCard, short: "Cards", view: Cards },
   books: { icon: BookOpen, short: "Books", view: Books },
   shelf: { icon: BookOpen, short: "Shelf", view: Shelf },
   settings: { icon: SlidersHorizontal, short: "Rules", view: Settings },

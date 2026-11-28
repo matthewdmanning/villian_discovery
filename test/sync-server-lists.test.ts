@@ -50,10 +50,10 @@ describe("lists routes", () => {
   it("tells a signed-out user to connect Libby, as a JSON error", async () => {
     const lists = await fetch(`${base}/api/lists`);
     expect(lists.status).toBe(400);
-    expect(await lists.json()).toEqual({ error: "Connect Libby first" });
+    expect(await lists.json()).toEqual({ error: "Connect Libby first: run libby-shelf login" });
     const availability = await post("/api/lists/availability", { titleId: "42" });
     expect(availability.status).toBe(400);
-    expect(await availability.json()).toEqual({ error: "Connect Libby first" });
+    expect(await availability.json()).toEqual({ error: "Connect Libby first: run libby-shelf login" });
   });
 
   it("refuses requests from another website", async () => {
@@ -71,5 +71,11 @@ describe("lists routes", () => {
   it("only offers each route by its own method", async () => {
     expect((await post("/api/lists", {})).status).toBe(404);
     expect((await fetch(`${base}/api/lists/availability`)).status).toBe(404);
+  });
+
+  it("no longer serves the retired in-app Libby sign-in", async () => {
+    expect((await post("/api/login", {})).status).toBe(404);
+    expect((await post("/api/login/device-code", {})).status).toBe(404);
+    expect((await fetch(`${base}/api/login/device-code`)).status).toBe(404);
   });
 });

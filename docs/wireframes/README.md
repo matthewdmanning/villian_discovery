@@ -12,6 +12,7 @@ Spec: [`libby-ui.wireframe.json`](libby-ui.wireframe.json). Sketches below = def
 | `options.defaultScreen` | screen `id`                                                | first screen shown                                                     |
 | `options.showAdvanced`  | bool                                                       | show items marked `advanced`                                           |
 | `screens[].enabled`     | bool                                                       | drop a screen                                                          |
+| `screens[].deprecated`  | bool                                                       | retired screen; hidden even when `enabled`                             |
 | `screens[]` order       | —                                                          | nav / wizard order                                                     |
 | component `binds`       | libby-shelf config path (e.g. `hold.placement`) or `cards` | field ↔ config key; choices, defaults, ranges come from `ConfigSchema` |
 | component `action`      | CLI subcommand                                             | what the button runs                                                   |
@@ -20,25 +21,16 @@ Rules (checked by `test/wireframe.test.ts`):
 
 - Every `binds` is a real `ConfigSchema` path (or `cards`).
 - Screen ids are unique; `defaultScreen` is an enabled screen.
+- No screen is both `deprecated` and `enabled`.
 - Results columns ⊆ `BookResult` fields.
 
 Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliation preview and has no CLI command. Player is a browser-only audiobook control panel (demo title) and has no CLI command.
 
 ## Screens
 
-### connect — `login`
+Visible: Sync, Shelf, Search, Audiobook player. Sign in to Libby with `libby-shelf login`; the app has no sign-in screen.
 
-```
-┌ Connect Libby ─────────────────────────────┐
-│ [i] Not connected | Connected (token file) │
-│ Setup code   1234 5678 (displayed)          │
-│ Enter on existing Libby: Menu → Copy To... │
-│ Token file*  [~/.config/libby-shelf/...]   │
-│                  [ Display setup code ]   │
-└────────────────────────────────────────────┘   * advanced
-```
-
-### cards — `cards`
+### sync › Settings tab › Library cards (`cards` region)
 
 ```
 ┌ Library cards ─────────────────────────────────────┐
@@ -49,7 +41,7 @@ Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliat
 └────────────────────────────────────────────────────┘
 ```
 
-### books — `run <input>`
+### books — `run <input>` (disabled)
 
 ```
 ┌ Book list ─────────────────────────────────────────┐
@@ -63,7 +55,7 @@ Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliat
 └────────────────────────────────────────────────────┘
 ```
 
-### settings — `config`
+### settings — `config` (deprecated)
 
 ```
 ┌ Rules ──────────────────────────────────────────────┐
@@ -89,7 +81,7 @@ Command screens map to a CLI command (`cli`). Sync is a browser-only reconciliat
 └─────────────────────────────────────────────────────────┘
 ```
 
-### results — `run` / `run --dry-run`
+### results — `run` / `run --dry-run` (disabled; reached only from Book list)
 
 ```
 ┌ Plan & results ─────────────────────────────────────┐
@@ -145,4 +137,4 @@ Phone (below `lg`): bookmarks hidden. The bookmark icon (with count) opens them 
 
 Edits are a draft until Save. ← or the system back gesture asks "Discard changes? Unsaved notes and tags will be lost." (Keep editing / Discard). Save and Discard return to the player.
 
-|◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks · tag menu: click toggles a tag; **New Tag** (pinned last) is the only way to create one. Bookmark tags are separate from book tags.
+|◁ chapter start (previous chapter if <3 s in) · ◁◁/▷▷ 30 s · ▷| chapter end · ± 5% speed · bookmark row seeks · tag menu: click toggles a tag; **New Tag** (pinned last) is the only way to create one. Tags take emoji; length counts characters as shown (≤ 32), so one emoji = 1. Bookmark tags are separate from book tags.

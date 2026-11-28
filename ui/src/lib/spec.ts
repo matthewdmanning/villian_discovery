@@ -1,7 +1,7 @@
 import raw from "../../../docs/wireframes/libby-ui.wireframe.json";
 
 /** Typed view of docs/wireframes/libby-ui.wireframe.json. The UI follows its options and screen list. */
-export type ScreenId = "connect" | "cards" | "books" | "shelf" | "settings" | "search" | "results" | "sync" | "player";
+export type ScreenId = "books" | "shelf" | "settings" | "search" | "results" | "sync" | "player";
 
 export interface SpecComponent {
   type: string;
@@ -24,6 +24,8 @@ export interface SpecScreen {
   title: string;
   cli: string;
   enabled: boolean;
+  /** Retired screen: hidden even when `enabled`, kept only until its code is removed. */
+  deprecated?: boolean;
   regions: SpecRegion[];
 }
 export interface SpecOptions {
@@ -37,7 +39,7 @@ export interface SpecOptions {
 const spec = raw as unknown as { options: SpecOptions; screens: SpecScreen[] };
 
 export const options: SpecOptions = spec.options;
-export const screens: SpecScreen[] = spec.screens.filter((s) => s.enabled);
+export const screens: SpecScreen[] = spec.screens.filter((s) => s.enabled && !s.deprecated);
 
 export function screen(id: ScreenId): SpecScreen | undefined {
   return screens.find((s) => s.id === id);

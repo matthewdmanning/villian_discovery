@@ -123,6 +123,10 @@ const TITLES: Record<string, string> = {
   network: "Network",
 };
 
+/**
+ * @deprecated The Rules screen is retired (#33): the wireframe spec marks it `deprecated`, so it never shows.
+ * Set run rules in the CLI config file (`libby.config.json`). Remove this screen once nothing depends on it.
+ */
 export function Settings() {
   const { overrides, configError, set } = useStore();
   const regions = screen("settings")?.regions ?? [];
