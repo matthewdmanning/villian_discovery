@@ -1,4 +1,4 @@
-import { Check, CircleCheck, CircleX, RefreshCw } from "lucide-react";
+import { Ban, Check, CircleCheck, CircleX, RefreshCw } from "lucide-react";
 import { useCallback, useState } from "react";
 import { isbn13 } from "../../../src/matcher.ts";
 import type { SyncField, SyncProvider } from "../../../src/sync.ts";
@@ -11,6 +11,7 @@ import { copyAndOpen, FableReview, type PostReview } from "../components/SyncRev
 import { SyncSettingsPanel } from "../components/SyncSettings.tsx";
 import { Empty, Panel, RefreshButton, Screen } from "../components/ui.tsx";
 import { labelForAction } from "../lib/spec.ts";
+import { useStore } from "../lib/store.tsx";
 import { type BookSummary, hasValue, LINE_FIELDS, summarizeBooks, toStatusKey } from "../lib/sync-books.ts";
 import { displaySyncValue as displayValue, SYNC_FIELD_LABELS as labels } from "../lib/sync-format.ts";
 import { useResource } from "../lib/use-resource.ts";
@@ -88,12 +89,23 @@ export function SyncScreen({
     setError,
   } = useSync();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Shelf");
+  const { cards, cardsLoading, reviewDrafts, setReviewDraft } = useStore();
   const libbyConnected = Boolean(syncResult?.plan.schemas.libby.length);
+  const comparedAt = syncResult?.comparedAt;
+  // Past checkouts follow the Shelf: each successful comparison reloads them, and they belong to one Libby account.
+  const libbyAccount = cards
+    .map((card) => card.cardId)
+    .sort()
+    .join(",");
   const loadPastCheckouts = useCallback(
-    () => (libbyConnected ? api.pastCheckouts() : Promise.resolve(undefined)),
-    [api, libbyConnected],
+    async () =>
+      libbyConnected && comparedAt && !cardsLoading
+        ? { account: libbyAccount, value: await api.pastCheckouts() }
+        : undefined,
+    [api, libbyConnected, comparedAt, libbyAccount, cardsLoading],
   );
   const past = useResource(loadPastCheckouts, { keepStale: true });
+  const pastCheckouts = past.data?.account === libbyAccount ? past.data.value : undefined;
 
   /** Use this function to show one app's side of a conflict; ordinary metadata sides are buttons that resolve the conflict with a new preview, while Libby-authoritative fields cannot be overridden. */
   function conflictSide(row: SyncField, provider: SyncProvider) {
@@ -523,9 +535,9 @@ export function SyncScreen({
               afterCheckedOut={
                 libbyConnected && (
                   <PastCheckouts
-                    data={past.data}
+                    data={pastCheckouts}
                     error={past.error}
-                    loading={past.loading && !past.data}
+                    loading={(past.loading || cardsLoading) && !pastCheckouts}
                     reload={past.reload}
                     checkedOut={
                       new Set(
@@ -552,7 +564,23 @@ export function SyncScreen({
                 const selectable = lineOperations.filter(
                   (operation) => !operation.blocked && outcomeOf(operation.id) !== "success",
                 );
-                const progressSynced = progress !== undefined && outcomeOf(progress.id) === "success";
+                const progressOutcome = progress && outcomeOf(progress.id);
+                const progressSynced = progressOutcome === "success";
+                // The progress row stays out of the pulldown, so its blocked reason or failure shows by the change.
+                const progressNote = progress?.blocked ? (
+                  <span
+                    className="inline-flex items-center gap-0.5 text-xs font-semibold text-warning"
+                    title={`Blocked: ${progress.blocked}`}
+                  >
+                    <Ban className="size-3.5 shrink-0" aria-hidden="true" />
+                    Blocked<span className="sr-only">: {progress.blocked}</span>
+                  </span>
+                ) : progressOutcome && progressOutcome !== "success" ? (
+                  <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-error">
+                    <CircleX className="size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="capitalize">{progressOutcome}</span>
+                  </span>
+                ) : undefined;
                 const before = progress?.before?.value;
                 const group = bookGroups.get(book.groupId);
                 const loans = book.checkedOut ? (group?.libby ?? []) : [];
@@ -623,7 +651,14 @@ export function SyncScreen({
                     <ProgressValue value={progress.after} />
                   ) : undefined;
                 const reviewBox = fablePage && !retained && (
-                  <FableReview key="review" title={book.title} pageUrl={fablePage} post={postReview} />
+                  <FableReview
+                    key="review"
+                    title={book.title}
+                    pageUrl={fablePage}
+                    post={postReview}
+                    draft={reviewDrafts[fablePage] ?? ""}
+                    onDraft={(text) => setReviewDraft(fablePage, text)}
+                  />
                 );
                 const links = (openLoan && loan) || fablePage;
                 return (
@@ -662,6 +697,7 @@ export function SyncScreen({
                         ? progress.after - (typeof before === "number" ? before : 0)
                         : undefined
                     }
+                    progressNote={progressNote}
                     ratingCell={ratingCell}
                     statusCell={statusCell}
                     lead={

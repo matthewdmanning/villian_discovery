@@ -20,7 +20,8 @@ const flush = () => act(async () => {});
 const settle = async () => {
   for (let i = 0; i < 20 && !container.querySelector('[role="tabpanel"][aria-label="Shelf"]'); i++)
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+  // Short steps let React flush between loads that start one after another, like cards and then past checkouts.
+  for (let i = 0; i < 12; i++) await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
 };
 const click = (el) => act(async () => el.dispatchEvent(new MouseEvent("click", { bubbles: true })));
 const button = (label) => [...container.querySelectorAll("button")].find((el) => el.textContent.trim() === label);
@@ -73,6 +74,22 @@ describe("Sync screen layout", () => {
     expect(fable.getAttribute("target")).toBe("_blank");
   });
 
+  it("says by the progress change when Fable progress cannot be written", async () => {
+    const previewSync = vi.fn(async (options) => {
+      const plan = await demoApi.previewSync(options);
+      return {
+        ...plan,
+        operations: plan.operations.map((operation) =>
+          operation.field === "readingProgress" ? { ...operation, blocked: "Fable progress is read-only" } : operation,
+        ),
+      };
+    });
+    await mount({}, { previewSync });
+    const dune = line("Dune");
+    expect(dune.textContent).toMatch(/\+80%\s*Blocked: Fable progress is read-only/);
+    expect([...dune.querySelectorAll("details li")].some((li) => /progress/i.test(li.textContent))).toBe(false);
+  });
+
   it("marks unsynced books in yellow without a badge, and drops the change once synced", async () => {
     await mount();
     expect(container.textContent).not.toContain("Needs sync");
@@ -112,6 +129,14 @@ describe("Fable review", () => {
     );
   });
 
+  it("keeps a draft through Sync, which unmounts the Shelf", async () => {
+    await mount();
+    await act(async () => type(line("Dune").querySelector("textarea"), "Half written"));
+    await click(button("Sync"));
+    await settle();
+    expect(line("Dune").querySelector("textarea").value).toBe("Half written");
+  });
+
   it("reports a failure to open Fable", async () => {
     await mount({ postReview: vi.fn(async () => Promise.reject(new Error("No tab"))) });
     const dune = line("Dune");
@@ -127,6 +152,15 @@ describe("Fable review", () => {
     await expect(copyAndOpen(DUNE_PAGE, "Good")).resolves.toBe("copied");
     expect(writeText).toHaveBeenCalledWith("Good");
     expect(open).toHaveBeenCalledWith(DUNE_PAGE, "_blank", "noopener,noreferrer");
+    open.mockRestore();
+  });
+
+  it("outside the extension, asks for a manual copy when the clipboard refuses", async () => {
+    const writeText = vi.fn(async () => Promise.reject(new Error("Denied")));
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    await expect(copyAndOpen(DUNE_PAGE, "Good")).resolves.toBe("manual");
+    expect(open).toHaveBeenCalledOnce();
     open.mockRestore();
   });
 });
@@ -169,6 +203,23 @@ describe("Past checkouts", () => {
     await click([...section.querySelectorAll("button")].find((el) => el.textContent === "Retry"));
     await flush();
     expect(section.textContent).toContain("No past checkouts");
+  });
+
+  it("reloads with each Sync, so a new Borrowed title shows", async () => {
+    const piranesi = { id: "1", title: "Piranesi", author: "Clarke, Susanna" };
+    const kindred = { id: "2", title: "Kindred", author: "Butler, Octavia E." };
+    const pastCheckouts = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "available", source: "borrowed-tag", items: [piranesi] })
+      .mockResolvedValue({ status: "available", source: "borrowed-tag", items: [kindred, piranesi] });
+    await mount({}, { pastCheckouts });
+    const titles = () =>
+      [...container.querySelectorAll('ul[aria-label="Past checkouts list"] .font-display')].map((el) => el.textContent);
+    expect(titles()).toEqual(["Piranesi"]);
+    await click(button("Sync"));
+    await settle();
+    expect(pastCheckouts).toHaveBeenCalledTimes(2);
+    expect(titles()).toEqual(["Kindred", "Piranesi"]);
   });
 
   it("matches Libby's sort names to Fable authors", () => {

@@ -104,6 +104,7 @@ export function BookLine({
   byline,
   lead,
   progressChange,
+  progressNote,
   progressCell,
   ratingCell,
   statusCell,
@@ -117,6 +118,8 @@ export function BookLine({
   byline?: ReactNode;
   lead?: ReactNode;
   progressChange?: number | undefined;
+  /** Shown after the progress change, such as why Fable progress cannot be written. */
+  progressNote?: ReactNode;
   progressCell?: ReactNode;
   ratingCell?: ReactNode;
   statusCell?: ReactNode;
@@ -139,6 +142,7 @@ export function BookLine({
             {progressChange}%
           </span>
         )}
+        {progressNote}
       </span>
     ),
     columns.rating && (

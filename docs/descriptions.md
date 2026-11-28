@@ -461,12 +461,12 @@ Dependencies: `normalizeTitle`, `normalizeName`, `toStatusKey`.
 
 ## `FableReview`, `copyAndOpen` - ui/src/components/SyncReview.tsx
 
-Use this component in a book's pulldown: a one-row, growing review box and **Post to Fable**, which calls `post(pageUrl, text)` and says whether the text was pasted or only copied. `copyAndOpen` is the default outside the extension.
-Inputs: `title`, `pageUrl`, `post`.
+Use this component in a book's pulldown: a one-row, growing review box and **Post to Fable**, which calls `post(pageUrl, text)` and says whether the text was pasted, only copied, or must be copied by hand. The parent keeps the draft (store `reviewDrafts`, by page URL), so it survives the Shelf unmounting. `copyAndOpen` is the default outside the extension.
+Inputs: `title`, `pageUrl`, `post`, `draft`, `onDraft`.
 Dependencies: `navigator.clipboard`, `window.open`.
 
 ## `postToFable`, `fillReview` - extension/src/fable-review.ts
 
-Use `postToFable` to copy a review, reuse or open a fable.co tab at the book page, wait for it to load, and run `fillReview` there. `fillReview` finds a review box (by placeholder, label or dialog), opens it with a "Rate & review" button when needed, and types the text as a paste would. It never submits and refuses pages outside fable.co.
-Inputs: `pageUrl`, `text`; `fillReview` also `timeoutMs`.
+Use `postToFable` to copy a review, reuse or open a fable.co tab at the book page, wait until that tab reports the book page loaded, and run `fillReview` there. Handoffs run one at a time. `fillReview` acts only on `pathname`. It finds an editable review box (named for a review, or alone in a dialog titled for one), opening it with a "Rate & review" button when needed. It types the text as a paste would and succeeds only if the box then holds it. It never submits and refuses pages outside fable.co. Result: `pasted`, `copied`, or `manual` when the clipboard also failed.
+Inputs: `pageUrl`, `text`; `fillReview` also `pathname`, `timeoutMs`.
 Dependencies: `chrome.tabs`, `chrome.windows`, `chrome.scripting`.
