@@ -263,7 +263,7 @@ function BookmarkItem(props: { mark: Bookmark; chapter: string; library: string[
       />
       <div className="flex flex-wrap items-center gap-2">
         {mark.tags.map((t) => (
-          <span key={t} className="badge badge-secondary gap-1 font-semibold">
+          <span key={t} className="badge gap-1 border-2 border-secondary bg-base-100 font-semibold">
             {t}
             <button
               type="button"
