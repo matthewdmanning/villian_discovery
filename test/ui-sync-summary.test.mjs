@@ -4,10 +4,14 @@ import { summarizeSyncResult } from "../ui/src/screens/Sync.tsx";
 const plan = (operations) => ({ operations });
 const operation = (id, blocked) => ({ id, title: `Book ${id}`, ...(blocked ? { blocked } : {}) });
 
-it("summarizes previews without exposing provider values", () => {
+it("keeps blocked preview changes visible as requiring review", () => {
   expect(summarizeSyncResult(plan([operation("one"), operation("two", "Needs review")]))).toEqual({
     status: "Success",
     summary: "1 change found. Review before applying.",
+  });
+  expect(summarizeSyncResult(plan([operation("one", "Needs review")]))).toEqual({
+    status: "Success",
+    summary: "1 change requires review before applying.",
   });
 });
 
@@ -25,10 +29,17 @@ it("reports apply failures as a plain status", () => {
   });
 });
 
-it("keeps blocked preview changes visible as requiring review", () => {
-  expect(summarizeSyncResult(plan([operation("one", "Needs review")]))).toEqual({
+it("reports successful apply as a plain status", () => {
+  expect(
+    summarizeSyncResult(plan([operation("one"), operation("two")]), {
+      outcomes: [
+        { operationId: "one", status: "success", message: "raw provider detail" },
+        { operationId: "two", status: "success", message: "raw provider detail" },
+      ],
+    }),
+  ).toEqual({
     status: "Success",
-    summary: "1 change requires review before applying.",
+    summary: "Applied 2 changes.",
   });
 });
 

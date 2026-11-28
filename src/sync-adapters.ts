@@ -6,12 +6,13 @@
  * `verified: false`, expose no writable fields, and refuse every write.
  */
 import type { FableBook, FableGet, FableList } from "./discovery/export-lists.js";
+import { type CatalogReader, loanUrl, narratorsForItem } from "./libby-audiobooks.js";
 import type { LibbyClient } from "./libby-client.js";
-import { isbn13, normalizeName, normalizeTitle } from "./matcher.js";
+import { isbn13, mediaNarrators, normalizeName, normalizeTitle } from "./matcher.js";
 import { fetchAllPages } from "./pagination.js";
-import type { BookSnapshot, SnapshotField } from "./sync.js";
-import type { SyncAdapter, SyncOperation } from "./sync-plan.js";
-import type { ShelfItem, SyncResponse } from "./types.js";
+import { type BookSnapshot, type SnapshotField, syncEditionScore } from "./sync.js";
+import type { FableCatalogMatch, SyncAdapter } from "./sync-plan.js";
+import type { MediaFormat, ShelfItem, SyncResponse, ThunderMedia } from "./types.js";
 
 /** One Fable list entry: the book with the user's reading data, plus the entry's note. */
 export interface FableEntry {
@@ -27,11 +28,10 @@ export interface FableEntry {
 export type FablePost = <T>(path: string, body: unknown) => Promise<T>;
 
 /** One book in Fable's catalog search. */
-interface FableSearchBook {
+interface FableSearchBook extends FableBook {
   id: string;
   title: string;
-  isbn?: string;
-  authors?: { name?: string }[];
+  subtitle?: string;
 }
 
 const LIBBY_FIELDS = ["checkedOut", "readingProgress"] as const;
@@ -66,12 +66,45 @@ function present(fields: Record<string, SnapshotField | undefined>): Record<stri
   return Object.fromEntries(Object.entries(fields).filter((entry): entry is [string, SnapshotField] => !!entry[1]));
 }
 
-/** Use this function to find the first ISBN among a Libby loan's formats. */
-function loanIsbn(loan: ShelfItem): string | undefined {
-  const formats = Array.isArray(loan.formats)
-    ? (loan.formats as { identifiers?: { type: string; value: string }[] }[])
-    : [];
-  return formats.flatMap((format) => format.identifiers ?? []).find((id) => id.type === "ISBN")?.value;
+/** Use this function to map a provider's `value` (format label or object with id/name) to a book format. Dependencies are string normalization and the snapshot format vocabulary. */
+function bookFormat(value: unknown): BookSnapshot["format"] {
+  if (value && typeof value === "object") {
+    const { id, name } = value as { id?: unknown; name?: unknown };
+    return (
+      bookFormat(typeof id === "string" ? id : undefined) ?? bookFormat(typeof name === "string" ? name : undefined)
+    );
+  }
+  if (typeof value !== "string") return undefined;
+  const label = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (/^(audiobook|digitalaudio|audio$)/.test(label)) return "audiobook";
+  if (/^(ebook|epub|kindle)/.test(label)) return "ebook";
+  if (/^(print|physical|paperback|hardcover|hardback|massmarket)/.test(label)) return "print";
+  if (label.startsWith("magazine")) return "magazine";
+  return undefined;
+}
+
+/** Use this function to retain Fable's explicit format evidence for a `book`. A missing format stays unknown. Dependencies: `bookFormat`. */
+function fableBookFormat(book: FableBook): BookSnapshot["format"] {
+  return (
+    bookFormat(book.format) ??
+    bookFormat(book.book_format) ??
+    bookFormat(book.media_type) ??
+    (book.audiobook === true ? "audiobook" : undefined)
+  );
+}
+
+/** Use this function to find an ISBN on the `item` formats for the known loan `format`. It uses `bookFormat` and `isbn13` to skip other editions and invalid identifiers. */
+function loanIsbn(item: ShelfItem | ThunderMedia, format = bookFormat(item.type)): string | undefined {
+  const formats = Array.isArray(item.formats) ? (item.formats as MediaFormat[]) : [];
+  const eligible = formats.filter((entry) => entry && (!format || bookFormat(entry.id) === format));
+  for (const entry of eligible) {
+    for (const id of Array.isArray(entry.identifiers) ? entry.identifiers : []) {
+      if (!/^isbn(?:-?1[03])?$/i.test(id?.type) || typeof id.value !== "string") continue;
+      const isbn = isbn13(id.value);
+      if (isbn) return isbn;
+    }
+  }
+  return undefined;
 }
 
 /** Use this function to convert Libby's account state into snapshots: every current loan is a checked-out book. `progress` maps a loan ID to its percent read; a loan without an entry has unknown progress. */
@@ -80,12 +113,16 @@ export function libbySnapshots(state: SyncResponse, progress: ReadonlyMap<string
   for (const loan of state.loans ?? []) {
     if (!loan.title) continue;
     const author = typeof loan.firstCreatorName === "string" ? loan.firstCreatorName : undefined;
+    const format = bookFormat(loan.type);
     const isbn = loanIsbn(loan);
     const known = books.get(loan.id);
     if (known) {
       // The same title on another card is the same book: fill gaps, never add a second snapshot.
       if (!known.author && author) known.author = author;
       if (!known.isbn && isbn) known.isbn = isbn;
+      if (!known.format && format) known.format = format;
+      if (!known.loanUrl && state.cards?.some((card) => card.cardId === loan.cardId))
+        known.loanUrl = loanUrl(loan.cardId, loan.id);
       continue;
     }
     const percent = progress.get(loan.id);
@@ -94,7 +131,9 @@ export function libbySnapshots(state: SyncResponse, progress: ReadonlyMap<string
       title: loan.title,
       ...(author ? { author } : {}),
       ...(isbn ? { isbn } : {}),
+      ...(format ? { format } : {}),
       providerId: loan.id,
+      ...(state.cards?.some((card) => card.cardId === loan.cardId) ? { loanUrl: loanUrl(loan.cardId, loan.id) } : {}),
       fields: { checkedOut: { value: true }, ...present({ readingProgress: field(percent) }) },
     });
   }
@@ -123,6 +162,7 @@ export function fableSnapshots(lists: { list: FableList; entries: FableEntry[] }
       const progress = book.reading_progress;
       const author = book.authors?.[0]?.name?.trim();
       const isbn = book.isbn?.trim() || book.display_isbn?.trim();
+      const format = fableBookFormat(book);
       books.set(id, {
         shelves: [list.name],
         snapshot: {
@@ -130,6 +170,7 @@ export function fableSnapshots(lists: { list: FableList; entries: FableEntry[] }
           title,
           ...(author ? { author } : {}),
           ...(isbn ? { isbn } : {}),
+          ...(format ? { format } : {}),
           providerId: id,
           fields: present({
             readingProgress: field(progress?.current_percentage ?? undefined),
@@ -152,27 +193,79 @@ async function unverifiedWrite(): Promise<void> {
   throw new Error("Live writes are not verified for this app");
 }
 
-/** Use this function to find the one Fable catalog book for a Libby book: an ISBN match, else an exact title (and author) match. Throws when none or several fit, so no wrong book is ever added. */
-async function findFableBook(get: FableGet, book: NonNullable<SyncOperation["create"]>): Promise<string> {
+/** Use this function to offer Fable editions for `book` (Libby title, author, and optional ISBN). Dependencies: `get`, `isbn13`, `fableBookFormat`, `syncEditionScore`, `normalizeTitle`, and `normalizeName`. */
+async function searchFableBooks(
+  get: FableGet,
+  book: Pick<BookSnapshot, "title" | "author" | "isbn" | "format">,
+  minTitleScore: number,
+): Promise<FableCatalogMatch[]> {
   const search = async (q: string) =>
     (await get<{ books?: FableSearchBook[] }>("/api/search", { q, type: "book" })).books ?? [];
-  const wanted = book.isbn ? isbn13(book.isbn) : undefined;
-  if (book.isbn && wanted) {
-    const byIsbn = (await search(book.isbn)).filter(
-      (candidate) => candidate.isbn !== undefined && isbn13(candidate.isbn) === wanted,
+  const normalizeIsbn = (value: string | undefined) => value && isbn13(value);
+  const isbn = normalizeIsbn(book.isbn);
+  const fullTitle = normalizeTitle(book.title, false);
+  const author = book.author && normalizeName(book.author, true);
+  const [byIsbn, byTitle] = await Promise.all([
+    isbn ? search(isbn) : [],
+    search(book.title.split(/[:(]/, 1)[0]?.trim() || book.title),
+  ]);
+  const matches = new Map<string, FableCatalogMatch>();
+  const scores = new Map<string, number>();
+  const exactIsbns = new Set<string>();
+  const exactWorks = new Set<string>();
+  for (const candidate of [...byIsbn, ...byTitle]) {
+    if (typeof candidate?.id !== "string" || !candidate.id || typeof candidate.title !== "string") continue;
+    const candidateIsbn =
+      typeof candidate.isbn === "string" && candidate.isbn.trim()
+        ? candidate.isbn
+        : typeof candidate.display_isbn === "string"
+          ? candidate.display_isbn
+          : undefined;
+    const format = fableBookFormat(candidate);
+    const subtitle =
+      typeof candidate.subtitle === "string" && candidate.subtitle.trim() ? candidate.subtitle : undefined;
+    const sameIsbn = isbn && isbn === normalizeIsbn(candidateIsbn);
+    const score = syncEditionScore(book, {
+      title: candidate.title,
+      format,
+      isbn: candidateIsbn,
+      ...(subtitle ? { subtitle } : {}),
+    });
+    if (score === undefined || score < minTitleScore || score === 0) continue;
+    const authors = (Array.isArray(candidate.authors) ? candidate.authors : []).flatMap((entry) =>
+      typeof entry?.name === "string" && entry.name.trim() ? [entry.name.trim()] : [],
     );
-    if (byIsbn.length === 1) return byIsbn[0]!.id;
+    if (sameIsbn) exactIsbns.add(candidate.id);
+    if (
+      fullTitle &&
+      book.format === format &&
+      normalizeTitle(candidate.title, false) === fullTitle &&
+      (!author || authors.some((name) => normalizeName(name, true) === author))
+    )
+      exactWorks.add(candidate.id);
+    if (
+      matches.has(candidate.id) &&
+      ((scores.get(candidate.id) ?? 0) > score || (!format && matches.get(candidate.id)?.format))
+    )
+      continue;
+    scores.set(candidate.id, score);
+    matches.set(candidate.id, {
+      id: candidate.id,
+      title: candidate.title,
+      ...(subtitle ? { subtitle } : {}),
+      ...(format ? { format } : {}),
+      ...(authors.length ? { author: authors.join(", ") } : {}),
+      ...(candidateIsbn ? { isbn: candidateIsbn } : {}),
+    });
   }
-  const title = normalizeTitle(book.title, true);
-  let candidates = (await search(book.title)).filter((candidate) => normalizeTitle(candidate.title, true) === title);
-  if (candidates.length > 1 && book.author) {
-    const author = normalizeName(book.author, true);
-    candidates = candidates.filter((candidate) =>
-      candidate.authors?.some((entry) => entry.name && normalizeName(entry.name, true) === author),
-    );
-  }
-  if (candidates.length !== 1) throw new Error(`No single Fable book matches "${book.title}"`);
-  return candidates[0]!.id;
+  const exact = exactIsbns.size ? exactIsbns : exactWorks;
+  if (exact.size === 1) matches.get([...exact][0]!)!.automatic = true;
+  return [...matches.values()].sort(
+    (left, right) =>
+      Number(exactIsbns.has(right.id)) - Number(exactIsbns.has(left.id)) ||
+      Number(!!right.format) - Number(!!left.format) ||
+      scores.get(right.id)! - scores.get(left.id)!,
+  );
 }
 
 /** Use this function to stand in for an app with no login: its schema is empty, so it reads nothing and receives nothing. */
@@ -181,7 +274,11 @@ export function disconnectedAdapter(): SyncAdapter {
 }
 
 /** Use this function to read the signed-in Libby account's loans as a read-only sync adapter. */
-export function libbyAdapter(client: LibbyClient): SyncAdapter {
+export function libbyAdapter(
+  client: LibbyClient,
+  observe?: (state: SyncResponse) => void,
+  catalog?: CatalogReader,
+): SyncAdapter {
   return {
     // Reads of loans and audiobook progress were checked against a live account on 2026-11-19; Libby is never written.
     verified: true,
@@ -189,18 +286,49 @@ export function libbyAdapter(client: LibbyClient): SyncAdapter {
     writableFields: [],
     async read() {
       const state = await client.sync();
+      observe?.(state);
       const progress = new Map<string, number>();
+      const narrators = new Map<string, string[]>();
+      const identifiers = new Map<string, string>();
+      const cards = new Map(state.cards?.map((card) => [card.cardId, card]));
       // A loan whose position cannot be read keeps unknown progress; it never reads as 0.
       await Promise.all(
         (state.loans ?? []).map(async (loan) => {
-          const percent = await client
-            .loanProgress({ cardId: loan.cardId, titleId: loan.id, mediaType: loan.type?.id ?? "" })
-            .catch(() => undefined);
+          const card = cards.get(loan.cardId);
+          const format = bookFormat(loan.type);
+          const lookup =
+            catalog && card?.advantageKey && !loanIsbn(loan)
+              ? catalog.getLibraryMedia(card.advantageKey, loan.id).catch(() => undefined)
+              : undefined;
+          const [percent, credits] = await Promise.all([
+            client
+              .loanProgress({ cardId: loan.cardId, titleId: loan.id, mediaType: loan.type?.id ?? "" })
+              .catch(() => undefined),
+            lookup
+              ? lookup.then((media) => {
+                  const checkedOut =
+                    media?.id === loan.id && (!format || !media.type || bookFormat(media.type) === format)
+                      ? media
+                      : undefined;
+                  const isbn = checkedOut && loanIsbn(checkedOut, format);
+                  if (isbn) identifiers.set(loan.id, isbn);
+                  const direct = mediaNarrators(loan);
+                  return direct.length || !checkedOut || format !== "audiobook" ? direct : mediaNarrators(checkedOut);
+                })
+              : catalog
+                ? narratorsForItem(loan, card, catalog)
+                : [],
+          ]);
           // One title on several cards: keep the furthest position, independent of response order.
           if (percent !== undefined) progress.set(loan.id, Math.max(percent, progress.get(loan.id) ?? percent));
+          if (credits.length) narrators.set(loan.id, credits);
         }),
       );
-      return libbySnapshots(state, progress);
+      return libbySnapshots(state, progress).map((book) => {
+        const credits = book.providerId && narrators.get(book.providerId);
+        const isbn = book.providerId && identifiers.get(book.providerId);
+        return { ...book, ...(isbn ? { isbn } : {}), ...(credits ? { narrators: credits } : {}) };
+      });
     },
     write: unverifiedWrite,
   };
@@ -231,6 +359,7 @@ export function fableAdapter(get: FableGet, post?: FablePost): SyncAdapter {
     fields: FABLE_FIELDS,
     writableFields: [],
     ...(post ? { createFields: ["readingStatus"] } : {}),
+    searchCatalog: (book, minTitleScore) => searchFableBooks(get, book, minTitleScore),
     async read() {
       const lists = await fetchAllPages({ ...PAGE, media_type: "" }, (query) =>
         get<{ next: string | null; results: FableList[] }>("/api/me/book-lists", query),
@@ -250,8 +379,14 @@ export function fableAdapter(get: FableGet, post?: FablePost): SyncAdapter {
         return unverifiedWrite();
       await assertCurrent();
       const listId = await currentReadingId();
-      const bookId = await findFableBook(get, operation.create);
-      await post("/api/me/book-lists/picker", { book_id: bookId, book_list_ids: [listId], exclude_from: [] });
+      const matches = await searchFableBooks(get, operation.create, operation.create.minTitleScore ?? 1);
+      const { catalogId, catalogConfirmed } = operation.create;
+      const book = matches.find(
+        (candidate) => (!catalogId || candidate.id === catalogId) && (catalogConfirmed || candidate.automatic),
+      );
+      if (!book) throw new Error(`No confirmed Fable catalog edition for "${operation.create.title}"`);
+      await assertCurrent();
+      await post("/api/me/book-lists/picker", { book_id: book.id, book_list_ids: [listId], exclude_from: [] });
     },
   };
 }

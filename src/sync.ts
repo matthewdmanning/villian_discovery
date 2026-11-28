@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isbn13, normalizeName, normalizeTitle } from "./matcher.js";
+import { isbn13, normalizeName, normalizeTitle, titleSimilarity } from "./matcher.js";
 import { resolveSyncSettings, type SyncSettings } from "./sync-config.js";
 
 export const SnapshotValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())]);
@@ -16,8 +16,11 @@ export const BookSnapshotSchema = z
     title: z.string().min(1),
     author: z.string().min(1).optional(),
     isbn: z.string().min(1).optional(),
+    format: z.enum(["audiobook", "ebook", "print", "magazine"]).optional(),
     workId: z.string().min(1).optional(),
     providerId: z.string().min(1).optional(),
+    loanUrl: z.url({ protocol: /^https$/, hostname: /^libbyapp\.com$/ }).optional(),
+    narrators: z.array(z.string().min(1)).optional(),
     knownFields: z.array(z.string().min(1)).optional(),
     fields: z.record(z.string().min(1), SnapshotFieldSchema),
   })
@@ -121,10 +124,25 @@ function isbn13For(book: BookSnapshot): string | undefined {
  */
 function sharedIdentityKeys(book: BookSnapshot): string[] {
   const keys: string[] = [];
-  if (book.workId) keys.push(`work:${book.workId}`);
+  if (book.workId) keys.push(`work:${JSON.stringify([book.workId, book.format])}`);
   const isbn = isbn13For(book);
   if (isbn) keys.push(`isbn13:${isbn}`);
   return keys;
+}
+
+/** Use this function to score a candidate edition for a loan. Inputs: `book` — Libby title, format, and ISBN evidence; `candidate` — Fable title, format, ISBN, and optional subtitle. Dependencies: `isbn13` and `titleSimilarity`; incompatible formats have no score. */
+export function syncEditionScore(
+  book: Pick<BookSnapshot, "title" | "format" | "isbn">,
+  candidate: Pick<BookSnapshot, "title" | "format" | "isbn"> & { subtitle?: string },
+): number | undefined {
+  if (book.format && candidate.format && book.format !== candidate.format) return undefined;
+  const isbn = book.isbn && isbn13(book.isbn);
+  if (isbn && candidate.isbn && isbn === isbn13(candidate.isbn)) return 1;
+  return titleSimilarity(
+    book.title,
+    { id: "", title: candidate.title, ...(candidate.subtitle ? { subtitle: candidate.subtitle } : {}) },
+    true,
+  );
 }
 
 /**
@@ -201,6 +219,8 @@ function joinConfirmed(
     const right = fableIndex.get(fableId);
     if (left === undefined || right === undefined)
       throw new Error("A confirmed book match no longer exists; review matching again");
+    if (syncEditionScore(libby[left]!, fable[right]!) === undefined)
+      throw new Error("A confirmed book match uses incompatible formats");
     return { left, right };
   });
   const libbyInRoot = (root: string) => {
@@ -252,6 +272,12 @@ export function matchSnapshotGroups(
   for (let index = 0; index < fable.length; index++) collectIdentity("fable", fable[index]!, index);
   for (const entry of identityIndex.values()) {
     if (!entry.libby.length || !entry.fable.length) continue;
+    const formats = new Set(
+      [...entry.libby.map((index) => libby[index]!.format), ...entry.fable.map((index) => fable[index]!.format)].filter(
+        Boolean,
+      ),
+    );
+    if (formats.size > 1) continue;
     const firstLibby = entry.libby[0]!;
     const firstFable = entry.fable[0]!;
     for (const index of entry.libby.slice(1)) joinRoots(parents, `l:${firstLibby}`, `l:${index}`);
@@ -266,8 +292,9 @@ export function matchSnapshotGroups(
     const matched = matchedRoots(parents, libby.length, fable.length);
     const addWork = (provider: "libby" | "fable", book: BookSnapshot, index: number): void => {
       if (matched.has(findRoot(parents, `${provider === "libby" ? "l" : "f"}:${index}`))) return;
-      const key = workKey(book);
-      if (!key) return;
+      const work = workKey(book);
+      if (!work) return;
+      const key = JSON.stringify([work, book.format]);
       const entry = workIndex.get(key) ?? { libby: [], fable: [] };
       entry[provider].push(index);
       workIndex.set(key, entry);

@@ -1,9 +1,10 @@
-import { Ban, CircleCheck, CircleX, RefreshCw } from "lucide-react";
+import { Check, CircleCheck, CircleX, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { isbn13 } from "../../../src/matcher.ts";
 import type { SyncField, SyncProvider } from "../../../src/sync.ts";
 import { SYNC_FALLBACKS } from "../../../src/sync-config.ts";
 import { syncDecisionKey } from "../../../src/sync-plan.ts";
-import { BookLine, BookSections } from "../components/SyncBook.tsx";
+import { BookLine, BookSections, ProgressValue, ReadingStatus, Stars } from "../components/SyncBook.tsx";
 import { APP_NAMES, AppValue, SyncChange } from "../components/SyncChange.tsx";
 import { SyncSettingsPanel } from "../components/SyncSettings.tsx";
 import { CooldownButton, Empty, Panel, Screen } from "../components/ui.tsx";
@@ -11,12 +12,52 @@ import { type BookSummary, hasValue, LINE_FIELDS, summarizeBooks } from "../lib/
 import { displaySyncValue as displayValue, SYNC_FIELD_LABELS as labels } from "../lib/sync-format.ts";
 import { useSync } from "../lib/use-sync.ts";
 
-const TABS = ["Changes", "Library", "Settings"] as const;
+const TABS = ["Shelf", "Library", "Settings"] as const;
 
 export { summarizeSyncResult } from "../lib/sync-state.ts";
+/** Use this function to extract an ISBN from a book snapshot or its provider identifier. Inputs: `book` — snapshot identifiers. Dependencies: None. */
+export function extractIsbn(book: {
+  isbn?: string | undefined;
+  bookId?: string | undefined;
+  workId?: string | undefined;
+}): string | undefined {
+  if (book.isbn) return book.isbn;
+  if (book.bookId?.toLowerCase().startsWith("isbn:")) return book.bookId.slice(5);
+  if (book.workId?.toLowerCase().startsWith("isbn:")) return book.workId.slice(5);
+  return undefined;
+}
+
+/** Use this function to normalize ISBN-10 or ISBN-13 values before exact edition matching. Inputs: `isbn` — raw ISBN text. Dependencies: `isbn13`. */
+export function normalizeIsbn(isbn?: string): string | undefined {
+  return isbn ? isbn13(isbn) : undefined;
+}
+
+/** Use this function to identify an exact ISBN match among candidate editions. Inputs: `book` — source snapshot; `candidates` — possible editions. Dependencies: `extractIsbn`, `normalizeIsbn`. */
+export function hasExactIsbnMatch(
+  book: { isbn?: string | undefined; bookId?: string | undefined; workId?: string | undefined },
+  candidates: Array<{ isbn?: string | undefined; bookId?: string | undefined; workId?: string | undefined }>,
+): boolean {
+  const bookIsbn = normalizeIsbn(extractIsbn(book));
+  return Boolean(bookIsbn && candidates.some((candidate) => normalizeIsbn(extractIsbn(candidate)) === bookIsbn));
+}
+
+/** Use this function to map provider reading status values to the shelf display status. Inputs: `value` — provider status. Dependencies: None. */
+export function toStatusKey(value: unknown): "unopened" | "progress" | "dnf" | "finished" | undefined {
+  if (value === "finished") return "finished";
+  if (value === "currently-reading") return "progress";
+  if (value === "dnf" || value === "did-not-finish") return "dnf";
+  if (value === "unopened") return "unopened";
+  return undefined;
+}
 
 /** Use this screen to compare Libby and Fable through the store's API and retain the last successful reconciliation in the store. */
-export function SyncScreen() {
+export function SyncScreen({
+  openLoan,
+  compactLayout = false,
+}: {
+  openLoan?: (url: string) => Promise<void>;
+  compactLayout?: boolean;
+} = {}) {
   const {
     api,
     syncResult,
@@ -34,10 +75,12 @@ export function SyncScreen() {
     visibleOperations,
     missingApproval,
     selectOperations,
+    operations,
     outcomeOf,
     resultSummary,
+    setError,
   } = useSync();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Changes");
+  const [tab, setTab] = useState<(typeof TABS)[number]>("Shelf");
 
   /** Use this function to show one app's side of a conflict; ordinary metadata sides are buttons that resolve the conflict with a new preview, while Libby-authoritative fields cannot be overridden. */
   function conflictSide(row: SyncField, provider: SyncProvider) {
@@ -95,34 +138,100 @@ export function SyncScreen() {
     );
   }
 
+  const pendingGroups = new Set(operations.filter((op) => outcomeOf(op.id) !== "success").map((op) => op.groupId));
+  const bookGroups = new Map(syncResult?.plan.groups.map((group) => [group.groupId, group]));
+  const matchReviewIds = new Set(
+    syncResult?.plan.schemas.fable.length ? syncResult.plan.conflicts.flatMap((conflict) => conflict.libbyBookIds) : [],
+  );
+  const books = summarizeBooks(syncResult?.rows ?? []);
+  for (const book of books) {
+    if (
+      bookGroups.get(book.groupId)?.libby.some((entry) => matchReviewIds.has(entry.bookId)) ||
+      book.rows.some((row) => row.conflict && row.libby && row.fable)
+    )
+      pendingGroups.add(book.groupId);
+  }
+  const shelfBooks = books.filter((book) => book.checkedOut || pendingGroups.has(book.groupId));
+  const returnedBooks = new Map(syncResult?.plan.pendingReturned?.map((book) => [`returned:${book.bookId}`, book]));
+  for (const [groupId, book] of returnedBooks) {
+    shelfBooks.push({
+      groupId,
+      title: book.title,
+      checkedOut: false,
+      progress: book.progress,
+      status: book.progress === 100 ? "finished" : book.progress ? "progress" : "unopened",
+      rows: [],
+    });
+  }
+  const formatLabels = { audiobook: "Audiobook", ebook: "Ebook", print: "Physical book", magazine: "Magazine" };
+  /** Use this function to label a match-picker `edition` with its title, format, and any author and ISBN. Inputs: `edition` — candidate edition metadata. Dependencies: `formatLabels`. */
+  const formatEdition = (edition: {
+    title: string;
+    subtitle?: string | undefined;
+    author?: string | undefined;
+    isbn?: string | undefined;
+    format?: keyof typeof formatLabels | undefined;
+  }) =>
+    [
+      edition.title,
+      edition.subtitle,
+      edition.author && `by ${edition.author}`,
+      edition.format ? formatLabels[edition.format] : "Format unknown",
+      edition.isbn && `ISBN ${edition.isbn}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  const catalogMatches = syncResult?.plan.catalogMatches ?? {};
+  const catalogSelections = syncResult?.plan.options.catalogSelections ?? {};
+  const matchBookIds = syncResult
+    ? [
+        ...new Set([
+          ...syncResult.plan.conflicts.flatMap((conflict) => conflict.libbyBookIds),
+          ...Object.keys(syncResult.plan.options.matches ?? {}),
+          ...Object.keys(catalogSelections),
+          ...Object.keys(catalogMatches).filter((bookId) => {
+            const results = catalogMatches[bookId];
+            return results === null || (results?.length ?? 0) > 0;
+          }),
+        ]),
+      ]
+    : [];
+
   return (
     <Screen
       id="sync"
+      compactLayout={compactLayout}
       actions={
-        <div className="flex flex-wrap gap-3">
-          <CooldownButton
-            className="btn btn-primary btn-pop btn-lg"
-            busy={busy}
-            disabled={!saved}
-            cooldown={cooldown}
-            onClick={() => void sync()}
-          >
-            {busy ? <span className="loading loading-spinner" /> : <RefreshCw className="size-5" />}
-            Preview changes
-          </CooldownButton>
-          <button
-            type="button"
-            className="btn btn-secondary btn-pop btn-lg"
-            disabled={busy || !saved || !remaining.length || missingApproval}
-            onClick={apply}
-          >
-            {api.demo ? "Apply demo changes" : "Apply selected changes"}
-          </button>
-        </div>
+        tab === "Shelf" && (
+          <div className={`flex flex-wrap ${compactLayout ? "gap-2" : "gap-3"}`}>
+            <CooldownButton
+              className={`btn btn-primary btn-pop ${compactLayout ? "btn-sm" : "btn-lg"}`}
+              busy={busy}
+              disabled={!saved}
+              cooldown={cooldown}
+              onClick={() => void sync()}
+            >
+              {busy ? (
+                <span className="loading loading-spinner" />
+              ) : (
+                <RefreshCw className={compactLayout ? "size-4" : "size-5"} />
+              )}
+              Preview changes
+            </CooldownButton>
+            <button
+              type="button"
+              className={`btn btn-secondary btn-pop ${compactLayout ? "btn-sm" : "btn-lg"}`}
+              disabled={busy || !saved || !remaining.length || missingApproval}
+              onClick={apply}
+            >
+              {api.demo ? "Apply demo changes" : "Apply selected changes"}
+            </button>
+          </div>
+        )
       }
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="tablist" className="tabs tabs-box w-fit">
+        <div role="tablist" className={`tabs tabs-box w-fit ${compactLayout ? "tabs-sm" : ""}`}>
           {TABS.map((name) => (
             <button
               key={name}
@@ -136,18 +245,21 @@ export function SyncScreen() {
             </button>
           ))}
         </div>
-        {tab !== "Settings" && (
+        {!compactLayout && tab !== "Settings" && (
           <p className="text-sm font-semibold">
             <span className="text-libby">Libby</span> · <span className="text-fable">Fable</span>
           </p>
         )}
       </div>
       {busy ? (
-        <p role="status" className="alert alert-info border-2 border-pop">
+        <p role="status" className={`alert alert-info border-2 border-pop ${compactLayout ? "px-2 py-1 text-xs" : ""}`}>
           Fetching library changes…
         </p>
       ) : error ? (
-        <div role="alert" className="alert alert-error border-2 border-pop">
+        <div
+          role="alert"
+          className={`alert alert-error border-2 border-pop ${compactLayout ? "px-2 py-1 text-xs" : ""}`}
+        >
           <span>
             <strong>Fail</strong> — {error}
             {syncResult ? ". The previous comparison is shown below." : ""}
@@ -157,7 +269,7 @@ export function SyncScreen() {
         resultSummary && (
           <p
             role={resultSummary.status === "Success" ? "status" : "alert"}
-            className={`alert border-2 border-pop ${resultSummary.status === "Success" ? "alert-success" : "alert-error"}`}
+            className={`alert border-2 border-pop ${resultSummary.status === "Success" ? "alert-success" : "alert-error"} ${compactLayout ? "px-2 py-1 text-xs" : ""}`}
           >
             {resultSummary.status === "Success" ? (
               <CircleCheck className="size-5" aria-hidden="true" />
@@ -189,7 +301,7 @@ export function SyncScreen() {
         <div role="tabpanel" aria-label="Library" className="contents">
           <Panel title="Library">
             <BookSections
-              books={summarizeBooks(syncResult.rows)}
+              books={books}
               render={(book) => {
                 const details = book.rows.filter((row) =>
                   row.conflict
@@ -212,7 +324,7 @@ export function SyncScreen() {
           </Panel>
         </div>
       ) : syncResult ? (
-        <div role="tabpanel" aria-label="Changes" className="contents">
+        <div role="tabpanel" aria-label="Shelf" className="contents">
           <p role="status" className="text-sm opacity-70">
             {new Set(syncResult.rows.map((row) => row.bookId)).size} books · {syncResult.rows.length} fields ·{" "}
             {syncResult.rows.filter((row) => row.conflict).length} need review
@@ -228,55 +340,117 @@ export function SyncScreen() {
                 </span>
               ))}
           </p>
-          {syncResult.plan.conflicts.map((conflict) => (
-            <div
-              key={JSON.stringify([conflict.libbyBookIds, conflict.fableBookIds, conflict.message])}
-              role="alert"
-              className="alert alert-warning"
-            >
-              <span>Book matching needs review: {conflict.message}. No ambiguous book changes will be applied.</span>
-            </div>
-          ))}
-          {(syncResult.plan.conflicts.length > 0 || Object.keys(syncResult.plan.options.matches ?? {}).length > 0) && (
-            <Panel title="Review book matches">
-              <p className="mb-3 text-sm opacity-70">
-                Only confirm editions that represent the same work. Passage annotations still need compatible edition
-                and location evidence.
-              </p>
+          {matchBookIds.length > 0 && (
+            <Panel title="Unsynced Checkouts">
               <div className="space-y-3">
-                {[
-                  ...new Set([
-                    ...syncResult.plan.conflicts.flatMap((conflict) => conflict.libbyBookIds),
-                    ...Object.keys(syncResult.plan.options.matches ?? {}),
-                  ]),
-                ].map((bookId) => {
+                {matchBookIds.map((bookId) => {
                   const book = syncResult.plan.snapshots.libby.find((candidate) => candidate.bookId === bookId);
                   if (!book) return null;
+                  const selectedLibrary = syncResult.plan.options.matches?.[bookId];
+                  const selectedCatalog = catalogSelections[bookId];
+                  const automaticAdd =
+                    !selectedCatalog &&
+                    syncResult.plan.operations.some(
+                      (operation) => operation.bookId === bookId && operation.create?.catalogId,
+                    );
+                  const libraryIds = new Set(
+                    syncResult.plan.conflicts
+                      .filter((conflict) => conflict.libbyBookIds.includes(bookId))
+                      .flatMap((conflict) => conflict.fableBookIds),
+                  );
+                  const libraryCandidates = syncResult.plan.snapshots.fable.filter(
+                    (candidate) => libraryIds.has(candidate.bookId) || candidate.bookId === selectedLibrary,
+                  );
+                  const catalogResult = catalogMatches[bookId];
+                  const catalogCandidates = (catalogResult ?? []).filter(
+                    (candidate) => !syncResult.plan.snapshots.fable.some((saved) => saved.providerId === candidate.id),
+                  );
+                  const selected = selectedLibrary
+                    ? `library:${selectedLibrary}`
+                    : selectedCatalog
+                      ? `catalog:${selectedCatalog}`
+                      : "";
+                  const hasChoice =
+                    libraryCandidates.length > 0 ||
+                    catalogCandidates.length > 0 ||
+                    !!(selectedLibrary || selectedCatalog);
+                  const noCatalogResult =
+                    catalogResult === null
+                      ? "Fable catalog lookup failed. Preview again to retry."
+                      : "No matching Fable editions";
+                  const hasExactIsbn = hasExactIsbnMatch(book, [...libraryCandidates, ...(catalogResult ?? [])]);
+                  if (hasExactIsbn) {
+                    return (
+                      <div key={bookId} className="grid grid-cols-[auto_1fr] items-start gap-x-2 text-sm font-semibold">
+                        <div className="pt-0.5 text-success">
+                          <Check className="size-4" role="img" aria-label="Exact ISBN match" />
+                        </div>
+                        <div className="min-w-0">
+                          <span>
+                            Match {book.title} by {book.author ?? "Unknown author"}
+                            {book.format && ` · ${formatLabels[book.format]}`}
+                            {book.isbn && ` · ISBN ${book.isbn}`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
                   return (
                     <label key={bookId} className="flex flex-col gap-2 text-sm font-semibold">
                       <span>
                         Match {book.title} by {book.author ?? "Unknown author"}
+                        {book.format && ` · ${formatLabels[book.format]}`}
+                        {book.isbn && ` · ISBN ${book.isbn}`}
                       </span>
                       <select
                         className="select w-full"
                         aria-label={`Match ${book.title}`}
-                        value={syncResult.plan.options.matches?.[bookId] ?? ""}
-                        disabled={busy || !saved}
+                        value={selected}
+                        disabled={busy || !saved || !hasChoice}
                         onChange={(event) => {
-                          const { [bookId]: _previous, ...others } = syncResult.plan.options.matches ?? {};
+                          const { [bookId]: _previousMatch, ...otherMatches } = syncResult.plan.options.matches ?? {};
+                          const { [bookId]: _previousCatalog, ...otherCatalogSelections } = catalogSelections;
+                          const choice = event.target.value;
                           void sync({
                             ...syncResult.plan.options,
-                            matches: event.target.value ? { ...others, [bookId]: event.target.value } : others,
+                            matches: otherMatches,
+                            catalogSelections: otherCatalogSelections,
+                            ...(choice.startsWith("library:")
+                              ? { matches: { ...otherMatches, [bookId]: choice.slice("library:".length) } }
+                              : choice.startsWith("catalog:")
+                                ? {
+                                    catalogSelections: {
+                                      ...otherCatalogSelections,
+                                      [bookId]: choice.slice("catalog:".length),
+                                    },
+                                  }
+                                : {}),
                           });
                         }}
                       >
-                        <option value="">Leave unmatched</option>
-                        {syncResult.plan.snapshots.fable.map((candidate) => (
-                          <option key={candidate.bookId} value={candidate.bookId}>
-                            {candidate.title} by {candidate.author ?? "Unknown author"}
-                          </option>
-                        ))}
+                        <option value="">
+                          {automaticAdd ? "Use suggested edition" : hasChoice ? "Leave unmatched" : noCatalogResult}
+                        </option>
+                        {libraryCandidates.length > 0 && (
+                          <optgroup label="Fable library">
+                            {libraryCandidates.map((candidate) => (
+                              <option key={`library:${candidate.bookId}`} value={`library:${candidate.bookId}`}>
+                                {formatEdition(candidate)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {catalogCandidates.length > 0 && (
+                          <optgroup label="Fable catalog">
+                            {catalogCandidates.map((candidate) => (
+                              <option key={`catalog:${candidate.id}`} value={`catalog:${candidate.id}`}>
+                                {formatEdition(candidate)}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
+                      {hasChoice && catalogResult === null && <span className="font-normal">{noCatalogResult}</span>}
                     </label>
                   );
                 })}
@@ -324,70 +498,139 @@ export function SyncScreen() {
                 </strong>
               </div>
             )}
-            {!syncResult.plan.operations.length ? (
-              <p>No applicable changes in this preview.</p>
-            ) : (
-              <BookSections
-                books={summarizeBooks(syncResult.rows).filter((book) =>
-                  visibleOperations.some((operation) => operation.groupId === book.groupId),
-                )}
-                render={(book) => {
-                  const bookOperations = visibleOperations.filter((operation) => operation.groupId === book.groupId);
-                  const lineOperations = bookOperations.filter(
-                    (operation) => LINE_FIELDS.has(operation.field) && !operation.removal,
-                  );
-                  const detailOperations = bookOperations.filter((operation) => !lineOperations.includes(operation));
-                  const selectable = lineOperations.filter(
-                    (operation) => !operation.blocked && outcomeOf(operation.id) !== "success",
-                  );
-                  const blocked = lineOperations.filter((operation) => operation.blocked);
-                  const progress = lineOperations.find((operation) => operation.field === "readingProgress");
-                  const before = progress?.before?.value;
-                  return (
-                    <BookLine
-                      key={book.groupId}
-                      book={book}
-                      progressChange={
-                        typeof progress?.after === "number"
-                          ? progress.after - (typeof before === "number" ? before : 0)
-                          : undefined
-                      }
-                      lead={
-                        <>
-                          {lineOperations.length > 0 ? (
-                            <input
-                              type="checkbox"
-                              className="checkbox checkbox-primary checkbox-sm"
-                              aria-label={`Apply changes for ${book.title}`}
-                              checked={
-                                selectable.length > 0 &&
-                                selectable.every((operation) => review.selected.includes(operation.id))
-                              }
-                              disabled={busy || !saved || !selectable.length}
-                              onChange={(event) =>
-                                selectOperations(
-                                  selectable.map((operation) => operation.id),
-                                  event.target.checked,
-                                )
-                              }
-                            />
-                          ) : (
-                            <span className="w-5 shrink-0" />
+            {!shelfBooks.some((book) => book.checkedOut) && (
+              <p>{syncResult.plan.schemas.libby.length ? "Nothing checked out" : "Connect Libby to see your Shelf."}</p>
+            )}
+            <BookSections
+              books={shelfBooks}
+              pending
+              render={(book) => {
+                const retained = returnedBooks.has(book.groupId);
+                const bookOperations = visibleOperations.filter((operation) => operation.groupId === book.groupId);
+                const lineOperations = bookOperations.filter(
+                  (operation) => LINE_FIELDS.has(operation.field) && !operation.removal && !operation.blocked,
+                );
+                const detailOperations = bookOperations.filter((operation) => !lineOperations.includes(operation));
+                const selectable = lineOperations.filter(
+                  (operation) => !operation.blocked && outcomeOf(operation.id) !== "success",
+                );
+                const progress = lineOperations.find((operation) => operation.field === "readingProgress");
+                const before = progress?.before?.value;
+                const loans = book.checkedOut ? (bookGroups.get(book.groupId)?.libby ?? []) : [];
+                const loan = loans.find((entry) => entry.loanUrl)?.loanUrl;
+                const narrators = [...new Set(loans.flatMap((entry) => entry.narrators ?? []))];
+                const conflictingFields = book.rows.filter((row) => row.conflict && row.libby && row.fable);
+                const ratingOp = bookOperations.find((operation) => operation.field === "rating");
+                const beforeRating = typeof ratingOp?.before?.value === "number" ? ratingOp.before.value : undefined;
+                const afterRating = typeof ratingOp?.after === "number" ? ratingOp.after : undefined;
+                const hasRatingChange =
+                  ratingOp !== undefined && afterRating !== undefined && afterRating !== beforeRating;
+                const ratingCell = hasRatingChange ? (
+                  <span className="inline-flex items-center gap-1 sm:text-lg">
+                    {beforeRating !== undefined && <Stars value={beforeRating} />}
+                    <span className="opacity-60 text-xs">→</span>
+                    <Stars value={afterRating} />
+                  </span>
+                ) : undefined;
+                const statusOp = bookOperations.find(
+                  (operation) => operation.field === "readingStatus" || operation.field === "finished",
+                );
+                let beforeStatus: "unopened" | "progress" | "dnf" | "finished" | undefined;
+                let afterStatus: "unopened" | "progress" | "dnf" | "finished" | undefined;
+                if (statusOp) {
+                  if (statusOp.field === "readingStatus") {
+                    beforeStatus = toStatusKey(statusOp.before?.value) ?? book.status;
+                    afterStatus = toStatusKey(statusOp.after);
+                  } else if (statusOp.field === "finished") {
+                    if (statusOp.after === true) {
+                      afterStatus = "finished";
+                      beforeStatus =
+                        toStatusKey(statusOp.before?.value) ?? (book.status === "finished" ? "progress" : book.status);
+                    } else if (statusOp.after === false) {
+                      afterStatus = "progress";
+                      beforeStatus = "finished";
+                    }
+                  }
+                }
+                const hasStatusChange = Boolean(
+                  afterStatus !== undefined && beforeStatus !== undefined && afterStatus !== beforeStatus,
+                );
+                const statusCell =
+                  hasStatusChange && beforeStatus && afterStatus ? (
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                      <ReadingStatus status={beforeStatus} />
+                      <span className="opacity-60 text-xs">→</span>
+                      <ReadingStatus status={afterStatus} />
+                    </span>
+                  ) : undefined;
+                const progressCell =
+                  book.progress === undefined && typeof progress?.after === "number" ? (
+                    <ProgressValue value={progress.after} />
+                  ) : undefined;
+                return (
+                  <BookLine
+                    key={book.groupId}
+                    book={book}
+                    pending={retained || pendingGroups.has(book.groupId)}
+                    action={
+                      retained ? (
+                        <p className="pb-2 text-sm opacity-70">
+                          Last seen on your Shelf. Sync is unavailable after return.
+                        </p>
+                      ) : narrators.length || (openLoan && loan) ? (
+                        <div className="flex flex-wrap items-center gap-x-3 pb-2 text-sm">
+                          {narrators.length > 0 && <p className="opacity-70">Narrated by {narrators.join(", ")}</p>}
+                          {openLoan && loan && (
+                            <button
+                              type="button"
+                              className="link"
+                              onClick={() => void openLoan(loan).catch((failure) => setError(String(failure)))}
+                            >
+                              Open in Libby<span className="sr-only">: {book.title}</span>
+                            </button>
                           )}
-                          {blocked.length > 0 && (
-                            <span title={blocked.map((operation) => operation.blocked).join("; ")}>
-                              <Ban className="size-4 shrink-0 text-warning" role="img" aria-label="Blocked" />
-                            </span>
+                        </div>
+                      ) : undefined
+                    }
+                    progressCell={progressCell}
+                    progressChange={
+                      typeof progress?.after === "number"
+                        ? progress.after - (typeof before === "number" ? before : 0)
+                        : undefined
+                    }
+                    ratingCell={ratingCell}
+                    statusCell={statusCell}
+                    lead={
+                      <>
+                        {selectable.length > 0 && (
+                          <input
+                            type="checkbox"
+                            className="checkbox checkbox-primary checkbox-sm"
+                            aria-label={`Apply changes for ${book.title}`}
+                            checked={
+                              selectable.length > 0 &&
+                              selectable.every((operation) => review.selected.includes(operation.id))
+                            }
+                            disabled={busy || !saved || !selectable.length}
+                            onChange={(event) =>
+                              selectOperations(
+                                selectable.map((operation) => operation.id),
+                                event.target.checked,
+                              )
+                            }
+                          />
+                        )}
+                        {lineOperations.length > 0 &&
+                          lineOperations.every((operation) => outcomeOf(operation.id) === "success") && (
+                            <CircleCheck className="size-4 shrink-0 text-success" role="img" aria-label="Applied" />
                           )}
-                          {lineOperations.length > 0 &&
-                            lineOperations.every((operation) => outcomeOf(operation.id) === "success") && (
-                              <CircleCheck className="size-4 shrink-0 text-success" role="img" aria-label="Applied" />
-                            )}
-                        </>
-                      }
-                      details={
-                        detailOperations.length
-                          ? detailOperations.map((operation) => (
+                      </>
+                    }
+                    details={
+                      detailOperations.length || conflictingFields.length
+                        ? [
+                            ...conflictingFields.map(fieldDetail),
+                            ...detailOperations.map((operation) => (
                               <SyncChange
                                 key={operation.id}
                                 operation={operation}
@@ -398,15 +641,15 @@ export function SyncScreen() {
                                 onSelect={(value) => toggleReview("selected", operation.id, value)}
                                 onRemoval={(value) => toggleReview("removals", operation.id, value)}
                               />
-                            ))
-                          : undefined
-                      }
-                      open={detailOperations.some((operation) => operation.removal)}
-                    />
-                  );
-                }}
-              />
-            )}
+                            )),
+                          ]
+                        : undefined
+                    }
+                    open={detailOperations.some((operation) => operation.removal)}
+                  />
+                );
+              }}
+            />
           </Panel>
         </div>
       ) : (

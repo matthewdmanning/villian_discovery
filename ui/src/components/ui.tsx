@@ -16,20 +16,22 @@ export function Screen({
   actions,
   children,
   nested = false,
+  compactLayout = false,
 }: {
   id: ScreenId;
   actions?: ReactNode;
   children: ReactNode;
   nested?: boolean;
+  compactLayout?: boolean;
 }) {
   const s = screen(id);
   const Title = nested ? "h2" : "h1";
   return (
     <section
       aria-labelledby={`${id}-title`}
-      className={`mx-auto w-full max-w-5xl ${compact ? "space-y-4" : "space-y-6"}`}
+      className={`mx-auto w-full max-w-5xl ${compactLayout ? "space-y-2 text-sm" : compact ? "space-y-4" : "space-y-6"}`}
     >
-      <header className="flex flex-wrap items-center justify-between gap-3">
+      <header className={compactLayout ? "sr-only" : "flex flex-wrap items-center justify-between gap-3"}>
         <Title id={`${id}-title`} className="text-2xl font-semibold sm:text-3xl">
           {s?.title}
         </Title>
@@ -148,7 +150,7 @@ export function Segmented<T extends string>(props: {
 }
 
 /**
- * A button for an external query. While `cooldown` seconds remain it is disabled and counts down,
+ * A button for an external query. While `cooldown` seconds remain it is disabled,
  * so repeated clicks cannot flood Libby, Fable or a library catalog.
  */
 export function CooldownButton(props: {
@@ -160,29 +162,9 @@ export function CooldownButton(props: {
   children: ReactNode;
 }) {
   const { onClick, cooldown, busy = false, disabled = false, className = "btn btn-ghost btn-sm", children } = props;
-  const waiting = cooldown > 0 && !busy;
-  // The countdown is a description, so the button keeps one accessible name throughout.
-  const hint = useId();
   return (
-    <button
-      type="button"
-      className={className}
-      disabled={disabled || busy || cooldown > 0}
-      onClick={onClick}
-      title={waiting ? `Available again in ${cooldown} s` : undefined}
-      aria-describedby={waiting ? hint : undefined}
-    >
+    <button type="button" className={className} disabled={busy || cooldown > 0 || disabled} onClick={onClick}>
       {children}
-      {waiting && (
-        <>
-          <span aria-hidden className="badge badge-ghost badge-sm tabular-nums">
-            {cooldown}s
-          </span>
-          <span id={hint} hidden>
-            Available again in {cooldown} seconds
-          </span>
-        </>
-      )}
     </button>
   );
 }

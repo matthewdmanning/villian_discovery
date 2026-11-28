@@ -38,6 +38,8 @@ interface Store {
   cardsLoading: boolean;
   cardsError?: string;
   refreshCards(): void;
+  /** Reload cards immediately after an observed account change. */
+  forceRefreshCards(): void;
   /** Seconds until `refreshCards` asks Libby again. */
   cardsCooldown: number;
   login(options: LoginOptions): Promise<void>;
@@ -143,6 +145,7 @@ export function StoreProvider({ children, api = demoApi }: { children: ReactNode
     cardsLoading,
     ...(cardsError && { cardsError }),
     refreshCards,
+    forceRefreshCards: reloadCards,
     cardsCooldown,
     login,
     books,
