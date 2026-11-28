@@ -20,6 +20,7 @@ import { type BrowserSession, openBrowserSession, openSite } from "./discovery/b
 import { browserGet, type FableGet, LIBRARY_URL, waitForLogin } from "./discovery/export-lists.js";
 import { createClients } from "./index.js";
 import type { BookRequest } from "./input.js";
+import { createIsbnLookup } from "./isbn-lookup.js";
 import { LibbyClient } from "./libby-client.js";
 import { createCardCache, listLibraryAvailability } from "./libby-list-availability.js";
 import { readLists } from "./libby-lists.js";
@@ -47,6 +48,8 @@ const TYPES: Record<string, string> = {
 const config = parseConfig(mergeConfig(configFromEnv()));
 const logger = createLogger(config.logLevel);
 const http = { ...config.http, logger };
+const googleApiKey = process.env.GOOGLE_BOOKS_API_KEY?.trim();
+const lookupIsbn = createIsbnLookup(googleApiKey ? { googleApiKey } : {});
 const publicCatalog = new ThunderClient({
   ...http,
   timeoutMs: Math.min(http.timeoutMs, 8_000),
@@ -187,6 +190,11 @@ const apiRoutes: Record<string, Handler> = {
   "GET /api/lists": async () => readLists(await libby()),
   "POST /api/lists/availability": async (input) => listAvailability((input as { titleId: string })?.titleId),
   "GET /api/tags": async () => (await libby()).tags(),
+  "POST /api/isbn": async (input) => {
+    const isbn = (input as { isbn?: unknown } | null)?.isbn;
+    if (typeof isbn !== "string") throw new Error("Enter a valid ISBN-10 or ISBN-13.");
+    return lookupIsbn(isbn);
+  },
   "POST /api/search": async (input) => {
     const { book, config: settings } = input as { book: BookRequest; config?: unknown };
     const { runner, cfg, libby } = await liveRunner(settings);
@@ -217,6 +225,7 @@ const routes = withCooldown(
       "GET /api/lists",
       "POST /api/lists/availability",
       "GET /api/tags",
+      "POST /api/isbn",
       "POST /api/search",
       "POST /api/sync/preview",
     ],

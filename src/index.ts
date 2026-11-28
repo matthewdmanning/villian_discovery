@@ -2,6 +2,7 @@ export * from "./auth.js";
 export * from "./config.js";
 export * from "./errors.js";
 export * from "./input.js";
+export * from "./isbn-lookup.js";
 export { DEFAULT_SENTRY_BASE_URL, isValidSuspendDays, LibbyClient } from "./libby-client.js";
 export { createLogger, type Logger, type LogLevel } from "./logger.js";
 export * from "./matcher.js";

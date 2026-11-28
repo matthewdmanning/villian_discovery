@@ -1,5 +1,6 @@
 import type { Config } from "../../src/config.ts";
 import type { BookRequest } from "../../src/input.ts";
+import { createIsbnLookup } from "../../src/isbn-lookup.ts";
 import type { CatalogReader } from "../../src/libby-audiobooks.ts";
 import { listLibraryAvailability } from "../../src/libby-list-availability.ts";
 import { readLists } from "../../src/libby-lists.ts";
@@ -167,6 +168,7 @@ export function forgetCachedReads() {
 
 export const extensionApi: LibraryApi = {
   tags: cachedRead(reads, "tags", tags),
+  lookupIsbn: cachedRead(reads, "lookupIsbn", createIsbnLookup()),
   listAvailability: cachedRead(reads, "listAvailability", async (titleId: string) => {
     const client = await libbyClient();
     if (!client) throw new Error(libbyProblem() || "Connect Libby first");

@@ -145,6 +145,8 @@ Runs on built-in demo data (`demo` badge): nothing reaches Libby. Demo pairing d
 
 Search shows your tagged books when you open it. Use the Include and Exclude tag buttons to filter the list. Enter text to search the library catalog, or narrow the tagged list when tag filters are selected. You can search by title, author, or ISBN, and use optional fields such as `title:Hail Mary author:Weir`.
 
+With tag filters active, Search looks up the ISBN on Open Library and falls back to Google Books. The lookup sends only the ISBN and uses public book metadata to match title and author against your tagged books. The local server can use an optional `GOOGLE_BOOKS_API_KEY` environment variable for Google Books. The extension uses the keyless API.
+
 Catalog results group editions with the same title and author so you can compare their formats and libraries. **Best match** ranks titles by their strongest visible edition, with exact ISBN hits first. In live Search, an ISBN lookup includes other editions when the full catalog title and all credited author IDs agree. Exact ISBN results stay visible if a library's alternate-edition lookup fails or the catalog cannot confirm the credits.
 Audiobook options in Search and audiobook entries on the Shelf show narrator credits when available.
 

@@ -5,7 +5,7 @@ import { mediaNarrators } from "../../../src/matcher.ts";
 import { TagFilters, TaggedResults } from "../components/TagSearch.tsx";
 import { dash, Empty, Panel, Screen } from "../components/ui.tsx";
 import type { Match } from "../lib/api.ts";
-import { matchesListSearch, parseSearchQuery } from "../lib/search-query.ts";
+import { matchesIsbnBook, matchesListSearch, parseSearchQuery } from "../lib/search-query.ts";
 import { filterSearchGroups, groupSearchResults, type SearchFilters } from "../lib/search-results.ts";
 import { screen } from "../lib/spec.ts";
 import { useStore } from "../lib/store.tsx";
@@ -63,23 +63,33 @@ export function SearchScreen() {
     (lists.multiquery && lists.saved.length > 0) ||
     [...lists.draft.includes, ...lists.draft.excludes].some((group) => group.length > 0);
   const showTagged = !submitted || hasTagFilters;
-  const catalogQuery = submitted && (!showTagged || submitted.isbn) ? submitted : undefined;
-  const catalog = useResource(
+  const catalogQuery = showTagged ? undefined : submitted;
+  const isbn = showTagged ? submitted?.isbn : undefined;
+  const request = catalogQuery || isbn ? submitted : undefined;
+  const lookup = useResource(
     useCallback(async () => {
-      if (!catalogQuery) return undefined;
-      return { query: catalogQuery, matches: await api.search(catalogQuery, config) };
-    }, [api, catalogQuery, config]),
+      if (isbn) return { query: request, book: await api.lookupIsbn(isbn) };
+      if (catalogQuery) return { query: request, matches: await api.search(catalogQuery, config) };
+      return undefined;
+    }, [api, catalogQuery, config, isbn, request]),
   );
-  const matches = catalog.data?.query === catalogQuery ? catalog.data?.matches : undefined;
-  const catalogError = catalogQuery ? catalog.error : undefined;
-  const searching = Boolean(catalogQuery && !matches && !catalogError);
+  const response = request && lookup.data?.query === request ? lookup.data : undefined;
+  const matches = response?.matches;
+  const isbnBook = response?.book;
+  const lookupError = request ? lookup.error : undefined;
+  const searching = Boolean(request && !response && !lookupError);
+  const isbnMessage = isbn
+    ? isbnBook === null
+      ? "No book metadata found for this ISBN."
+      : isbnBook && !isbnBook.authors.length
+        ? "The ISBN lookup returned no author to match against tagged books."
+        : undefined
+    : undefined;
   const items = useMemo(() => {
     if (!submitted) return lists.items;
-    const isbnTitleIds = submitted.isbn && new Set(matches?.map(({ media }) => media.id));
-    return lists.items.filter((item) =>
-      isbnTitleIds ? isbnTitleIds.has(item.id) : matchesListSearch(item, submitted),
-    );
-  }, [lists.items, submitted, matches]);
+    if (isbnBook) return lists.items.filter((item) => matchesIsbnBook(item, isbnBook));
+    return lists.items.filter((item) => matchesListSearch(item, submitted));
+  }, [lists.items, submitted, isbnBook]);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -126,13 +136,14 @@ export function SearchScreen() {
         </p>
       )}
       <TagFilters lists={lists} />
-      {catalogError && (
+      {lookupError && (
         <p role="alert" className="text-sm text-error">
-          {catalogError}
+          {lookupError}
         </p>
       )}
+      {isbnMessage && <p role="status">{isbnMessage}</p>}
       {searching && <p role="status">Searching…</p>}
-      {showTagged && !searching && !catalogError && <TaggedResults lists={lists} items={items} />}
+      {showTagged && !searching && !lookupError && <TaggedResults lists={lists} items={items} />}
       {!showTagged && matches && <CatalogResults key={submitted.raw} matches={matches} />}
     </Screen>
   );

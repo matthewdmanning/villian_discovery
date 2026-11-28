@@ -1,6 +1,7 @@
 import { type BookRequest, parseBookLine } from "../../../src/input.ts";
+import type { IsbnBook } from "../../../src/isbn-lookup.ts";
 import type { ListItem } from "../../../src/libby-lists.ts";
-import { containsKeywords } from "../../../src/matcher.ts";
+import { containsKeywords, normalizeName, normalizeTitle } from "../../../src/matcher.ts";
 
 /**
  * Parse the text used by the list/search UI.
@@ -40,6 +41,20 @@ export function matchesListSearch(item: ListItem, query: BookRequest): boolean {
   return (
     (!query.title || containsKeywords(item.title, query.title)) &&
     (!query.author || containsKeywords(author, query.author))
+  );
+}
+
+/** Use title and author identity because Libby taggings carry no edition ISBN. */
+export function matchesIsbnBook(item: ListItem, book: IsbnBook): boolean {
+  const title = normalizeTitle(item.title, false);
+  const bookTitle = normalizeTitle(book.title, false);
+  const fullTitle = book.subtitle ? normalizeTitle(`${book.title} ${book.subtitle}`, false) : bookTitle;
+  const author = item.author ? normalizeName(item.author) : "";
+  return Boolean(
+    title &&
+      (title === bookTitle || title === fullTitle) &&
+      author &&
+      book.authors.some((name) => normalizeName(name) === author),
   );
 }
 

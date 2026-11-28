@@ -1,5 +1,6 @@
 import type { PairingOptions } from "../../../src/auth.js";
 import type { BookRequest } from "../../../src/input.js";
+import type { IsbnLookup } from "../../../src/isbn-lookup.js";
 import { LibbyClient } from "../../../src/libby-client.js";
 import type { ListLibraryAvailability } from "../../../src/libby-list-availability.ts";
 import type { ListsData } from "../../../src/libby-lists.ts";
@@ -37,6 +38,7 @@ export interface LibraryApi {
   tags(): Promise<unknown>;
   lists(): Promise<ListsData>;
   listAvailability(titleId: string): Promise<ListLibraryAvailability[]>;
+  lookupIsbn: IsbnLookup;
   search(book: BookRequest, config: Config): Promise<Match[]>;
   run(books: BookRequest[], config: Config): Promise<BookResult[]>;
   previewSync(options?: SyncPreviewOptions): Promise<SyncPlan>;
@@ -174,6 +176,12 @@ export const demoApi: LibraryApi = {
         { id: "3", title: "Kindred", author: "Octavia E. Butler", tags: ["favorites"] },
       ],
     };
+  },
+  async lookupIsbn(isbn) {
+    await wait(250);
+    return isbn === "9781635575637" || isbn === "163557563X"
+      ? { title: "Piranesi", authors: ["Susanna Clarke"], source: "open-library" }
+      : null;
   },
   async listAvailability(titleId) {
     await wait(250);

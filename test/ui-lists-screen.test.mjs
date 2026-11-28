@@ -380,12 +380,33 @@ describe("Unified search", () => {
     expect(titles()).toEqual(["Zulu, the biography"]);
   });
 
-  it("uses catalog title IDs to apply an ISBN query to a tagged list", async () => {
-    const search = vi.fn(async () => [{ ...match("Zulu"), media: { ...match("Zulu").media, id: "1" } }]);
-    await mount({ search });
+  it("uses independent ISBN metadata to match title and author within the tagged list", async () => {
+    const search = vi.fn(async () => []);
+    const lookupIsbn = vi.fn(async () => ({ title: "The Zulu", authors: ["Adams"], source: "open-library" }));
+    await mount({
+      lookupIsbn,
+      search,
+      lists: async () => ({ tags, items: [...items, { id: "5", title: "Zulu", author: "Other", tags: ["a"] }] }),
+    });
     await pickTag("Includes", "Favorites");
     await submit("9780593135204");
-    expect(search).toHaveBeenCalledWith(expect.objectContaining({ isbn: "9780593135204" }), expect.anything());
+    expect(lookupIsbn).toHaveBeenCalledExactlyOnceWith("9780593135204");
+    expect(search).not.toHaveBeenCalled();
     expect(titles()).toEqual(["Zulu"]);
+    await removeTag("Includes", "Favorites");
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({ isbn: "9780593135204" }), expect.anything());
+  });
+
+  it("distinguishes an ISBN without metadata from a lookup failure", async () => {
+    const lookupIsbn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Google Books returned HTTP 429."))
+      .mockResolvedValue(null);
+    await mount({ lookupIsbn });
+    await pickTag("Includes", "Favorites");
+    await submit("9780593135204");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("HTTP 429");
+    await submit("9780593135204");
+    expect(container.querySelector('[role="status"]')?.textContent).toContain("No book metadata found");
   });
 });
